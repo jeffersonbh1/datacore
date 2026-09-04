@@ -1,0 +1,6 @@
+{
+  "name": "DataCore",
+  "description": "Plataforma visual intuitiva para engenharia de pipelines de ETL em nuvem, monitoramento em tempo real, governança e conformidade com a LGPD, FinOps e controle de acesso RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
