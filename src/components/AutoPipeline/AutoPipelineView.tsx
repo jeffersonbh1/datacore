@@ -6,11 +6,58 @@ import {
   HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight,
   FolderArchive, Boxes
 } from 'lucide-react';
-import { 
-  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, 
+import {
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
   SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
-  DiscoveredTable
+  DiscoveredTable, SyncScheduleType, SyncScheduleEntry, WeekDay
 } from '../../types';
+
+const FREQUENCY_OPTIONS: { id: SyncScheduleType; label: string; icon: React.ReactNode }[] = [
+  { id: 'diaria', label: 'Diária', icon: <Server className="w-3.5 h-3.5 text-slate-600" /> },
+  { id: 'semanal', label: 'Semanal', icon: <Layers className="w-3.5 h-3.5 text-slate-600" /> },
+  { id: 'mensal', label: 'Mensal', icon: <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> },
+  { id: 'unica', label: 'Carga Única', icon: <Zap className="w-3.5 h-3.5 text-amber-500" /> }
+];
+
+const WEEKDAYS: { id: WeekDay; label: string }[] = [
+  { id: 'domingo', label: 'Domingo' },
+  { id: 'segunda', label: 'Segunda-feira' },
+  { id: 'terca', label: 'Terça-feira' },
+  { id: 'quarta', label: 'Quarta-feira' },
+  { id: 'quinta', label: 'Quinta-feira' },
+  { id: 'sexta', label: 'Sexta-feira' },
+  { id: 'sabado', label: 'Sábado' }
+];
+
+const WEEKDAY_LABEL: Record<WeekDay, string> = WEEKDAYS.reduce(
+  (acc, d) => ({ ...acc, [d.id]: d.label }),
+  {} as Record<WeekDay, string>
+);
+
+const WEEKDAY_CRON: Record<WeekDay, number> = {
+  domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6
+};
+
+const buildCronExpressions = (scheduleType: SyncScheduleType, entries: SyncScheduleEntry[]): string[] => {
+  if (scheduleType === 'unica') return [];
+  return entries.map(entry => {
+    const [hh, mm] = entry.time.split(':');
+    if (scheduleType === 'diaria') return `${mm} ${hh} * * *`;
+    if (scheduleType === 'semanal') return `${mm} ${hh} * * ${WEEKDAY_CRON[entry.dayOfWeek || 'segunda']}`;
+    return `${mm} ${hh} ${entry.dayOfMonth || 1} * *`;
+  });
+};
+
+const formatScheduleSummary = (scheduleType: SyncScheduleType, entries: SyncScheduleEntry[]): string => {
+  if (scheduleType === 'unica') return 'Carga Única • Execução imediata';
+  const typeLabel = scheduleType === 'diaria' ? 'Diária' : scheduleType === 'semanal' ? 'Semanal' : 'Mensal';
+  const details = entries.map(entry => {
+    if (scheduleType === 'semanal') return `${WEEKDAY_LABEL[entry.dayOfWeek || 'segunda']} ${entry.time}`;
+    if (scheduleType === 'mensal') return `Dia ${entry.dayOfMonth || 1} ${entry.time}`;
+    return entry.time;
+  }).join(', ');
+  return `${typeLabel} • ${details}`;
+};
 
 interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
@@ -122,9 +169,31 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   const [integrationName, setIntegrationName] = useState('');
   const [selectedTables, setSelectedTables] = useState<string[]>(['clientes', 'pedidos', 'transacoes_pagamento']);
-  const [syncFrequency, setSyncFrequency] = useState<'realtime' | '15m' | 'hourly' | 'daily' | 'manual'>('realtime');
+  const [scheduleType, setScheduleType] = useState<SyncScheduleType>('diaria');
+  const [scheduleEntries, setScheduleEntries] = useState<SyncScheduleEntry[]>([
+    { id: 'sched-1', time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }
+  ]);
   const [applyLgpdSanitization, setApplyLgpdSanitization] = useState(true);
   const [newCustomTable, setNewCustomTable] = useState('');
+
+  const handleSelectScheduleType = (type: SyncScheduleType) => {
+    setScheduleType(type);
+    if (type !== 'unica') {
+      setScheduleEntries([{ id: `sched-${Date.now()}`, time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }]);
+    }
+  };
+
+  const handleAddScheduleEntry = () => {
+    setScheduleEntries(prev => [...prev, { id: `sched-${Date.now()}`, time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }]);
+  };
+
+  const handleRemoveScheduleEntry = (id: string) => {
+    setScheduleEntries(prev => prev.length > 1 ? prev.filter(e => e.id !== id) : prev);
+  };
+
+  const handleUpdateScheduleEntry = (id: string, patch: Partial<SyncScheduleEntry>) => {
+    setScheduleEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  };
 
   // Creation & Success Modal
   const [isCreating, setIsCreating] = useState(false);
@@ -521,14 +590,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${activeSource.name} com ${activeDest.name}. Tabelas: ${selectedTables.join(', ')}.`,
       category: 'Integração Automática Lakehouse',
       status: 'active',
-      trigger: syncFrequency === 'realtime' ? 'event' : 'cron',
-      cronExpression: syncFrequency === '15m' ? '*/15 * * * *' : syncFrequency === 'hourly' ? '0 * * * *' : syncFrequency === 'daily' ? '0 3 * * *' : undefined,
-      mode: syncFrequency === 'realtime' ? 'streaming' : 'batch',
+      trigger: scheduleType === 'unica' ? 'manual' : 'cron',
+      cronExpression: buildCronExpressions(scheduleType, scheduleEntries).join(' | ') || undefined,
+      mode: 'batch',
       cloudProviders: Array.from(new Set([activeSource.provider, activeDest.provider])),
       nodes,
       edges,
       lastRunAt: 'Pronto para execução',
-      nextRunAt: syncFrequency === 'realtime' ? 'Fluxo Contínuo' : 'Em 15 minutos',
+      nextRunAt: scheduleType === 'unica' ? 'Execução Manual Única' : formatScheduleSummary(scheduleType, scheduleEntries),
       slaTarget: 99.9,
       actualSla: 100,
       recordsProcessedToday: 0,
@@ -551,7 +620,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       destinationConnectorName: activeDest.name,
       destinationType: activeDest.type,
       selectedTables,
-      syncFrequency,
+      syncFrequency: scheduleType,
+      scheduleEntries: scheduleType === 'unica' ? [] : scheduleEntries,
+      scheduleSummary: formatScheduleSummary(scheduleType, scheduleEntries),
       applyLgpdSanitization,
       status: 'active',
       pipelineId: newPipeId,
@@ -1502,36 +1573,95 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               </div>
 
               {/* Cadence & LGPD Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {/* Sync Cadence */}
+              <div className="space-y-4 pt-2">
+                {/* Sync Frequency & Schedule Builder */}
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <label className="block text-xs font-bold text-slate-900 mb-2">
-                    Frequência de Sincronização
+                    Frequência e Sincronização
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'realtime', label: 'Streaming CDC (Tempo Real)', icon: <Radio className="w-3.5 h-3.5 text-emerald-600" /> },
-                      { id: '15m', label: 'A cada 15 Minutos (Micro-batch)', icon: <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> },
-                      { id: 'hourly', label: 'Horário (Incremental)', icon: <Layers className="w-3.5 h-3.5 text-slate-600" /> },
-                      { id: 'daily', label: 'Diário (Madrugada)', icon: <Server className="w-3.5 h-3.5 text-slate-600" /> }
-                    ].map(cadence => (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {FREQUENCY_OPTIONS.map(freq => (
                       <button
-                        key={cadence.id}
+                        key={freq.id}
                         type="button"
-                        onClick={() => setSyncFrequency(cadence.id as any)}
+                        onClick={() => handleSelectScheduleType(freq.id)}
                         className={`p-2 rounded-lg border text-left cursor-pointer transition ${
-                          syncFrequency === cadence.id 
-                            ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-xs' 
+                          scheduleType === freq.id
+                            ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-xs'
                             : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-slate-50'
                         }`}
                       >
-                        <div className="flex items-center gap-1.5 text-xs mb-0.5">
-                          {cadence.icon}
-                          <span className="truncate">{cadence.label}</span>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          {freq.icon}
+                          <span className="truncate">{freq.label}</span>
                         </div>
                       </button>
                     ))}
                   </div>
+
+                  {scheduleType === 'unica' ? (
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-3 text-[11px] text-slate-500">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      Esta integração será executada uma única vez, imediatamente após a criação, sem agendamento recorrente.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {scheduleEntries.map(entry => (
+                        <div key={entry.id} className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                          {scheduleType === 'semanal' && (
+                            <select
+                              value={entry.dayOfWeek}
+                              onChange={(e) => handleUpdateScheduleEntry(entry.id, { dayOfWeek: e.target.value as WeekDay })}
+                              className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                            >
+                              {WEEKDAYS.map(d => (
+                                <option key={d.id} value={d.id}>{d.label}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          {scheduleType === 'mensal' && (
+                            <select
+                              value={entry.dayOfMonth}
+                              onChange={(e) => handleUpdateScheduleEntry(entry.id, { dayOfMonth: Number(e.target.value) })}
+                              className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                            >
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                <option key={d} value={d}>Dia {d}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          <input
+                            type="time"
+                            value={entry.time}
+                            onChange={(e) => handleUpdateScheduleEntry(entry.id, { time: e.target.value })}
+                            className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+
+                          {scheduleEntries.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveScheduleEntry(entry.id)}
+                              className="ml-auto text-slate-400 hover:text-rose-600 cursor-pointer"
+                              title="Remover horário"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={handleAddScheduleEntry}
+                        className="px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Adicionar horário</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* LGPD Auto Sanitization */}
@@ -1769,7 +1899,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         <span>•</span>
                         <span>{int.selectedTables.length} tabelas ({int.selectedTables.join(', ')})</span>
                         <span>•</span>
-                        <span className="capitalize">{int.syncFrequency}</span>
+                        <span>{int.scheduleSummary}</span>
                       </div>
                     </div>
 

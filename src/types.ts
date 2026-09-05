@@ -215,6 +215,17 @@ export interface DestinationConnectorConfig {
   createdAt: string;
 }
 
+export type SyncScheduleType = 'diaria' | 'semanal' | 'mensal' | 'unica';
+
+export type WeekDay = 'domingo' | 'segunda' | 'terca' | 'quarta' | 'quinta' | 'sexta' | 'sabado';
+
+export interface SyncScheduleEntry {
+  id: string;
+  time: string;
+  dayOfWeek?: WeekDay;
+  dayOfMonth?: number;
+}
+
 export interface AutoIntegration {
   id: string;
   name: string;
@@ -225,7 +236,9 @@ export interface AutoIntegration {
   destinationConnectorName: string;
   destinationType: DestinationType;
   selectedTables: string[];
-  syncFrequency: 'realtime' | '15m' | 'hourly' | 'daily' | 'manual';
+  syncFrequency: SyncScheduleType;
+  scheduleEntries: SyncScheduleEntry[];
+  scheduleSummary: string;
   applyLgpdSanitization: boolean;
   status: 'active' | 'paused';
   pipelineId: string;
