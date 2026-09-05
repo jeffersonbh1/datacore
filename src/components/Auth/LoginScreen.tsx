@@ -4,11 +4,10 @@ import { TeamUser } from '../../types';
 import { Logo } from '../Logo';
 
 interface LoginScreenProps {
-  users: TeamUser[];
   onLoginSuccess: (user: TeamUser) => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,29 +15,46 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const matchedUser = users.find(
-      (u) => u.email.trim().toLowerCase() === email.trim().toLowerCase()
-    );
-
-    if (!matchedUser) {
-      setError('E-mail não cadastrado na plataforma.');
-      return;
-    }
-
-    if (!password) {
-      setError('Informe sua senha para continuar.');
+    if (!email.trim() || !password) {
+      setError('Informe e-mail e senha para continuar.');
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Não foi possível autenticar. Tente novamente.');
+        return;
+      }
+
+      const apiUser = data.user;
+      onLoginSuccess({
+        id: apiUser.id,
+        name: apiUser.nome,
+        email: apiUser.email,
+        role: apiUser.papel,
+        department: apiUser.departamento || '',
+        avatar: apiUser.avatarIniciais || apiUser.nome.slice(0, 2).toUpperCase(),
+        lastActive: 'Agora mesmo',
+        mfaEnabled: apiUser.mfaHabilitado,
+        canViewUnmaskedPII: apiUser.podeVisualizarPiiBruto
+      });
+    } catch {
+      setError('Falha de conexão com o servidor. Tente novamente.');
+    } finally {
       setLoading(false);
-      onLoginSuccess(matchedUser);
-    }, 600);
+    }
   };
 
   return (
@@ -145,8 +161,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
 
           {/* Demo hint */}
           <div className="mt-5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[11px] text-slate-500 leading-relaxed">
-            Ambiente de demonstração: utilize um e-mail cadastrado na equipe (ex.:{' '}
-            <strong className="text-slate-700 font-mono">jeffersonbh1@gmail.com</strong>) com qualquer senha.
+            Ambiente de demonstração: use um e-mail cadastrado no banco (ex.:{' '}
+            <strong className="text-slate-700 font-mono">jeffersonbh1@gmail.com</strong>) com a senha do seed
+            (<strong className="text-slate-700 font-mono">datacore123</strong>, se você rodou o script de seed).
           </div>
         </div>
 

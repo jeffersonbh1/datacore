@@ -192,7 +192,7 @@ export default function App() {
   const pendingDsrCount = lgpdRequests.filter(r => r.status === 'pendente' || r.status === 'em_analise').length;
 
   if (!isAuthenticated) {
-    return <LoginScreen users={users} onLoginSuccess={handleLoginSuccess} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
