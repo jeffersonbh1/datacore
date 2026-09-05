@@ -1,10 +1,11 @@
 import React from 'react';
 import {
-  Database, ShieldCheck, Activity, User, ChevronDown,
+  ShieldCheck, Activity, User, ChevronDown,
   Layers, Lock, Sparkles, Bell, LogOut
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { ROLE_DEFINITIONS } from '../data/initialData';
+import { Logo } from './Logo';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -32,17 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header id="app-header" className="h-14 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-30 sticky top-0 shadow-[0_1px_3px_rgba(0,0,0,0.03)] min-w-0">
       {/* Brand logo & title */}
-      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm shadow-indigo-200 shrink-0">
-          <Database className="w-4 h-4 text-white" />
-        </div>
-
-        <div className="shrink-0">
-          <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            DataCore
-          </h1>
-        </div>
-      </div>
+      <Logo iconSize={36} wordmarkClassName="text-base sm:text-lg" className="shrink-0" />
 
       {/* Operational Cards & User Controls Cluster (No overlap layout) */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
