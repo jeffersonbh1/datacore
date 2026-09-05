@@ -5,10 +5,11 @@ import {
   INITIAL_USERS, ROLE_DEFINITIONS,
   INITIAL_SOURCES, INITIAL_DESTINATIONS, INITIAL_INTEGRATIONS
 } from './data/initialData';
-import { 
-  Pipeline, UserRole, AlertRule, LGPDRequest, 
-  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration 
+import {
+  Pipeline, UserRole, AlertRule, LGPDRequest,
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, TeamUser
 } from './types';
+import { LoginScreen } from './components/Auth/LoginScreen';
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
@@ -24,6 +25,8 @@ import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 }
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState<TeamUser | null>(null);
 
   // Core Data States
   const [pipelines, setPipelines] = useState<Pipeline[]>(INITIAL_PIPELINES);
@@ -45,6 +48,18 @@ export default function App() {
   const permissions = roleDef.permissions;
 
   const currentPipeline = pipelines.find(p => p.id === selectedPipelineId) || pipelines[0];
+
+  // Auth handlers
+  const handleLoginSuccess = (user: TeamUser) => {
+    setLoggedInUser(user);
+    setCurrentRole(user.role);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setLoggedInUser(null);
+  };
 
   // Pipeline handlers
   const handleUpdatePipeline = (updated: Pipeline) => {
@@ -176,6 +191,10 @@ export default function App() {
   const openIncidentsCount = incidents.filter(i => i.status !== 'resolved').length;
   const pendingDsrCount = lgpdRequests.filter(r => r.status === 'pendente' || r.status === 'em_analise').length;
 
+  if (!isAuthenticated) {
+    return <LoginScreen users={users} onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div id="app-root" className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
       {/* Top Header */}
@@ -184,6 +203,10 @@ export default function App() {
         onChangeRole={setCurrentRole}
         activePipelinesCount={activeCount}
         totalPipelinesCount={pipelines.length}
+        userName={loggedInUser?.name || 'Usuário'}
+        userDepartment={loggedInUser?.department || ''}
+        userAvatar={loggedInUser?.avatar || '??'}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
