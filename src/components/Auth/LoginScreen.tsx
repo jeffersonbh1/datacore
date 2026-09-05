@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Database, Mail, Lock, Unlock, ShieldCheck, LogIn, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Unlock, ShieldCheck, LogIn, AlertCircle } from 'lucide-react';
 import { TeamUser } from '../../types';
+import { Logo } from '../Logo';
 
 interface LoginScreenProps {
   users: TeamUser[];
@@ -45,13 +46,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLoginSuccess 
       <div className="w-full max-w-md">
         {/* Brand */}
         <div className="flex flex-col items-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center shadow-sm shadow-indigo-200">
-            <Database className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-lg font-bold text-slate-900 tracking-tight">DataCore</h1>
-            <p className="text-xs text-slate-500">Plataforma de Engenharia de Dados & ETL</p>
-          </div>
+          <Logo iconSize={76} wordmarkClassName="text-2xl" className="flex-col gap-2" />
+          <p className="text-xs text-slate-500 text-center">Plataforma de Engenharia de Dados & ETL</p>
         </div>
 
         {/* Login Card */}
