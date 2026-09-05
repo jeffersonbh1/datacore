@@ -1,7 +1,7 @@
 import React from 'react';
-import { 
-  Database, ShieldCheck, Activity, User, ChevronDown, 
-  Layers, Lock, Sparkles, Bell
+import {
+  Database, ShieldCheck, Activity, User, ChevronDown,
+  Layers, Lock, Sparkles, Bell, LogOut
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { ROLE_DEFINITIONS } from '../data/initialData';
@@ -11,13 +11,21 @@ interface HeaderProps {
   onChangeRole: (role: UserRole) => void;
   activePipelinesCount: number;
   totalPipelinesCount: number;
+  userName: string;
+  userDepartment: string;
+  userAvatar: string;
+  onLogout: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
   onChangeRole,
   activePipelinesCount,
-  totalPipelinesCount
+  totalPipelinesCount,
+  userName,
+  userDepartment,
+  userAvatar,
+  onLogout
 }) => {
   const currentRoleDef = ROLE_DEFINITIONS[currentRole] || ROLE_DEFINITIONS.admin;
 
@@ -91,15 +99,23 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Card 4: Identificação do Usuário */}
         <div id="header-user-badge" className="flex items-center gap-2.5 border-l border-slate-200 pl-2.5 sm:pl-3 shrink-0">
           <div className="text-right hidden xl:block">
-            <p className="text-xs font-bold text-slate-900 leading-tight">Admin_User</p>
-            <p className="text-[10px] text-slate-500">Lead Data Architect</p>
+            <p className="text-xs font-bold text-slate-900 leading-tight">{userName}</p>
+            <p className="text-[10px] text-slate-500">{userDepartment}</p>
           </div>
-          <div 
-            className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center font-bold text-xs text-indigo-700 shrink-0 shadow-2xs" 
-            title="Admin_User (Lead Data Architect)"
+          <div
+            className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center font-bold text-xs text-indigo-700 shrink-0 shadow-2xs"
+            title={`${userName} (${userDepartment})`}
           >
-            AU
+            {userAvatar}
           </div>
+          <button
+            id="header-logout-button"
+            onClick={onLogout}
+            title="Sair da plataforma"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>
