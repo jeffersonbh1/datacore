@@ -113,7 +113,11 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent, node: CanvasNode) => {
     e.stopPropagation();
-    setSelectedNode(node);
+    // Medallion nodes (bronze/silver/gold) go straight to the dbt editor on click,
+    // so we don't pop the config drawer for them here.
+    if (!isMedallionDbtNode(node)) {
+      setSelectedNode(node);
+    }
     setDragStartPos({ x: e.clientX, y: e.clientY });
     setDragDistance(0);
     if (!canEdit) return;
@@ -126,11 +130,15 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
 
   const handleNodeClick = (e: React.MouseEvent, node: CanvasNode) => {
     e.stopPropagation();
-    setSelectedNode(node);
-    // When clicking a bronze, silver, or gold node, open the dbt SQL editor!
-    if (dragDistance < 6 && isMedallionDbtNode(node)) {
+    // Ignore clicks that were actually a drag to reposition the node.
+    if (dragDistance >= 6) return;
+    // Bronze, silver or gold node: open the dbt SQL editor directly (no config drawer).
+    if (isMedallionDbtNode(node)) {
+      setSelectedNode(null);
       setDbtEditingNode(node);
+      return;
     }
+    setSelectedNode(node);
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -679,7 +687,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                     id={`btn-node-dbt-${node.id}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedNode(node);
+                      setSelectedNode(null);
                       setDbtEditingNode(node);
                     }}
                     className="mt-2 w-full flex items-center justify-between text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 px-2.5 py-1.5 rounded-lg font-medium transition cursor-pointer shadow-xs group"
