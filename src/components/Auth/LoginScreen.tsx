@@ -90,23 +90,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         }} 
       />
 
-      {/* Top Brand Bar */}
-      <header className="sticky top-0 z-20 w-full bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-6 py-3.5 shadow-2xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <DataCoreLogo size="sm" showWordmark={true} showTagline={false} />
-            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#F2F4F8] text-[#12161F] font-semibold border border-slate-200">
-              Enterprise
-            </span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-[#0FA98F] animate-pulse" />
-            <span>Cluster Cloud: <strong className="text-slate-800">AWS sa-east-1</strong> (Operacional)</span>
-          </div>
-        </div>
-      </header>
-
       {/* Center Authentication Card Section - Exclusively the Access Box */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md mx-auto">
