@@ -1,21 +1,19 @@
 import React from 'react';
-import {
-  ShieldCheck, Activity, User, ChevronDown,
+import { 
+  ShieldCheck, Activity, User, ChevronDown, 
   Layers, Lock, Sparkles, Bell, LogOut
 } from 'lucide-react';
-import { UserRole } from '../types';
+import { UserRole, TeamUser } from '../types';
 import { ROLE_DEFINITIONS } from '../data/initialData';
-import { Logo } from './Logo';
+import { DataCoreLogo } from './common/DataCoreLogo';
 
 interface HeaderProps {
   currentRole: UserRole;
   onChangeRole: (role: UserRole) => void;
   activePipelinesCount: number;
   totalPipelinesCount: number;
-  userName: string;
-  userDepartment: string;
-  userAvatar: string;
-  onLogout: () => void;
+  currentUser?: TeamUser | null;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,17 +21,20 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeRole,
   activePipelinesCount,
   totalPipelinesCount,
-  userName,
-  userDepartment,
-  userAvatar,
+  currentUser,
   onLogout
 }) => {
   const currentRoleDef = ROLE_DEFINITIONS[currentRole] || ROLE_DEFINITIONS.admin;
 
   return (
-    <header id="app-header" className="h-14 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-30 sticky top-0 shadow-[0_1px_3px_rgba(0,0,0,0.03)] min-w-0">
+    <header 
+      id="app-header" 
+      className="fixed top-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-40 shadow-xs min-w-0"
+    >
       {/* Brand logo & title */}
-      <Logo iconSize={36} wordmarkClassName="text-base sm:text-lg" className="shrink-0" />
+      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        <DataCoreLogo size="sm" showWordmark={true} showTagline={false} />
+      </div>
 
       {/* Operational Cards & User Controls Cluster (No overlap layout) */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
@@ -87,26 +88,35 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Card 4: Identificação do Usuário */}
+        {/* Card 4: Identificação do Usuário e Logout */}
         <div id="header-user-badge" className="flex items-center gap-2.5 border-l border-slate-200 pl-2.5 sm:pl-3 shrink-0">
           <div className="text-right hidden xl:block">
-            <p className="text-xs font-bold text-slate-900 leading-tight">{userName}</p>
-            <p className="text-[10px] text-slate-500">{userDepartment}</p>
+            <p className="text-xs font-bold text-slate-900 leading-tight">
+              {currentUser?.name || 'Jefferson Barbosa'}
+            </p>
+            <p className="text-[10px] text-slate-500">
+              {currentUser?.department || currentRoleDef.name}
+            </p>
           </div>
-          <div
-            className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center font-bold text-xs text-indigo-700 shrink-0 shadow-2xs"
-            title={`${userName} (${userDepartment})`}
+          <div 
+            className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center font-bold text-xs text-indigo-700 shrink-0 shadow-2xs" 
+            title={`${currentUser?.name || 'Usuário'} (${currentUser?.department || currentRoleDef.name})`}
           >
-            {userAvatar}
+            {currentUser?.avatar || 'JB'}
           </div>
-          <button
-            id="header-logout-button"
-            onClick={onLogout}
-            title="Sair da plataforma"
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+
+          {/* Sair / Logout */}
+          {onLogout && (
+            <button
+              id="btn-header-logout"
+              type="button"
+              onClick={onLogout}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition cursor-pointer"
+              title="Encerrar sessão e voltar ao Login"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </header>

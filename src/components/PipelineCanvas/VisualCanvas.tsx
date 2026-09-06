@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { CanvasNode, CanvasEdge, Pipeline, NodeType, PIIType, MaskingMethod } from '../../types';
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
+import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
 
 interface VisualCanvasProps {
   pipeline: Pipeline;
@@ -15,6 +16,27 @@ interface VisualCanvasProps {
   canExecute: boolean;
   canViewRawPII: boolean;
 }
+
+export const isMedallionDbtNode = (node: CanvasNode | null | undefined): boolean => {
+  if (!node) return false;
+  const typeLower = (node.type || '').toLowerCase();
+  const titleLower = (node.title || '').toLowerCase();
+  const subtitleLower = (node.subtitle || '').toLowerCase();
+
+  return (
+    typeLower === 'bronze' ||
+    typeLower === 'silver' ||
+    typeLower === 'gold' ||
+    titleLower.includes('bronze') ||
+    titleLower.includes('silver') ||
+    titleLower.includes('gold') ||
+    subtitleLower.includes('bronze') ||
+    subtitleLower.includes('silver') ||
+    subtitleLower.includes('gold') ||
+    titleLower.includes('ouro') ||
+    titleLower.includes('prata')
+  );
+};
 
 export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   pipeline,
@@ -26,6 +48,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [nodes, setNodes] = useState<CanvasNode[]>(pipeline.nodes);
   const [edges, setEdges] = useState<CanvasEdge[]>(pipeline.edges);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
+  const [dbtEditingNode, setDbtEditingNode] = useState<CanvasNode | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState<number>(-1);
   const [showDataPreview, setShowDataPreview] = useState(false);
@@ -34,6 +57,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [zoom, setZoom] = useState(1);
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragDistance, setDragDistance] = useState(0);
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -48,7 +73,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     switch (iconName) {
       case 'Database': return <Database className="w-5 h-5 text-blue-600" />;
       case 'Boxes': return <Boxes className="w-5 h-5 text-teal-600" />;
-      case 'Sparkles': return <Sparkles className="w-5 h-5 text-cyan-500" />;
+      case 'Sparkles': return <Sparkles className="w-5 h-5 text-amber-500" />;
       case 'FolderArchive': return <FolderArchive className="w-5 h-5 text-amber-600" />;
       case 'Radio': return <Radio className="w-5 h-5 text-purple-500" />;
       case 'Server': return <Server className="w-5 h-5 text-slate-700" />;
@@ -63,6 +88,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         if (type === 'raw_data') return <FolderArchive className="w-5 h-5 text-amber-600" />;
         if (type === 'bronze') return <ShieldCheck className="w-5 h-5 text-orange-600" />;
         if (type === 'silver') return <Boxes className="w-5 h-5 text-teal-600" />;
+        if (type === 'gold') return <Sparkles className="w-5 h-5 text-amber-500" />;
         if (type === 'lgpd_mask') return <ShieldCheck className="w-5 h-5 text-emerald-500" />;
         if (type === 'destination') return <Boxes className="w-5 h-5 text-cyan-500" />;
         return <Cpu className="w-5 h-5 text-slate-500" />;
@@ -75,6 +101,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       case 'raw_data': return 'border-amber-300 bg-amber-50 text-amber-800';
       case 'bronze': return 'border-orange-300 bg-orange-50 text-orange-800';
       case 'silver': return 'border-teal-300 bg-teal-50 text-teal-800';
+      case 'gold': return 'border-amber-300 bg-amber-50 text-amber-800';
       case 'lgpd_mask': return 'border-emerald-200 bg-emerald-50 text-emerald-700';
       case 'filter': return 'border-indigo-200 bg-indigo-50 text-indigo-700';
       case 'transform': return 'border-sky-200 bg-sky-50 text-sky-700';
@@ -87,12 +114,23 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const handleMouseDown = (e: React.MouseEvent, node: CanvasNode) => {
     e.stopPropagation();
     setSelectedNode(node);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setDragDistance(0);
     if (!canEdit) return;
     setDraggedNodeId(node.id);
     setDragOffset({
       x: e.clientX - node.x,
       y: e.clientY - node.y
     });
+  };
+
+  const handleNodeClick = (e: React.MouseEvent, node: CanvasNode) => {
+    e.stopPropagation();
+    setSelectedNode(node);
+    // When clicking a bronze, silver, or gold node, open the dbt SQL editor!
+    if (dragDistance < 6 && isMedallionDbtNode(node)) {
+      setDbtEditingNode(node);
+    }
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -109,6 +147,10 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (dragStartPos) {
+      const dist = Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y);
+      setDragDistance(dist);
+    }
     if (!draggedNodeId || !canEdit) return;
     const newX = Math.max(20, Math.min(1300, e.clientX - dragOffset.x));
     const newY = Math.max(20, Math.min(600, e.clientY - dragOffset.y));
@@ -129,6 +171,43 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         edges
       });
     }
+  };
+
+  const handleSaveDbtModel = (nodeId: string, updatedSql: string, modelName: string, materialization: string) => {
+    const updatedNodes = nodes.map(n => {
+      if (n.id === nodeId) {
+        return {
+          ...n,
+          config: {
+            ...n.config,
+            dbtSql: updatedSql,
+            dbtModelName: modelName,
+            dbtMaterialization: materialization as any,
+            query: updatedSql
+          }
+        };
+      }
+      return n;
+    });
+
+    setNodes(updatedNodes);
+    if (selectedNode && selectedNode.id === nodeId) {
+      setSelectedNode({
+        ...selectedNode,
+        config: {
+          ...selectedNode.config,
+          dbtSql: updatedSql,
+          dbtModelName: modelName,
+          dbtMaterialization: materialization as any,
+          query: updatedSql
+        }
+      });
+    }
+
+    onUpdatePipeline({
+      ...pipeline,
+      nodes: updatedNodes
+    });
   };
 
   // Run visual simulation
@@ -487,7 +566,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                 key={node.id}
                 id={`canvas-node-${node.id}`}
                 onMouseDown={(e) => handleMouseDown(e, node)}
-                onClick={() => setSelectedNode(node)}
+                onClick={(e) => handleNodeClick(e, node)}
                 style={{ left: `${node.x}px`, top: `${node.y}px` }}
                 className={`absolute w-56 rounded-xl border p-3.5 shadow-md transition-all cursor-grab active:cursor-grabbing z-10 ${
                   isSelected 
@@ -507,6 +586,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                          node.type === 'raw_data' ? '2. Raw Data (Landing)' :
                          node.type === 'bronze' ? '3. Camada Bronze' :
                          node.type === 'silver' ? '4. Camada Silver' :
+                         node.type === 'gold' ? '5. Camada Gold' :
                          node.type === 'lgpd_mask' ? 'Segurança LGPD' :
                          node.type === 'destination' ? 'Destino DW' : node.type}
                       </span>
@@ -571,6 +651,16 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                   </div>
                 )}
 
+                {node.type === 'gold' && (
+                  <div className="mt-1 flex items-center justify-between text-[10px] bg-amber-50 border border-amber-200 px-2 py-1 rounded text-amber-800">
+                    <span className="flex items-center gap-1 font-semibold truncate">
+                      <Sparkles className="w-3 h-3 text-amber-600 shrink-0" />
+                      Data Marts & KPIs
+                    </span>
+                    <span className="text-amber-700 font-mono text-[9px] font-bold shrink-0">Passo 5</span>
+                  </div>
+                )}
+
                 {/* LGPD Badge on Node if LGPD node */}
                 {node.type === 'lgpd_mask' && (
                   <div className="mt-1 flex items-center justify-between text-[10px] bg-emerald-50 border border-emerald-200 px-2 py-1 rounded text-emerald-800">
@@ -580,6 +670,29 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                     </span>
                     <span className="text-emerald-700 font-mono text-[9px] font-bold">Art. 46</span>
                   </div>
+                )}
+
+                {/* Clickable dbt SQL Editor badge for Bronze, Silver, Gold nodes */}
+                {isMedallionDbtNode(node) && (
+                  <button
+                    type="button"
+                    id={`btn-node-dbt-${node.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedNode(node);
+                      setDbtEditingNode(node);
+                    }}
+                    className="mt-2 w-full flex items-center justify-between text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 px-2.5 py-1.5 rounded-lg font-medium transition cursor-pointer shadow-xs group"
+                    title="Abrir Editor dbt SQL para editar código gerado automaticamente"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3.5 h-3.5 rounded bg-[#FF694B] text-white flex items-center justify-center text-[8px] font-mono font-bold leading-none shrink-0">
+                        dbt
+                      </span>
+                      <span className="font-semibold text-slate-200">Editor SQL dbt</span>
+                    </div>
+                    <Code2 className="w-3.5 h-3.5 text-[#FF694B] group-hover:scale-110 transition-transform" />
+                  </button>
                 )}
 
                 {/* Input and Output Ports */}
@@ -605,26 +718,35 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           })}
         </div>
 
-        {/* Floating Quick Help - 4 Passos Lakehouse */}
-        <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-xs border border-slate-200 px-3.5 py-2 rounded-xl text-xs text-slate-700 shadow-md flex flex-wrap items-center gap-3">
+        {/* Floating Quick Help - 5 Passos Lakehouse & dbt Indicator */}
+        <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-xs border border-slate-200 px-3.5 py-2 rounded-xl text-xs text-slate-700 shadow-md flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-            <span>1. Source (Origem)</span>
+            <span>1. Source</span>
           </div>
           <span className="text-slate-300">➔</span>
           <div className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-            <span>2. Raw Data (Landing)</span>
+            <span>2. Raw</span>
           </div>
           <span className="text-slate-300">➔</span>
           <div className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-            <span>3. Bronze (Validação/LGPD)</span>
+            <span>3. Bronze (dbt)</span>
           </div>
           <span className="text-slate-300">➔</span>
           <div className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-teal-600" />
-            <span>4. Silver (Curadoria DW)</span>
+            <span>4. Silver (dbt)</span>
+          </div>
+          <span className="text-slate-300">➔</span>
+          <div className="flex items-center gap-1.5 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+            <span>5. Gold (dbt)</span>
+          </div>
+          <div className="hidden lg:flex items-center gap-1 pl-2 border-l border-slate-200 text-slate-500 font-mono text-[11px]">
+            <span className="w-2 h-2 rounded-full bg-[#FF694B]" />
+            <span>Clique em nós Bronze, Silver ou Gold para abrir o Editor dbt SQL</span>
           </div>
         </div>
       </div>
@@ -675,6 +797,42 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* dbt SQL Model Section in Inspector Drawer */}
+            {isMedallionDbtNode(selectedNode) && (
+              <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700 rounded-xl p-3.5 text-white space-y-3 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded bg-[#FF694B] text-white flex items-center justify-center font-bold text-[10px] font-mono shadow-xs">
+                      dbt
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs block text-white">Modelo SQL dbt</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        models/{getDbtLayer(selectedNode)}/{selectedNode.config.dbtModelName || `${getDbtLayer(selectedNode)}_${selectedNode.title.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`}.sql
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono">
+                    {selectedNode.config.dbtSql ? 'Personalizado' : 'Auto-Gerado'}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Código SQL dbt gerado automaticamente pela plataforma. Você pode visualizar e editar as macros Jinja, schemas e deduplicação CDC.
+                </p>
+
+                <button
+                  type="button"
+                  id="btn-open-dbt-editor-from-drawer"
+                  onClick={() => setDbtEditingNode(selectedNode)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#FF694B] hover:bg-[#ff5633] text-white font-bold text-xs transition cursor-pointer shadow-md shadow-orange-950/40"
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span>Abrir Editor SQL dbt</span>
+                </button>
+              </div>
+            )}
 
             {/* LGPD Masking Specific Configuration */}
             {selectedNode.type === 'lgpd_mask' && (
@@ -869,6 +1027,47 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                     <option value="merge_upsert">Merge / Upsert (Atualizar ou Inserir - Recomendado)</option>
                     <option value="append">Append (Inserção Incremental)</option>
                     <option value="overwrite">Overwrite (Sobrescrever Partição)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Gold Layer Configuration */}
+            {(selectedNode.type === 'gold' || (selectedNode.title || '').toLowerCase().includes('gold')) && (
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    5. Camada Gold (Data Marts & KPIs)
+                  </span>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded font-mono font-bold">
+                    Executive-Ready
+                  </span>
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  Agregações executivas, métricas de negócio consolidadas e dimensões analíticas em estrela prontas para dashboards e relatórios da diretoria.
+                </p>
+                <div>
+                  <label className="block text-slate-500 font-semibold mb-1 text-xs">Tabela / Data Mart de Destino</label>
+                  <input
+                    type="text"
+                    disabled={!canEdit}
+                    value={selectedNode.config.destinationTable || selectedNode.config.tableOrBucket || 'gold_marts.kpis_executivos_vendas'}
+                    onChange={(e) => handleUpdateNodeConfig(selectedNode.id, { destinationTable: e.target.value })}
+                    className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-slate-900 font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 font-semibold mb-1 text-xs">Materialização dbt</label>
+                  <select
+                    disabled={!canEdit}
+                    value={selectedNode.config.dbtMaterialization || 'table'}
+                    onChange={(e) => handleUpdateNodeConfig(selectedNode.id, { dbtMaterialization: e.target.value as any })}
+                    className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-slate-900 text-xs"
+                  >
+                    <option value="table">table (Tabela Física - Recomendado para BI)</option>
+                    <option value="view">view (Visão Virtual em Tempo Real)</option>
+                    <option value="incremental">incremental (Cargas Micro-batch)</option>
                   </select>
                 </div>
               </div>
@@ -1273,6 +1472,17 @@ with DAG(
             </div>
           </div>
         </div>
+      )}
+
+      {/* dbt SQL Model Editor Modal for Bronze, Silver & Gold nodes */}
+      {dbtEditingNode && (
+        <DbtSqlEditorModal
+          node={dbtEditingNode}
+          pipeline={pipeline}
+          canEdit={canEdit}
+          onSave={handleSaveDbtModel}
+          onClose={() => setDbtEditingNode(null)}
+        />
       )}
     </div>
   );

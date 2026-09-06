@@ -1,32 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   INITIAL_PIPELINES, INITIAL_LOGS, INITIAL_ALERT_RULES, 
   INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS, INITIAL_FINOPS, 
   INITIAL_USERS, ROLE_DEFINITIONS,
   INITIAL_SOURCES, INITIAL_DESTINATIONS, INITIAL_INTEGRATIONS
 } from './data/initialData';
-import {
-  Pipeline, UserRole, AlertRule, LGPDRequest,
+import { 
+  Pipeline, UserRole, AlertRule, LGPDRequest, 
   SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, TeamUser
 } from './types';
-import { LoginScreen } from './components/Auth/LoginScreen';
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
 import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipelineHeader';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
 import { PipelinesOverview } from './components/PipelinesList/PipelinesOverview';
-import { MonitoringView } from './components/Monitoring/MonitoringView';
 import { LgpdHub } from './components/Governance/LgpdHub';
 import { CostAnalytics } from './components/FinOps/CostAnalytics';
 import { RbacManager } from './components/Security/RbacManager';
+import { CadastroUsuarioView } from './components/Security/CadastroUsuarioView';
+import { LoginScreen } from './components/Auth/LoginScreen';
 import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
+import { isSupabaseConfigured, supabase, mapSupabaseUserToTeamUser, logoutFromSupabase } from './lib/supabase';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
-  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<TeamUser | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('datacore_auth_active') === 'true';
+  });
+  const [currentUser, setCurrentUser] = useState<TeamUser>(() => {
+    try {
+      const savedProfile = localStorage.getItem('datacore_user_profile');
+      if (savedProfile) {
+        return JSON.parse(savedProfile);
+      }
+    } catch {
+      // ignore
+    }
+    const savedId = localStorage.getItem('datacore_user_id');
+    return INITIAL_USERS.find(u => u.id === savedId) || INITIAL_USERS[0];
+  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>('pipelines');
+  const [currentRole, setCurrentRole] = useState<UserRole>(() => currentUser?.role || 'admin');
+
+  // Supabase Auth State Listener & Session Synchronization
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) return;
+
+    // Check active session on initial load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const teamUser = mapSupabaseUserToTeamUser(session.user);
+        setCurrentUser(teamUser);
+        setCurrentRole(teamUser.role);
+        setIsAuthenticated(true);
+        setActiveTab('pipelines');
+        localStorage.setItem('datacore_auth_active', 'true');
+        localStorage.setItem('datacore_user_id', teamUser.id);
+      }
+    });
+
+    // Listen for real-time auth changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const teamUser = mapSupabaseUserToTeamUser(session.user);
+        setCurrentUser(teamUser);
+        setCurrentRole(teamUser.role);
+        setIsAuthenticated(true);
+        setActiveTab('pipelines');
+        localStorage.setItem('datacore_auth_active', 'true');
+        localStorage.setItem('datacore_user_id', teamUser.id);
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        localStorage.removeItem('datacore_auth_active');
+        localStorage.removeItem('datacore_user_id');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Core Data States
   const [pipelines, setPipelines] = useState<Pipeline[]>(INITIAL_PIPELINES);
@@ -48,18 +101,6 @@ export default function App() {
   const permissions = roleDef.permissions;
 
   const currentPipeline = pipelines.find(p => p.id === selectedPipelineId) || pipelines[0];
-
-  // Auth handlers
-  const handleLoginSuccess = (user: TeamUser) => {
-    setLoggedInUser(user);
-    setCurrentRole(user.role);
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setLoggedInUser(null);
-  };
 
   // Pipeline handlers
   const handleUpdatePipeline = (updated: Pipeline) => {
@@ -187,30 +228,60 @@ export default function App() {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, canViewUnmaskedPII: !u.canViewUnmaskedPII } : u));
   };
 
+  // Login & Logout Handlers
+  const handleLogin = (user: TeamUser, role: UserRole) => {
+    setCurrentUser(user);
+    setCurrentRole(role);
+    setIsAuthenticated(true);
+    setActiveTab('pipelines');
+    localStorage.setItem('datacore_auth_active', 'true');
+    localStorage.setItem('datacore_user_id', user.id);
+    localStorage.setItem('datacore_user_profile', JSON.stringify(user));
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutFromSupabase();
+    } catch (err) {
+      console.error('Erro ao encerrar sessão no Supabase:', err);
+    }
+    setIsAuthenticated(false);
+    localStorage.removeItem('datacore_auth_active');
+    localStorage.removeItem('datacore_user_id');
+    localStorage.removeItem('datacore_user_profile');
+  };
+
+  // Handler when a user is successfully registered
+  const handleUserCreated = (newUser: TeamUser) => {
+    setUsers(prev => {
+      const exists = prev.some(u => u.email.toLowerCase() === newUser.email.toLowerCase());
+      if (exists) return prev;
+      return [newUser, ...prev];
+    });
+  };
+
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   const activeCount = pipelines.filter(p => p.status === 'active').length;
   const openIncidentsCount = incidents.filter(i => i.status !== 'resolved').length;
   const pendingDsrCount = lgpdRequests.filter(r => r.status === 'pendente' || r.status === 'em_analise').length;
 
-  if (!isAuthenticated) {
-    return <LoginScreen users={users} onLoginSuccess={handleLoginSuccess} />;
-  }
-
   return (
-    <div id="app-root" className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
-      {/* Top Header */}
+    <div id="app-root" className="h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans selection:bg-indigo-600 selection:text-white pt-14 overflow-hidden">
+      {/* Top Header (Fixed at top) */}
       <Header
         currentRole={currentRole}
         onChangeRole={setCurrentRole}
         activePipelinesCount={activeCount}
         totalPipelinesCount={pipelines.length}
-        userName={loggedInUser?.name || 'Usuário'}
-        userDepartment={loggedInUser?.department || ''}
-        userAvatar={loggedInUser?.avatar || '??'}
+        currentUser={currentUser}
         onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
@@ -220,7 +291,7 @@ export default function App() {
         />
 
         {/* Dynamic Center Stage */}
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#f8fafc] flex flex-col justify-between">
+        <main className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#f8fafc] flex flex-col justify-between min-h-0">
           <div>
             {activeTab === 'studio' && (
               <div className="space-y-4">
@@ -272,19 +343,6 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'monitoring' && (
-              <MonitoringView
-                logs={logs}
-                alertRules={alertRules}
-                incidents={incidents}
-                onToggleRule={handleToggleAlertRule}
-                onAddRule={handleAddAlertRule}
-                onResolveIncident={handleResolveIncident}
-                onAcknowledgeIncident={handleAcknowledgeIncident}
-                canManageAlerts={permissions.canManageAlerts}
-              />
-            )}
-
             {activeTab === 'governance' && (
               <LgpdHub
                 requests={lgpdRequests}
@@ -307,6 +365,18 @@ export default function App() {
                 users={users}
                 onUpdateUserRole={handleUpdateUserRole}
                 onToggleUserRawPII={handleToggleUserRawPII}
+                canManageUsers={permissions.canManageUsers}
+                onNavigateToCadastro={() => setActiveTab('cadastro-usuario')}
+              />
+            )}
+
+            {activeTab === 'cadastro-usuario' && (
+              <CadastroUsuarioView
+                onCancel={() => setActiveTab('rbac')}
+                onUserCreated={(newUser) => {
+                  handleUserCreated(newUser);
+                  setActiveTab('rbac');
+                }}
                 canManageUsers={permissions.canManageUsers}
               />
             )}

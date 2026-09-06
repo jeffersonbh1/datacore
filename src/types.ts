@@ -1,6 +1,6 @@
 export type CloudProvider = 'gcp' | 'aws' | 'azure' | 'snowflake' | 'generic';
 
-export type NodeType = 'source' | 'raw_data' | 'bronze' | 'silver' | 'transform' | 'filter' | 'lgpd_mask' | 'aggregate' | 'destination';
+export type NodeType = 'source' | 'raw_data' | 'bronze' | 'silver' | 'gold' | 'transform' | 'filter' | 'lgpd_mask' | 'aggregate' | 'destination';
 
 export type NodeStatus = 'idle' | 'running' | 'success' | 'warning' | 'error';
 
@@ -34,6 +34,9 @@ export interface CanvasNode {
     aggregation?: { groupBy: string; metric: string };
     destinationTable?: string;
     writeMode?: 'append' | 'overwrite' | 'merge_upsert';
+    dbtSql?: string;
+    dbtModelName?: string;
+    dbtMaterialization?: 'view' | 'table' | 'incremental' | 'ephemeral';
   };
   metrics?: {
     recordsIn: number;
@@ -215,16 +218,7 @@ export interface DestinationConnectorConfig {
   createdAt: string;
 }
 
-export type SyncScheduleType = 'diaria' | 'semanal' | 'mensal' | 'unica';
-
-export type WeekDay = 'domingo' | 'segunda' | 'terca' | 'quarta' | 'quinta' | 'sexta' | 'sabado';
-
-export interface SyncScheduleEntry {
-  id: string;
-  time: string;
-  dayOfWeek?: WeekDay;
-  dayOfMonth?: number;
-}
+export type SyncFrequencyOption = 'daily' | 'weekly' | 'monthly' | 'once' | 'realtime' | '15m' | 'hourly' | 'manual';
 
 export interface AutoIntegration {
   id: string;
@@ -236,13 +230,45 @@ export interface AutoIntegration {
   destinationConnectorName: string;
   destinationType: DestinationType;
   selectedTables: string[];
-  syncFrequency: SyncScheduleType;
-  scheduleEntries: SyncScheduleEntry[];
-  scheduleSummary: string;
+  syncFrequency: SyncFrequencyOption;
+  executionTimes?: string[];
+  weeklyDays?: string[];
+  monthlyDay?: number;
+  onceDate?: string;
+  scheduleSummary?: string;
   applyLgpdSanitization: boolean;
   status: 'active' | 'paused';
   pipelineId: string;
   createdAt: string;
   tablesCount: number;
 }
+
+export interface UsuarioDbRecord {
+  id?: string;
+  nome: string;
+  email: string;
+  senha_hash: string;
+  papel: UserRole;
+  departamento?: string | null;
+  avatar_iniciais?: string | null;
+  mfa_habilitado?: boolean;
+  pode_visualizar_pii_bruto?: boolean;
+  ultimo_acesso_em?: string | null;
+  dt_criacao?: string;
+  dt_alteracao?: string;
+  ind_cadastro_ativo?: boolean;
+  id_empresa?: number | null;
+}
+
+export interface NewUsuarioPayload {
+  nome: string;
+  email: string;
+  senha: string;
+  papel: UserRole;
+  departamento: string;
+  mfa_habilitado: boolean;
+  pode_visualizar_pii_bruto: boolean;
+  id_empresa?: number | null;
+}
+
 
