@@ -4,60 +4,14 @@ import {
   Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle, 
   Lock, Unlock, Key, Network, Eye, ExternalLink, Plus, Trash2,
   HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight,
-  FolderArchive, Boxes
+  FolderArchive, Boxes, Clock, Calendar, CalendarDays, CalendarRange,
+  PlayCircle, X
 } from 'lucide-react';
-import {
-  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
+import { 
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, 
   SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
-  DiscoveredTable, SyncScheduleType, SyncScheduleEntry, WeekDay
+  DiscoveredTable, SyncFrequencyOption
 } from '../../types';
-
-const FREQUENCY_OPTIONS: { id: SyncScheduleType; label: string; icon: React.ReactNode }[] = [
-  { id: 'diaria', label: 'Diária', icon: <Server className="w-3.5 h-3.5 text-slate-600" /> },
-  { id: 'semanal', label: 'Semanal', icon: <Layers className="w-3.5 h-3.5 text-slate-600" /> },
-  { id: 'mensal', label: 'Mensal', icon: <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> },
-  { id: 'unica', label: 'Carga Única', icon: <Zap className="w-3.5 h-3.5 text-amber-500" /> }
-];
-
-const WEEKDAYS: { id: WeekDay; label: string }[] = [
-  { id: 'domingo', label: 'Domingo' },
-  { id: 'segunda', label: 'Segunda-feira' },
-  { id: 'terca', label: 'Terça-feira' },
-  { id: 'quarta', label: 'Quarta-feira' },
-  { id: 'quinta', label: 'Quinta-feira' },
-  { id: 'sexta', label: 'Sexta-feira' },
-  { id: 'sabado', label: 'Sábado' }
-];
-
-const WEEKDAY_LABEL: Record<WeekDay, string> = WEEKDAYS.reduce(
-  (acc, d) => ({ ...acc, [d.id]: d.label }),
-  {} as Record<WeekDay, string>
-);
-
-const WEEKDAY_CRON: Record<WeekDay, number> = {
-  domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6
-};
-
-const buildCronExpressions = (scheduleType: SyncScheduleType, entries: SyncScheduleEntry[]): string[] => {
-  if (scheduleType === 'unica') return [];
-  return entries.map(entry => {
-    const [hh, mm] = entry.time.split(':');
-    if (scheduleType === 'diaria') return `${mm} ${hh} * * *`;
-    if (scheduleType === 'semanal') return `${mm} ${hh} * * ${WEEKDAY_CRON[entry.dayOfWeek || 'segunda']}`;
-    return `${mm} ${hh} ${entry.dayOfMonth || 1} * *`;
-  });
-};
-
-const formatScheduleSummary = (scheduleType: SyncScheduleType, entries: SyncScheduleEntry[]): string => {
-  if (scheduleType === 'unica') return 'Carga Única • Execução imediata';
-  const typeLabel = scheduleType === 'diaria' ? 'Diária' : scheduleType === 'semanal' ? 'Semanal' : 'Mensal';
-  const details = entries.map(entry => {
-    if (scheduleType === 'semanal') return `${WEEKDAY_LABEL[entry.dayOfWeek || 'segunda']} ${entry.time}`;
-    if (scheduleType === 'mensal') return `Dia ${entry.dayOfMonth || 1} ${entry.time}`;
-    return entry.time;
-  }).join(', ');
-  return `${typeLabel} • ${details}`;
-};
 
 interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
@@ -167,33 +121,97 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   // STEP 3: INTEGRATION SETUP & TABLE SELECTION
   // --------------------------------------------------------------------------
+  // Weekday definitions for weekly schedule
+  const WEEKDAYS = [
+    { key: 'seg', label: 'Seg', full: 'Segunda-feira', cronVal: '1' },
+    { key: 'ter', label: 'Ter', full: 'Terça-feira', cronVal: '2' },
+    { key: 'qua', label: 'Qua', full: 'Quarta-feira', cronVal: '3' },
+    { key: 'qui', label: 'Qui', full: 'Quinta-feira', cronVal: '4' },
+    { key: 'sex', label: 'Sex', full: 'Sexta-feira', cronVal: '5' },
+    { key: 'sab', label: 'Sáb', full: 'Sábado', cronVal: '6' },
+    { key: 'dom', label: 'Dom', full: 'Domingo', cronVal: '0' },
+  ];
+
   const [integrationName, setIntegrationName] = useState('');
   const [selectedTables, setSelectedTables] = useState<string[]>(['clientes', 'pedidos', 'transacoes_pagamento']);
-  const [scheduleType, setScheduleType] = useState<SyncScheduleType>('diaria');
-  const [scheduleEntries, setScheduleEntries] = useState<SyncScheduleEntry[]>([
-    { id: 'sched-1', time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }
-  ]);
-  const [applyLgpdSanitization, setApplyLgpdSanitization] = useState(true);
-  const [newCustomTable, setNewCustomTable] = useState('');
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequencyOption>('daily');
+  const [executionTimes, setExecutionTimes] = useState<string[]>(['02:00']);
+  const [newTimeInput, setNewTimeInput] = useState<string>('08:00');
+  const [weeklyDays, setWeeklyDays] = useState<string[]>(['seg', 'qua', 'sex']);
+  const [monthlyDay, setMonthlyDay] = useState<number>(1);
+  const [onceDate, setOnceDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [timeError, setTimeError] = useState<string | null>(null);
 
-  const handleSelectScheduleType = (type: SyncScheduleType) => {
-    setScheduleType(type);
-    if (type !== 'unica') {
-      setScheduleEntries([{ id: `sched-${Date.now()}`, time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }]);
+  const handleAddExecutionTime = (timeToAdd?: string) => {
+    setTimeError(null);
+    const targetTime = (timeToAdd || newTimeInput).trim();
+    if (!targetTime) return;
+
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(targetTime)) {
+      setTimeError('Formato inválido. Utilize o formato HH:mm (ex: 08:30).');
+      return;
+    }
+
+    if (executionTimes.includes(targetTime)) {
+      setTimeError(`O horário ${targetTime} já está na lista.`);
+      return;
+    }
+
+    const updated = [...executionTimes, targetTime].sort();
+    setExecutionTimes(updated);
+  };
+
+  const handleRemoveExecutionTime = (timeToRemove: string) => {
+    setTimeError(null);
+    if (executionTimes.length <= 1) {
+      setTimeError('É obrigatório manter ao menos um horário de execução.');
+      return;
+    }
+    setExecutionTimes(executionTimes.filter(t => t !== timeToRemove));
+  };
+
+  const handleToggleWeeklyDay = (dayKey: string) => {
+    setTimeError(null);
+    if (weeklyDays.includes(dayKey)) {
+      if (weeklyDays.length <= 1) {
+        setTimeError('Selecione pelo menos um dia da semana.');
+        return;
+      }
+      setWeeklyDays(weeklyDays.filter(d => d !== dayKey));
+    } else {
+      setWeeklyDays([...weeklyDays, dayKey]);
     }
   };
 
-  const handleAddScheduleEntry = () => {
-    setScheduleEntries(prev => [...prev, { id: `sched-${Date.now()}`, time: '03:00', dayOfWeek: 'segunda', dayOfMonth: 1 }]);
+  const getScheduleSummaryText = (): string => {
+    const timesStr = executionTimes.join(', ');
+    const timesCount = executionTimes.length;
+    const timesLabel = timesCount === 1 ? '1 horário' : `${timesCount} horários`;
+
+    switch (syncFrequency) {
+      case 'daily':
+        return `Diário às ${timesStr} (${timesLabel}/dia)`;
+      case 'weekly': {
+        const daysLabels = WEEKDAYS.filter(w => weeklyDays.includes(w.key)).map(w => w.label).join(', ');
+        return `Semanal (${daysLabels}) às ${timesStr}`;
+      }
+      case 'monthly':
+        return `Mensal (Dia ${monthlyDay}) às ${timesStr}`;
+      case 'once': {
+        const formattedDate = onceDate.split('-').reverse().join('/');
+        return `Carga única em ${formattedDate} às ${timesStr}`;
+      }
+      default:
+        return `Horários: ${timesStr}`;
+    }
   };
 
-  const handleRemoveScheduleEntry = (id: string) => {
-    setScheduleEntries(prev => prev.length > 1 ? prev.filter(e => e.id !== id) : prev);
-  };
-
-  const handleUpdateScheduleEntry = (id: string, patch: Partial<SyncScheduleEntry>) => {
-    setScheduleEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
-  };
+  const [applyLgpdSanitization, setApplyLgpdSanitization] = useState(true);
+  const [newCustomTable, setNewCustomTable] = useState('');
 
   // Creation & Success Modal
   const [isCreating, setIsCreating] = useState(false);
@@ -583,21 +601,47 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       animated: true
     });
 
+    // Calculate cron expression & schedule summary
+    const scheduleSummary = getScheduleSummaryText();
+    let cronExpr: string | undefined = undefined;
+
+    if (syncFrequency === 'daily') {
+      cronExpr = executionTimes.map(t => {
+        const [h, m] = t.split(':');
+        return `${parseInt(m, 10)} ${parseInt(h, 10)} * * *`;
+      }).join('; ');
+    } else if (syncFrequency === 'weekly') {
+      const cronDays = weeklyDays.map(d => WEEKDAYS.find(w => w.key === d)?.cronVal || '1').join(',');
+      cronExpr = executionTimes.map(t => {
+        const [h, m] = t.split(':');
+        return `${parseInt(m, 10)} ${parseInt(h, 10)} * * ${cronDays}`;
+      }).join('; ');
+    } else if (syncFrequency === 'monthly') {
+      cronExpr = executionTimes.map(t => {
+        const [h, m] = t.split(':');
+        return `${parseInt(m, 10)} ${parseInt(h, 10)} ${monthlyDay} * *`;
+      }).join('; ');
+    }
+
+    const nextRun = syncFrequency === 'once' 
+      ? `Agendado para ${onceDate.split('-').reverse().join('/')} às ${executionTimes.join(', ')}`
+      : `Próxima execução: ${executionTimes[0] || '02:00'}`;
+
     // Create the full Pipeline object
     const newPipeline: Pipeline = {
       id: newPipeId,
       name: integrationName.trim(),
-      description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${activeSource.name} com ${activeDest.name}. Tabelas: ${selectedTables.join(', ')}.`,
+      description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${activeSource.name} com ${activeDest.name}. Tabelas: ${selectedTables.join(', ')}. ${scheduleSummary}.`,
       category: 'Integração Automática Lakehouse',
       status: 'active',
-      trigger: scheduleType === 'unica' ? 'manual' : 'cron',
-      cronExpression: buildCronExpressions(scheduleType, scheduleEntries).join(' | ') || undefined,
+      trigger: syncFrequency === 'once' ? 'manual' : 'cron',
+      cronExpression: cronExpr,
       mode: 'batch',
       cloudProviders: Array.from(new Set([activeSource.provider, activeDest.provider])),
       nodes,
       edges,
       lastRunAt: 'Pronto para execução',
-      nextRunAt: scheduleType === 'unica' ? 'Execução Manual Única' : formatScheduleSummary(scheduleType, scheduleEntries),
+      nextRunAt: nextRun,
       slaTarget: 99.9,
       actualSla: 100,
       recordsProcessedToday: 0,
@@ -620,9 +664,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       destinationConnectorName: activeDest.name,
       destinationType: activeDest.type,
       selectedTables,
-      syncFrequency: scheduleType,
-      scheduleEntries: scheduleType === 'unica' ? [] : scheduleEntries,
-      scheduleSummary: formatScheduleSummary(scheduleType, scheduleEntries),
+      syncFrequency,
+      executionTimes,
+      weeklyDays: syncFrequency === 'weekly' ? weeklyDays : undefined,
+      monthlyDay: syncFrequency === 'monthly' ? monthlyDay : undefined,
+      onceDate: syncFrequency === 'once' ? onceDate : undefined,
+      scheduleSummary,
       applyLgpdSanitization,
       status: 'active',
       pipelineId: newPipeId,
@@ -1572,120 +1619,339 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 </div>
               </div>
 
-              {/* Cadence & LGPD Settings */}
-              <div className="space-y-4 pt-2">
-                {/* Sync Frequency & Schedule Builder */}
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                  <label className="block text-xs font-bold text-slate-900 mb-2">
-                    Frequência e Sincronização
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                    {FREQUENCY_OPTIONS.map(freq => (
+              {/* Frequência de Sincronização e Horários de Execução */}
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-indigo-600" />
+                      <label className="text-sm font-bold text-slate-900">
+                        Frequência de Sincronização
+                      </label>
+                      <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-full">
+                        Multi-Horários
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Selecione a frequência e defina um ou múltiplos horários de disparo para o fluxo.
+                    </p>
+                  </div>
+
+                  {/* Human-readable Schedule Summary Badge */}
+                  <div className="text-xs bg-white border border-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-2 shrink-0">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span className="font-semibold text-slate-900 truncate max-w-sm">{getScheduleSummaryText()}</span>
+                  </div>
+                </div>
+
+                {/* 4 Frequency Options Grid: Diário, Semanal, Mensal, Carga única */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[
+                    {
+                      id: 'daily' as const,
+                      label: 'Diário',
+                      desc: 'Todos os dias da semana',
+                      icon: Calendar,
+                      badge: 'Recorrente'
+                    },
+                    {
+                      id: 'weekly' as const,
+                      label: 'Semanal',
+                      desc: 'Dias específicos da semana',
+                      icon: CalendarDays,
+                      badge: 'Dias selecionados'
+                    },
+                    {
+                      id: 'monthly' as const,
+                      label: 'Mensal',
+                      desc: 'Dia programado do mês',
+                      icon: CalendarRange,
+                      badge: 'Mensal'
+                    },
+                    {
+                      id: 'once' as const,
+                      label: 'Carga única',
+                      desc: 'Execução pontual única',
+                      icon: PlayCircle,
+                      badge: 'Sem repetição'
+                    }
+                  ].map(freq => {
+                    const isSelected = syncFrequency === freq.id;
+                    const Icon = freq.icon;
+                    return (
                       <button
                         key={freq.id}
                         type="button"
-                        onClick={() => handleSelectScheduleType(freq.id)}
-                        className={`p-2 rounded-lg border text-left cursor-pointer transition ${
-                          scheduleType === freq.id
-                            ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-slate-50'
+                        onClick={() => {
+                          setSyncFrequency(freq.id);
+                          setTimeError(null);
+                        }}
+                        className={`p-3.5 rounded-xl border text-left cursor-pointer transition flex flex-col justify-between ${
+                          isSelected
+                            ? 'border-indigo-600 bg-white ring-2 ring-indigo-500/20 shadow-xs'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <div className="flex items-center gap-1.5 text-xs">
-                          {freq.icon}
-                          <span className="truncate">{freq.label}</span>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                            isSelected ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                            isSelected 
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
+                          }`}>
+                            {freq.badge}
+                          </span>
+                        </div>
+                        <div>
+                          <div className={`text-sm font-bold ${isSelected ? 'text-indigo-900' : 'text-slate-900'}`}>
+                            {freq.label}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {freq.desc}
+                          </div>
                         </div>
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
+                </div>
 
-                  {scheduleType === 'unica' ? (
-                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-3 text-[11px] text-slate-500">
-                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      Esta integração será executada uma única vez, imediatamente após a criação, sem agendamento recorrente.
+                {/* Sub-config: Semanal (Dias da Semana) */}
+                {syncFrequency === 'weekly' && (
+                  <div className="p-3.5 bg-white rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Dias da Semana para Execução</span>
+                      </label>
+                      <span className="text-[11px] text-slate-500">
+                        {weeklyDays.length} {weeklyDays.length === 1 ? 'dia selecionado' : 'dias selecionados'}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {scheduleEntries.map(entry => (
-                        <div key={entry.id} className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
-                          {scheduleType === 'semanal' && (
-                            <select
-                              value={entry.dayOfWeek}
-                              onChange={(e) => handleUpdateScheduleEntry(entry.id, { dayOfWeek: e.target.value as WeekDay })}
-                              className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                            >
-                              {WEEKDAYS.map(d => (
-                                <option key={d.id} value={d.id}>{d.label}</option>
-                              ))}
-                            </select>
-                          )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {WEEKDAYS.map(day => {
+                        const isSelected = weeklyDays.includes(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() => handleToggleWeeklyDay(day.key)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                            }`}
+                            title={day.full}
+                          >
+                            <span>{day.label}</span>
+                            {isSelected && <Check className="w-3 h-3" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                          {scheduleType === 'mensal' && (
-                            <select
-                              value={entry.dayOfMonth}
-                              onChange={(e) => handleUpdateScheduleEntry(entry.id, { dayOfMonth: Number(e.target.value) })}
-                              className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                            >
-                              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                                <option key={d} value={d}>Dia {d}</option>
-                              ))}
-                            </select>
-                          )}
-
-                          <input
-                            type="time"
-                            value={entry.time}
-                            onChange={(e) => handleUpdateScheduleEntry(entry.id, { time: e.target.value })}
-                            className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                          />
-
-                          {scheduleEntries.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveScheduleEntry(entry.id)}
-                              className="ml-auto text-slate-400 hover:text-rose-600 cursor-pointer"
-                              title="Remover horário"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                {/* Sub-config: Mensal (Dia do Mês) */}
+                {syncFrequency === 'monthly' && (
+                  <div className="p-3.5 bg-white rounded-xl border border-slate-200">
+                    <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5 mb-2">
+                      <CalendarRange className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Dia do Mês para Execução</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {[1, 5, 10, 15, 20, 25, 28, 30].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setMonthlyDay(d)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            monthlyDay === d
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          Dia {d}
+                        </button>
                       ))}
+                      <div className="flex items-center gap-1.5 ml-2 text-xs text-slate-600">
+                        <span>Outro dia:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={monthlyDay}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (val >= 1 && val <= 31) setMonthlyDay(val);
+                          }}
+                          className="w-16 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg text-xs text-center font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
+                {/* Sub-config: Carga única (Data Agendada) */}
+                {syncFrequency === 'once' && (
+                  <div className="p-3.5 bg-white rounded-xl border border-slate-200">
+                    <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5 mb-2">
+                      <PlayCircle className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Data Agendada para a Carga Única</span>
+                    </label>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <input
+                        type="date"
+                        value={onceDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setOnceDate(e.target.value)}
+                        className="px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-fit"
+                      />
+                      <span className="text-xs text-slate-500">
+                        O pipeline será executado pontualmente na data definida nos horários configurados abaixo.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* HORÁRIOS DE EXECUÇÃO (Para qualquer frequência: permite definir um ou vários horários) */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-indigo-600" />
+                        <span>Horários de Execução</span>
+                        <span className="text-[11px] font-normal text-slate-500">
+                          ({executionTimes.length} {executionTimes.length === 1 ? 'horário ativo' : 'horários ativos'})
+                        </span>
+                      </label>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Defina um ou vários horários no dia para disparo automático.
+                      </p>
+                    </div>
+
+                    {/* Add Time Form */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={newTimeInput}
+                        onChange={(e) => setNewTimeInput(e.target.value)}
+                        className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
                       <button
                         type="button"
-                        onClick={handleAddScheduleEntry}
-                        className="px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer"
+                        onClick={() => handleAddExecutionTime()}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        <span>Adicionar horário</span>
+                        <span>Adicionar Horário</span>
                       </button>
                     </div>
+                  </div>
+
+                  {/* Time Error Alert */}
+                  {timeError && (
+                    <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span>{timeError}</span>
+                    </div>
                   )}
+
+                  {/* Configured Execution Times Pills */}
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Horários Configurados para Execução:
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {executionTimes.map(time => (
+                        <div
+                          key={time}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-950 shadow-2xs group"
+                        >
+                          <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                          <span className="font-mono text-sm">{time}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExecutionTime(time)}
+                            disabled={executionTimes.length <= 1}
+                            className={`text-slate-400 hover:text-rose-600 transition cursor-pointer p-0.5 rounded hover:bg-rose-50 ${
+                              executionTimes.length <= 1 ? 'opacity-30 cursor-not-allowed' : ''
+                            }`}
+                            title={executionTimes.length <= 1 ? 'Necessário manter ao menos um horário' : `Remover ${time}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quick Suggestions for Adding Common Times */}
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-slate-500 mr-1 font-medium">Atalhos de horários:</span>
+                    {[
+                      { time: '02:00', label: '02:00 (Madrugada)' },
+                      { time: '06:00', label: '06:00 (Alvorada)' },
+                      { time: '08:00', label: '08:00 (Início Expediente)' },
+                      { time: '12:00', label: '12:00 (Almoço)' },
+                      { time: '18:00', label: '18:00 (Fim Expediente)' },
+                      { time: '22:00', label: '22:00 (Fechamento)' }
+                    ].map(preset => {
+                      const isAdded = executionTimes.includes(preset.time);
+                      return (
+                        <button
+                          key={preset.time}
+                          type="button"
+                          onClick={() => {
+                            if (isAdded) {
+                              handleRemoveExecutionTime(preset.time);
+                            } else {
+                              handleAddExecutionTime(preset.time);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer flex items-center gap-1 ${
+                            isAdded
+                              ? 'bg-indigo-100 border-indigo-300 text-indigo-800 font-bold'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                          }`}
+                        >
+                          <span>{preset.label}</span>
+                          {isAdded ? (
+                            <Check className="w-3 h-3 text-indigo-600" />
+                          ) : (
+                            <Plus className="w-3 h-3 text-slate-400" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* LGPD Auto Sanitization */}
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        <span>Sanitização LGPD Automática</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={applyLgpdSanitization}
-                        onChange={(e) => setApplyLgpdSanitization(e.target.checked)}
-                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                      />
+                <div className="p-4 bg-white rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>Sanitização LGPD Automática (Art. 7º e 46)</span>
                     </div>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-500 max-w-2xl">
                       Insere automaticamente um nó de anonimização e mascaramento criptográfico (SHA-256) 
-                      para proteger CPFs, e-mails e telefones nas tabelas integradas, em conformidade com o Art. 7º e 46 da LGPD.
+                      para proteger CPFs, e-mails e telefones nas tabelas integradas.
                     </p>
                   </div>
-                  <div className="text-[11px] text-emerald-700 font-semibold mt-2">
-                    {applyLgpdSanitization ? '✓ Nó Sanitizador LGPD incluído na topologia' : '⚠ Nenhum mascaramento será aplicado'}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`text-[11px] font-semibold ${applyLgpdSanitization ? 'text-emerald-700' : 'text-slate-500'}`}>
+                      {applyLgpdSanitization ? '✓ Sanitização Ativa' : 'Desativada'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={applyLgpdSanitization}
+                      onChange={(e) => setApplyLgpdSanitization(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
                   </div>
                 </div>
               </div>
@@ -1899,7 +2165,18 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         <span>•</span>
                         <span>{int.selectedTables.length} tabelas ({int.selectedTables.join(', ')})</span>
                         <span>•</span>
-                        <span>{int.scheduleSummary}</span>
+                        <span className="inline-flex items-center gap-1 font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-md">
+                          <Clock className="w-3 h-3 text-indigo-600" />
+                          <span>
+                            {int.scheduleSummary 
+                              ? int.scheduleSummary 
+                              : (int.syncFrequency === 'daily' ? 'Diário' : int.syncFrequency === 'weekly' ? 'Semanal' : int.syncFrequency === 'monthly' ? 'Mensal' : int.syncFrequency === 'once' ? 'Carga única' : int.syncFrequency)
+                            }
+                          </span>
+                          {int.executionTimes && int.executionTimes.length > 0 && !int.scheduleSummary && (
+                            <span className="font-mono text-[11px] text-slate-600">({int.executionTimes.join(', ')})</span>
+                          )}
+                        </span>
                       </div>
                     </div>
 

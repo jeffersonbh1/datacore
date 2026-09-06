@@ -95,12 +95,30 @@ export const INITIAL_PIPELINES: Pipeline[] = [
           writeMode: 'merge_upsert'
         },
         metrics: { recordsIn: 1392040, recordsOut: 1392040, durationMs: 35 }
+      },
+      {
+        id: 'node-gold-kpi',
+        type: 'gold',
+        title: 'Camada Gold (Data Marts & KPIs)',
+        subtitle: 'gold_analytics.kpis_executivos_vendas',
+        provider: 'gcp',
+        iconName: 'Sparkles',
+        x: 1140,
+        y: 180,
+        status: 'success',
+        config: {
+          connector: 'BigQuery / dbt Gold Mart',
+          destinationTable: 'gold_analytics.kpis_executivos_vendas',
+          dbtMaterialization: 'table'
+        },
+        metrics: { recordsIn: 1392040, recordsOut: 48200, durationMs: 22 }
       }
     ],
     edges: [
       { id: 'e1', source: 'node-src-pg', target: 'node-raw-pg', animated: true },
       { id: 'e2', source: 'node-raw-pg', target: 'node-bronze-pg', animated: true },
-      { id: 'e3', source: 'node-bronze-pg', target: 'node-silver-bq', animated: true }
+      { id: 'e3', source: 'node-bronze-pg', target: 'node-silver-bq', animated: true },
+      { id: 'e4', source: 'node-silver-bq', target: 'node-gold-kpi', animated: true }
     ]
   },
   {
@@ -324,6 +342,7 @@ export const AVAILABLE_OPERATORS = [
   { id: 'op-raw', name: 'Raw Data (Landing Zone)', type: 'raw_data', description: 'Armazenamento bruto imutável em Parquet/JSON com metadados CDC', icon: 'FolderArchive' },
   { id: 'op-bronze', name: 'Camada Bronze (Validação/LGPD)', type: 'bronze', description: 'Validação de schema, deduplicação e anonimização/cifragem de PII', icon: 'ShieldCheck' },
   { id: 'op-silver', name: 'Camada Silver (Curadoria DW)', type: 'silver', description: 'Dados estruturados e enriquecidos prontos para analytics e BI', icon: 'Boxes' },
+  { id: 'op-gold', name: 'Camada Gold (Data Marts & KPIs)', type: 'gold', description: 'Agregações de negócio, métricas executivas e modelos analíticos estrela', icon: 'Sparkles' },
   { id: 'op-filter', name: 'Filtro Condicional', type: 'filter', description: 'Remove registros baseados em cláusulas SQL ou predicados', icon: 'Filter' },
   { id: 'op-lgpd', name: 'Sanitizador LGPD (PII)', type: 'lgpd_mask', description: 'Anonimização, Hash SHA-256 ou Tokenização de dados sensíveis', icon: 'ShieldCheck' },
   { id: 'op-transform', name: 'Transformação SQL / Spark', type: 'transform', description: 'Mapeamento de colunas, expressões matemáticas e junções', icon: 'Cpu' },
@@ -927,9 +946,9 @@ export const INITIAL_INTEGRATIONS: AutoIntegration[] = [
     destinationConnectorName: 'Google BigQuery Analytics Datalake',
     destinationType: 'bigquery',
     selectedTables: ['clientes', 'pedidos', 'pagamentos_cartao'],
-    syncFrequency: 'diaria',
-    scheduleEntries: [{ id: 'sched-seed-1', time: '03:00' }],
-    scheduleSummary: 'Diária • 03:00',
+    syncFrequency: 'daily',
+    executionTimes: ['02:00', '14:00'],
+    scheduleSummary: 'Diário às 02:00 e 14:00',
     applyLgpdSanitization: true,
     status: 'active',
     pipelineId: 'pipe-ecommerce-bq',

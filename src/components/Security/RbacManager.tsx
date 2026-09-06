@@ -11,13 +11,15 @@ interface RbacManagerProps {
   onUpdateUserRole: (userId: string, newRole: UserRole) => void;
   onToggleUserRawPII: (userId: string) => void;
   canManageUsers: boolean;
+  onNavigateToCadastro?: () => void;
 }
 
 export const RbacManager: React.FC<RbacManagerProps> = ({
   users,
   onUpdateUserRole,
   onToggleUserRawPII,
-  canManageUsers
+  canManageUsers,
+  onNavigateToCadastro
 }) => {
   const [activeTab, setActiveTab] = useState<'matrix' | 'users' | 'policies'>('matrix');
   const [rolePermissions, setRolePermissions] = useState<Record<string, RolePermissions>>(ROLE_DEFINITIONS);
@@ -191,6 +193,16 @@ export const RbacManager: React.FC<RbacManagerProps> = ({
                 className="w-full bg-transparent focus:outline-none text-slate-800 placeholder-slate-400"
               />
             </div>
+            {onNavigateToCadastro && (
+              <button
+                type="button"
+                onClick={onNavigateToCadastro}
+                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Novo Usuário (tabela usuarios)</span>
+              </button>
+            )}
           </div>
 
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
