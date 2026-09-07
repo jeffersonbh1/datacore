@@ -751,8 +751,10 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         </div>
       </div>
 
-      {/* Right-hand Node Inspector & Config Drawer */}
-      {selectedNode && (
+      {/* Right-hand Node Inspector & Config Drawer.
+          Nós das camadas Bronze, Silver e Gold não exibem este painel de configuração:
+          ao serem clicados abrem diretamente o Editor/Visualizador dbt SQL. */}
+      {selectedNode && !isMedallionDbtNode(selectedNode) && (
         <div id="node-config-drawer" className="absolute right-0 top-14 bottom-0 w-80 sm:w-96 bg-white border-l border-slate-200 p-5 overflow-y-auto shadow-2xl z-20 flex flex-col">
           <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
             <div className="flex items-center gap-2">
