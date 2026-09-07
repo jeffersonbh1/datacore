@@ -170,7 +170,26 @@ export interface RolePermissions {
   };
 }
 
-export type SourceType = 'postgresql' | 'mysql' | 'mongodb' | 'kafka' | 'salesforce' | 's3' | 'oracle' | 'rest_api' | 'sqlserver';
+export type SourceType = 'postgresql' | 'postgres' | 'mysql' | 'mongodb' | 'kafka' | 'salesforce' | 's3' | 'oracle' | 'rest_api' | 'sqlserver' | 'faker' | 'google-sheets';
+
+export type ConnectorFieldType = 'text' | 'number' | 'password' | 'textarea' | 'checkbox';
+
+export interface ConnectorField {
+  key: string;
+  label: string;
+  type: ConnectorFieldType;
+  required?: boolean;
+  placeholder?: string;
+  defaultValue?: string | number | boolean;
+}
+
+export interface SourceCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+  airbyteSourceType: string;
+  fields: ConnectorField[];
+}
 
 export interface DiscoveredTable {
   name: string;

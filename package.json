@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "server:dev": "tsx watch server/index.ts",
+    "server:typecheck": "tsc --noEmit -p server/tsconfig.json",
+    "server:build": "esbuild server/index.ts --bundle --platform=node --format=esm --outfile=server/dist/index.mjs --packages=external",
+    "server:start": "node server/dist/index.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -16,6 +20,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
@@ -26,6 +31,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

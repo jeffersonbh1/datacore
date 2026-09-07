@@ -1,17 +1,18 @@
-import React, { useState } from 'react';
-import { 
-  Wand2, Database, Server, Layers, Check, ArrowRight, ArrowLeft, 
-  Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle, 
+import React, { useEffect, useState } from 'react';
+import {
+  Wand2, Database, Server, Layers, Check, ArrowRight, ArrowLeft,
+  Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle,
   Lock, Unlock, Key, Network, Eye, ExternalLink, Plus, Trash2,
   HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight,
   FolderArchive, Boxes, Clock, Calendar, CalendarDays, CalendarRange,
   PlayCircle, X
 } from 'lucide-react';
-import { 
-  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, 
+import {
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
   SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
-  DiscoveredTable, SyncFrequencyOption
+  DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry
 } from '../../types';
+import { createAirbyteSource, createBigQueryDestination, fetchSourceCatalog } from '../../lib/airbyteGateway';
 
 interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
@@ -43,10 +44,32 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   const [sourceMode, setSourceMode] = useState<'new' | 'existing'>('new');
   const [selectedSourceId, setSelectedSourceId] = useState<string>(sources[0]?.id || '');
-  
+
+  // Real connector catalog (fetched from the Airbyte Gateway backend)
+  const [sourceCatalog, setSourceCatalog] = useState<SourceCatalogEntry[]>([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSourceCatalog()
+      .then(catalog => {
+        if (cancelled) return;
+        setSourceCatalog(catalog);
+        if (catalog[0]) setSourceType(catalog[0].id as SourceType);
+      })
+      .catch(err => {
+        if (!cancelled) setCatalogError(err instanceof Error ? err.message : 'Falha ao carregar conectores.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCatalog(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // New source form fields
   const [sourceName, setSourceName] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('postgresql');
+  const [sourceType, setSourceType] = useState<SourceType>('postgres');
   const [sourceHost, setSourceHost] = useState('db-oltp.production.aws.com');
   const [sourcePort, setSourcePort] = useState<number | string>(5432);
   const [sourceDatabase, setSourceDatabase] = useState('vendas_corp');
@@ -55,6 +78,17 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [sourceSchema, setSourceSchema] = useState('public');
   const [sourceSsl, setSourceSsl] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Faker connector fields
+  const [fakerCount, setFakerCount] = useState<number>(1000);
+  const [fakerSeed, setFakerSeed] = useState<number>(0);
+
+  // Google Sheets connector fields
+  const [sheetsSpreadsheetId, setSheetsSpreadsheetId] = useState('');
+  const [sheetsServiceAccountJson, setSheetsServiceAccountJson] = useState('');
+
+  // Real Airbyte source created for this wizard run (set after a successful test/creation)
+  const [airbyteSourceId, setAirbyteSourceId] = useState<string | null>(null);
 
   // Source test status & schema discovery
   const [isTestingSource, setIsTestingSource] = useState(false);
@@ -106,7 +140,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [destName, setDestName] = useState('');
   const [destType, setDestType] = useState<DestinationType>('bigquery');
   const [destAccountOrProject, setDestAccountOrProject] = useState('corp-datalake-prod-3891');
-  const [destWarehouseOrCluster, setDestWarehouseOrCluster] = useState('US-MULTIREGION');
+  const [destWarehouseOrCluster, setDestWarehouseOrCluster] = useState('US');
   const [destDatabaseOrDataset, setDestDatabaseOrDataset] = useState('analytics_curated');
   const [destSchema, setDestSchema] = useState('public');
   const [destAuthMethod, setDestAuthMethod] = useState<'service_account' | 'key_pair' | 'user_pass' | 'iam_role'>('service_account');
@@ -221,15 +255,22 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // Form error notification
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Real-backend submission state for Steps 1 & 2
+  const [isSubmittingStep1, setIsSubmittingStep1] = useState(false);
+  const [isSubmittingStep2, setIsSubmittingStep2] = useState(false);
+  const [airbyteDestinationId, setAirbyteDestinationId] = useState<string | null>(null);
+
   // Default provider mapping
   const getProviderForSource = (type: SourceType): CloudProvider => {
     switch (type) {
-      case 'postgresql': return 'aws';
+      case 'postgresql': case 'postgres': return 'aws';
       case 'mysql': return 'gcp';
       case 's3': return 'aws';
       case 'kafka': return 'generic';
       case 'salesforce': return 'generic';
       case 'oracle': return 'generic';
+      case 'faker': return 'generic';
+      case 'google-sheets': return 'gcp';
       default: return 'generic';
     }
   };
@@ -246,17 +287,58 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
   };
 
-  // Test source connection simulator
-  const handleTestSource = () => {
+  // Builds the Airbyte-shaped config payload for the currently selected connector type
+  const buildSourceConfigForCurrentType = (): Record<string, unknown> => {
+    switch (sourceType) {
+      case 'postgres':
+        return {
+          host: sourceHost.trim(),
+          port: sourcePort,
+          database: sourceDatabase.trim(),
+          username: sourceUsername.trim(),
+          password: sourcePassword,
+          schema: sourceSchema.trim(),
+          ssl: sourceSsl,
+        };
+      case 'mysql':
+        return {
+          host: sourceHost.trim(),
+          port: sourcePort,
+          database: sourceDatabase.trim(),
+          username: sourceUsername.trim(),
+          password: sourcePassword,
+          ssl: sourceSsl,
+        };
+      case 'faker':
+        return { count: fakerCount, seed: fakerSeed };
+      case 'google-sheets':
+        return { spreadsheetId: sheetsSpreadsheetId.trim(), serviceAccountJson: sheetsServiceAccountJson };
+      default:
+        return {};
+    }
+  };
+
+  // Test source connection: creates (and validates) a real source in Airbyte
+  const handleTestSource = async () => {
     setIsTestingSource(true);
     setSourceTestSuccess(null);
     setSourceTestMessage('');
 
-    setTimeout(() => {
-      setIsTestingSource(false);
+    try {
+      const created = await createAirbyteSource({
+        name: sourceName.trim() || 'Nova Origem DataCore',
+        catalogId: sourceType,
+        config: buildSourceConfigForCurrentType(),
+      });
+      setAirbyteSourceId(created.sourceId);
       setSourceTestSuccess(true);
-      setSourceTestMessage('Conexão estabelecida com sucesso! Latência: 24ms. 5 tabelas descobertas.');
-    }, 800);
+      setSourceTestMessage(`Conexão real estabelecida no Airbyte! Source ID: ${created.sourceId}`);
+    } catch (err) {
+      setSourceTestSuccess(false);
+      setSourceTestMessage(err instanceof Error ? err.message : 'Falha ao conectar no Airbyte.');
+    } finally {
+      setIsTestingSource(false);
+    }
   };
 
   // Test destination connection simulator
@@ -275,30 +357,25 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // Quick connector selection helpers
   const handleSelectSourceType = (type: SourceType) => {
     setSourceType(type);
-    if (!sourceName || sourceName.includes('PostgreSQL') || sourceName.includes('MySQL') || sourceName.includes('Salesforce') || sourceName.includes('Kafka') || sourceName.includes('MongoDB') || sourceName.includes('Amazon S3')) {
-      const defaultNames: Record<SourceType, string> = {
-        postgresql: 'PostgreSQL Vendas OLTP',
+    setAirbyteSourceId(null);
+    setSourceTestSuccess(null);
+    setSourceTestMessage('');
+
+    if (!sourceName || sourceName.includes('PostgreSQL') || sourceName.includes('MySQL') || sourceName.includes('Faker') || sourceName.includes('Google Sheets')) {
+      const defaultNames: Partial<Record<SourceType, string>> = {
+        postgres: 'PostgreSQL Vendas Produção',
         mysql: 'MySQL Produção E-commerce',
-        mongodb: 'MongoDB Logs & Documentos',
-        kafka: 'Apache Kafka Eventos Stream',
-        salesforce: 'Salesforce CRM Clientes',
-        s3: 'Amazon S3 Bucket Lake Ingest',
-        oracle: 'Oracle ERP Financeiro',
-        rest_api: 'REST API Webhook Ingest',
-        sqlserver: 'SQL Server Corporativo'
+        faker: 'Faker Dados de Teste',
+        'google-sheets': 'Google Sheets Planilha',
       };
       setSourceName(defaultNames[type] || 'Nova Origem');
     }
 
     // Adjust default ports
     switch (type) {
-      case 'postgresql': setSourcePort(5432); break;
+      case 'postgres': setSourcePort(5432); break;
       case 'mysql': setSourcePort(3306); break;
-      case 'mongodb': setSourcePort(27017); break;
-      case 'kafka': setSourcePort(9092); break;
-      case 'oracle': setSourcePort(1521); break;
-      case 'salesforce': case 's3': case 'rest_api': setSourcePort(443); break;
-      default: setSourcePort(5432);
+      default: break;
     }
   };
 
@@ -353,50 +430,86 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setNewCustomTable('');
   };
 
-  // Step 1 Validation & Next
-  const handleAdvanceFromStep1 = () => {
-    setErrorMessage(null);
-    if (sourceMode === 'new') {
-      if (!sourceName.trim()) {
-        setErrorMessage('Por favor, informe o Nome da Origem antes de avançar.');
-        return;
-      }
+  // Step 1 field validation (varies by connector type — Faker/Google Sheets don't use host/database)
+  const validateStep1Fields = (): string | null => {
+    if (!sourceName.trim()) return 'Por favor, informe o Nome da Origem antes de avançar.';
+
+    if (sourceType === 'postgres' || sourceType === 'mysql') {
       if (!sourceHost.trim() || !sourceDatabase.trim()) {
-        setErrorMessage('Por favor, informe o Host e Banco/Schema da Origem.');
+        return 'Por favor, informe o Host e Banco/Schema da Origem.';
+      }
+    } else if (sourceType === 'faker') {
+      if (!fakerCount || fakerCount <= 0) {
+        return 'Informe uma quantidade de registros válida para o conector Faker.';
+      }
+    } else if (sourceType === 'google-sheets') {
+      if (!sheetsSpreadsheetId.trim() || !sheetsServiceAccountJson.trim()) {
+        return 'Informe o ID da planilha e as credenciais de Service Account.';
+      }
+    }
+    return null;
+  };
+
+  // Step 1 Validation & Next: creates the real Airbyte source (reusing one from "Testar Conexão" if already created)
+  const handleAdvanceFromStep1 = async () => {
+    setErrorMessage(null);
+
+    if (sourceMode === 'new') {
+      const validationError = validateStep1Fields();
+      if (validationError) {
+        setErrorMessage(validationError);
         return;
       }
-      // Save new source to state
-      const newSourceConfig: SourceConnectorConfig = {
-        id: `src-${Date.now()}`,
-        name: sourceName.trim(),
-        type: sourceType,
-        provider: getProviderForSource(sourceType),
-        host: sourceHost.trim(),
-        port: sourcePort,
-        database: sourceDatabase.trim(),
-        username: sourceUsername.trim(),
-        password: sourcePassword,
-        schema: sourceSchema.trim(),
-        ssl: sourceSsl,
-        discoveredTables,
-        status: 'connected',
-        lastTestedAt: 'Agora',
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      onAddSource(newSourceConfig);
-      setSelectedSourceId(newSourceConfig.id);
+
+      setIsSubmittingStep1(true);
+      try {
+        let realSourceId = airbyteSourceId;
+        if (!realSourceId) {
+          const created = await createAirbyteSource({
+            name: sourceName.trim(),
+            catalogId: sourceType,
+            config: buildSourceConfigForCurrentType(),
+          });
+          realSourceId = created.sourceId;
+          setAirbyteSourceId(realSourceId);
+        }
+
+        const newSourceConfig: SourceConnectorConfig = {
+          id: realSourceId,
+          name: sourceName.trim(),
+          type: sourceType,
+          provider: getProviderForSource(sourceType),
+          host: sourceHost.trim(),
+          port: sourcePort,
+          database: sourceDatabase.trim(),
+          username: sourceUsername.trim(),
+          password: sourcePassword,
+          schema: sourceSchema.trim(),
+          ssl: sourceSsl,
+          discoveredTables,
+          status: 'connected',
+          lastTestedAt: 'Agora',
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        onAddSource(newSourceConfig);
+        setSelectedSourceId(newSourceConfig.id);
+        setWizardStep(2);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Falha ao criar a origem no Airbyte.');
+      } finally {
+        setIsSubmittingStep1(false);
+      }
     } else {
       if (!selectedSourceId) {
         setErrorMessage('Selecione uma Origem já cadastrada.');
         return;
       }
+      setWizardStep(2);
     }
-
-    setWizardStep(2);
   };
 
-  // Step 2 Validation & Next
-  const handleAdvanceFromStep2 = () => {
+  // Step 2 Validation & Next: for BigQuery, creates the real destination in Airbyte
+  const handleAdvanceFromStep2 = async () => {
     setErrorMessage(null);
     if (destMode === 'new') {
       if (!destName.trim()) {
@@ -407,25 +520,48 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         setErrorMessage('Por favor, informe o Projeto/Account e Database/Dataset do Destino.');
         return;
       }
-      // Save new destination to state
-      const newDestConfig: DestinationConnectorConfig = {
-        id: `dest-${Date.now()}`,
-        name: destName.trim(),
-        type: destType,
-        provider: getProviderForDest(destType),
-        accountOrProject: destAccountOrProject.trim(),
-        warehouseOrCluster: destWarehouseOrCluster.trim(),
-        databaseOrDataset: destDatabaseOrDataset.trim(),
-        schema: destSchema.trim(),
-        authMethod: destAuthMethod,
-        credentials: destCredentials,
-        writeMode: destWriteMode,
-        status: 'connected',
-        lastTestedAt: 'Agora',
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      onAddDestination(newDestConfig);
-      setSelectedDestId(newDestConfig.id);
+
+      setIsSubmittingStep2(true);
+      try {
+        let realDestinationId = airbyteDestinationId;
+        if (destType === 'bigquery' && !realDestinationId) {
+          const created = await createBigQueryDestination({
+            name: destName.trim(),
+            config: {
+              projectId: destAccountOrProject.trim(),
+              datasetId: destDatabaseOrDataset.trim(),
+              datasetLocation: destWarehouseOrCluster.trim() || undefined,
+              credentialsJson: destCredentials,
+            },
+          });
+          realDestinationId = created.destinationId;
+          setAirbyteDestinationId(realDestinationId);
+        }
+
+        const newDestConfig: DestinationConnectorConfig = {
+          id: realDestinationId || `dest-${Date.now()}`,
+          name: destName.trim(),
+          type: destType,
+          provider: getProviderForDest(destType),
+          accountOrProject: destAccountOrProject.trim(),
+          warehouseOrCluster: destWarehouseOrCluster.trim(),
+          databaseOrDataset: destDatabaseOrDataset.trim(),
+          schema: destSchema.trim(),
+          authMethod: destAuthMethod,
+          credentials: destCredentials,
+          writeMode: destWriteMode,
+          status: 'connected',
+          lastTestedAt: 'Agora',
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        onAddDestination(newDestConfig);
+        setSelectedDestId(newDestConfig.id);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Falha ao criar o destino no Airbyte.');
+        setIsSubmittingStep2(false);
+        return;
+      }
+      setIsSubmittingStep2(false);
     } else {
       if (!selectedDestId) {
         setErrorMessage('Selecione um Destino já cadastrado.');
@@ -435,11 +571,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
     // Auto generate integration name suggestion if empty
     if (!integrationName) {
-      const activeSrc = sourceMode === 'new' 
-        ? sourceName 
+      const activeSrc = sourceMode === 'new'
+        ? sourceName
         : sources.find(s => s.id === selectedSourceId)?.name || 'Origem';
-      const activeDst = destMode === 'new' 
-        ? destName 
+      const activeDst = destMode === 'new'
+        ? destName
         : destinations.find(d => d.id === selectedDestId)?.name || 'Destino';
       setIntegrationName(`Integração Automática ${activeSrc} ➔ ${activeDst}`);
     }
@@ -942,175 +1078,250 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Connector Type Selector */}
+                  {/* Connector Type Selector — driven by the Airbyte Gateway's curated catalog */}
                   <div>
                     <label className="block text-xs font-bold text-slate-900 mb-2">
                       Selecione o Tipo de Conector de Origem <span className="text-rose-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                      {[
-                        { type: 'postgresql' as SourceType, name: 'PostgreSQL', desc: 'RDS / Cloud SQL' },
-                        { type: 'mysql' as SourceType, name: 'MySQL', desc: 'Aurora / Relational' },
-                        { type: 'mongodb' as SourceType, name: 'MongoDB', desc: 'Atlas / Document' },
-                        { type: 'kafka' as SourceType, name: 'Apache Kafka', desc: 'Event Streaming' },
-                        { type: 'salesforce' as SourceType, name: 'Salesforce', desc: 'CRM Cloud REST' },
-                        { type: 's3' as SourceType, name: 'Amazon S3', desc: 'Parquet / CSV Lake' },
-                        { type: 'oracle' as SourceType, name: 'Oracle DB', desc: 'Enterprise ERP' },
-                        { type: 'sqlserver' as SourceType, name: 'SQL Server', desc: 'Microsoft MS SQL' },
-                        { type: 'rest_api' as SourceType, name: 'REST Webhook', desc: 'HTTP Ingestion' }
-                      ].map(item => {
-                        const isChosen = sourceType === item.type;
-                        return (
-                          <button
-                            key={item.type}
-                            type="button"
-                            onClick={() => handleSelectSourceType(item.type)}
-                            className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                              isChosen 
-                                ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-500/20 shadow-xs' 
-                                : 'border-slate-200 hover:border-slate-300 bg-white'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="font-bold text-xs text-slate-900">{item.name}</span>
-                              {isChosen && <Check className="w-3.5 h-3.5 text-indigo-600" />}
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">{item.desc}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
+
+                    {isLoadingCatalog && (
+                      <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Carregando conectores disponíveis no Airbyte...</span>
+                      </div>
+                    )}
+
+                    {catalogError && (
+                      <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{catalogError}</span>
+                      </div>
+                    )}
+
+                    {!isLoadingCatalog && !catalogError && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {sourceCatalog.map(entry => {
+                          const isChosen = sourceType === entry.id;
+                          return (
+                            <button
+                              key={entry.id}
+                              type="button"
+                              onClick={() => handleSelectSourceType(entry.id as SourceType)}
+                              className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                                isChosen
+                                  ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-500/20 shadow-xs'
+                                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold text-xs text-slate-900">{entry.label}</span>
+                                {isChosen && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate">{entry.description}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Connection Parameters Grid */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-400">
-                      Parâmetros de Conexão da Origem
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Host / Endpoint / URL do Servidor <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={sourceHost}
-                          onChange={(e) => setSourceHost(e.target.value)}
-                          placeholder="db-sales.prod.us-east-1.rds.amazonaws.com"
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Porta <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          value={sourcePort}
-                          onChange={(e) => setSourcePort(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Banco de Dados / Schema <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={sourceDatabase}
-                          onChange={(e) => setSourceDatabase(e.target.value)}
-                          placeholder="vendas_corp"
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Usuário de Serviço (Read-Only) <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={sourceUsername}
-                          onChange={(e) => setSourceUsername(e.target.value)}
-                          placeholder="etl_user"
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Senha / Token de Acesso
-                        </label>
-                        <div className="relative">
+                  {/* Connection Parameters — PostgreSQL / MySQL */}
+                  {(sourceType === 'postgres' || sourceType === 'mysql') && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-400">
+                        Parâmetros de Conexão da Origem
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Host / Endpoint / URL do Servidor <span className="text-rose-500">*</span>
+                          </label>
                           <input
-                            type={showPassword ? 'text' : 'password'}
-                            value={sourcePassword}
-                            onChange={(e) => setSourcePassword(e.target.value)}
-                            placeholder="••••••••••••"
-                            className="w-full pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                            type="text"
+                            value={sourceHost}
+                            onChange={(e) => setSourceHost(e.target.value)}
+                            placeholder="db-sales.prod.us-east-1.rds.amazonaws.com"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
-                          >
-                            {showPassword ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                          </button>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* SSL / TLS Toggle */}
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
                         <div>
-                          <div className="text-xs font-bold text-slate-900">Conexão Criptografada SSL / TLS (Recomendado)</div>
-                          <div className="text-[11px] text-slate-500">Exigir handshake com certificados corporativos</div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Porta <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={sourcePort}
+                            onChange={(e) => setSourcePort(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Banco de Dados / Schema <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={sourceDatabase}
+                            onChange={(e) => setSourceDatabase(e.target.value)}
+                            placeholder="vendas_corp"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Usuário de Serviço (Read-Only) <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={sourceUsername}
+                            onChange={(e) => setSourceUsername(e.target.value)}
+                            placeholder="etl_user"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Senha / Token de Acesso
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={sourcePassword}
+                              onChange={(e) => setSourcePassword(e.target.value)}
+                              placeholder="••••••••••••"
+                              className="w-full pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                            >
+                              {showPassword ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={sourceSsl}
-                        onChange={(e) => setSourceSsl(e.target.checked)}
-                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                      />
-                    </div>
 
-                    {/* Test Connection Button & Feedback */}
-                    <div className="pt-2 flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleTestSource}
-                        disabled={isTestingSource}
-                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-                      >
-                        {isTestingSource ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Testando Conexão...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Testar Conexão & Descobrir Schemas</span>
-                          </>
-                        )}
-                      </button>
-
-                      {sourceTestSuccess !== null && (
-                        <div className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
-                          sourceTestSuccess 
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-                            : 'bg-rose-50 text-rose-800 border border-rose-200'
-                        }`}>
-                          {sourceTestSuccess ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
-                          <span>{sourceTestMessage}</span>
+                      {/* SSL / TLS Toggle */}
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">Conexão Criptografada SSL / TLS (Recomendado)</div>
+                            <div className="text-[11px] text-slate-500">Exigir handshake com certificados corporativos</div>
+                          </div>
                         </div>
-                      )}
+                        <input
+                          type="checkbox"
+                          checked={sourceSsl}
+                          onChange={(e) => setSourceSsl(e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
                     </div>
+                  )}
+
+                  {/* Connection Parameters — Faker */}
+                  {sourceType === 'faker' && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-400">
+                        Parâmetros do Conector Faker
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Quantidade de Registros <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={fakerCount}
+                            onChange={(e) => setFakerCount(Number(e.target.value))}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Seed (opcional)
+                          </label>
+                          <input
+                            type="number"
+                            value={fakerSeed}
+                            onChange={(e) => setFakerSeed(Number(e.target.value))}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Connection Parameters — Google Sheets */}
+                  {sourceType === 'google-sheets' && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-400">
+                        Parâmetros do Conector Google Sheets
+                      </h3>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          ID ou URL da Planilha <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={sheetsSpreadsheetId}
+                          onChange={(e) => setSheetsSpreadsheetId(e.target.value)}
+                          placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Credenciais (Service Account JSON) <span className="text-rose-500">*</span>
+                        </label>
+                        <textarea
+                          value={sheetsServiceAccountJson}
+                          onChange={(e) => setSheetsServiceAccountJson(e.target.value)}
+                          rows={5}
+                          placeholder='{"type": "service_account", "project_id": "..."}'
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test Connection Button & Feedback */}
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleTestSource}
+                      disabled={isTestingSource}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestingSource ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Conectando ao Airbyte...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Testar Conexão & Criar no Airbyte</span>
+                        </>
+                      )}
+                    </button>
+
+                    {sourceTestSuccess !== null && (
+                      <div className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                        sourceTestSuccess
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-800 border border-rose-200'
+                      }`}>
+                        {sourceTestSuccess ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+                        <span>{sourceTestMessage}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1123,10 +1334,20 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 <button
                   type="button"
                   onClick={handleAdvanceFromStep1}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-xs"
+                  disabled={isSubmittingStep1}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  <span>Avançar para Destino</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmittingStep1 ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Criando no Airbyte...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Avançar para Destino</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1410,10 +1631,20 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 <button
                   type="button"
                   onClick={handleAdvanceFromStep2}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-xs"
+                  disabled={isSubmittingStep2}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  <span>Avançar para Integração</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmittingStep2 ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Criando no Airbyte...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Avançar para Integração</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
