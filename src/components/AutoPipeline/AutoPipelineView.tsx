@@ -144,7 +144,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [destDatabaseOrDataset, setDestDatabaseOrDataset] = useState('analytics_curated');
   const [destSchema, setDestSchema] = useState('public');
   const [destAuthMethod, setDestAuthMethod] = useState<'service_account' | 'key_pair' | 'user_pass' | 'iam_role'>('service_account');
-  const [destCredentials, setDestCredentials] = useState('{"type": "service_account", "project_id": "corp-datalake-prod-3891"}');
+  const [destCredentials, setDestCredentials] = useState('');
+  const [destCredentialsFileName, setDestCredentialsFileName] = useState<string | null>(null);
   const [destWriteMode, setDestWriteMode] = useState<'append' | 'merge_upsert' | 'overwrite'>('merge_upsert');
 
   // Destination test status
@@ -381,6 +382,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   const handleSelectDestType = (type: DestinationType) => {
     setDestType(type);
+    setAirbyteDestinationId(null);
+    setDestCredentials('');
+    setDestCredentialsFileName(null);
     if (!destName || destName.includes('BigQuery') || destName.includes('Snowflake') || destName.includes('Redshift') || destName.includes('Databricks') || destName.includes('Lakehouse')) {
       const defaultNames: Record<DestinationType, string> = {
         bigquery: 'Google BigQuery Analytics Datalake',
@@ -393,6 +397,28 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       };
       setDestName(defaultNames[type] || 'Novo Destino');
     }
+  };
+
+  // Reads a GCP Service Account JSON key file and extracts what's needed for the BigQuery destination
+  const handleCredentialsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      try {
+        const parsed = JSON.parse(text);
+        setDestCredentials(text);
+        setDestCredentialsFileName(file.name);
+        if (parsed.project_id) setDestAccountOrProject(parsed.project_id);
+        setErrorMessage(null);
+      } catch {
+        setDestCredentialsFileName(null);
+        setErrorMessage('O arquivo selecionado não é um JSON válido de chave de Service Account.');
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Toggle table selection
@@ -518,6 +544,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       }
       if (!destAccountOrProject.trim() || !destDatabaseOrDataset.trim()) {
         setErrorMessage('Por favor, informe o Projeto/Account e Database/Dataset do Destino.');
+        return;
+      }
+      if (destType === 'bigquery' && !destCredentials.trim()) {
+        setErrorMessage('Faça upload do arquivo JSON da chave da Service Account do BigQuery.');
         return;
       }
 
@@ -1552,6 +1582,29 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                           <option value="user_pass">Usuário & Senha Convencional</option>
                         </select>
                       </div>
+
+                      {destType === 'bigquery' && (
+                        <div className="sm:col-span-3">
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Credenciais (Arquivo JSON da Service Account) <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="file"
+                            accept="application/json,.json"
+                            onChange={handleCredentialsFileChange}
+                            className="w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-slate-900 file:text-white file:text-xs file:font-semibold file:cursor-pointer cursor-pointer"
+                          />
+                          {destCredentialsFileName && (
+                            <p className="text-[11px] text-emerald-600 mt-1.5 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Carregado: {destCredentialsFileName} (Projeto GCP detectado: {destAccountOrProject})</span>
+                            </p>
+                          )}
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Faça upload da chave JSON da Service Account gerada no GCP (IAM &amp; Admin → Contas de Serviço → Chaves). O Projeto GCP acima é preenchido automaticamente a partir do arquivo.
+                          </p>
+                        </div>
+                      )}
 
                       <div className="sm:col-span-2">
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
