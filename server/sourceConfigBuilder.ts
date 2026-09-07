@@ -11,6 +11,7 @@ export function buildSourceConfiguration(sourceType: string, config: Record<stri
         schemas: [String(config.schema || 'public')],
         ssl_mode: { mode: config.ssl ? 'require' : 'disable' },
         tunnel_method: { tunnel_method: 'NO_TUNNEL' },
+        replication_method: { method: 'Standard' },
       };
     case 'mysql':
       return {
@@ -22,6 +23,7 @@ export function buildSourceConfiguration(sourceType: string, config: Record<stri
         password: config.password,
         ssl_mode: { mode: config.ssl ? 'preferred' : 'disabled' },
         tunnel_method: { tunnel_method: 'NO_TUNNEL' },
+        replication_method: { method: 'STANDARD' },
       };
     case 'faker':
       return {
