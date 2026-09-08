@@ -60,7 +60,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [hasFetchedExistingSources, setHasFetchedExistingSources] = useState(false);
 
   useEffect(() => {
-    if (sourceMode !== 'existing' || hasFetchedExistingSources) return;
+    if (hasFetchedExistingSources) return;
 
     let cancelled = false;
     setIsLoadingExistingSources(true);
@@ -82,7 +82,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       });
 
     return () => { cancelled = true; };
-  }, [sourceMode, hasFetchedExistingSources]);
+  }, [hasFetchedExistingSources]);
 
   // Maps a real Airbyte source (arbitrary per-type configuration) into the local
   // SourceConnectorConfig shape used elsewhere in the wizard/app.
@@ -218,7 +218,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [hasFetchedExistingDestinations, setHasFetchedExistingDestinations] = useState(false);
 
   useEffect(() => {
-    if (destMode !== 'existing' || hasFetchedExistingDestinations) return;
+    if (hasFetchedExistingDestinations) return;
 
     let cancelled = false;
     setIsLoadingExistingDestinations(true);
@@ -240,7 +240,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       });
 
     return () => { cancelled = true; };
-  }, [destMode, hasFetchedExistingDestinations]);
+  }, [hasFetchedExistingDestinations]);
 
   // Maps a real Airbyte destination into the local DestinationConnectorConfig shape
   const mapAirbyteDestinationToConnectorConfig = (dst: AirbyteDestination): DestinationConnectorConfig => {
