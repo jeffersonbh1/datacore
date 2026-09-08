@@ -48,3 +48,12 @@ sourcesRouter.post('/', async (req, res) => {
     handleAirbyteError(res, err);
   }
 });
+
+sourcesRouter.delete('/:sourceId', async (req, res) => {
+  try {
+    await airbyteFetch(`/sources/${req.params.sourceId}`, { method: 'DELETE' });
+    res.status(204).send();
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});

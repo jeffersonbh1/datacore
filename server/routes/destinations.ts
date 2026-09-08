@@ -51,3 +51,12 @@ destinationsRouter.post('/', async (req, res) => {
     handleAirbyteError(res, err);
   }
 });
+
+destinationsRouter.delete('/:destinationId', async (req, res) => {
+  try {
+    await airbyteFetch(`/destinations/${req.params.destinationId}`, { method: 'DELETE' });
+    res.status(204).send();
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});

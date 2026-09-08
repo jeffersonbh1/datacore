@@ -58,11 +58,17 @@ export async function fetchExistingSources(): Promise<AirbyteSource[]> {
   return data.data;
 }
 
+export async function deleteAirbyteSource(sourceId: string): Promise<void> {
+  await gatewayFetch<null>(`/api/airbyte/sources/${sourceId}`, { method: 'DELETE' });
+}
+
 export interface AirbyteDestination {
   destinationId: string;
   name: string;
   destinationType: string;
   workspaceId: string;
+  configuration?: Record<string, unknown>;
+  createdAt?: number;
 }
 
 export async function createBigQueryDestination(payload: {
@@ -78,6 +84,15 @@ export async function createBigQueryDestination(payload: {
     method: 'POST',
     body: JSON.stringify({ name: payload.name, destinationType: 'bigquery', config: payload.config }),
   });
+}
+
+export async function fetchExistingDestinations(): Promise<AirbyteDestination[]> {
+  const data = await gatewayFetch<{ data: AirbyteDestination[] }>('/api/airbyte/destinations');
+  return data.data;
+}
+
+export async function deleteAirbyteDestination(destinationId: string): Promise<void> {
+  await gatewayFetch<null>(`/api/airbyte/destinations/${destinationId}`, { method: 'DELETE' });
 }
 
 interface RawAirbyteStream {

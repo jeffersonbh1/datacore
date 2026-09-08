@@ -13,8 +13,9 @@ import {
   DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary
 } from '../../types';
 import {
-  AirbyteSource, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
-  fetchExistingSources, fetchSourceCatalog, fetchStreams
+  AirbyteDestination, AirbyteSource, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
+  deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
+  fetchSourceCatalog, fetchStreams
 } from '../../lib/airbyteGateway';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,6 +58,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [isLoadingExistingSources, setIsLoadingExistingSources] = useState(false);
   const [existingSourcesError, setExistingSourcesError] = useState<string | null>(null);
   const [hasFetchedExistingSources, setHasFetchedExistingSources] = useState(false);
+  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (sourceMode !== 'existing' || hasFetchedExistingSources) return;
@@ -111,6 +113,23 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setSelectedSourceId(src.sourceId);
     if (!sources.some(s => s.id === src.sourceId)) {
       onAddSource(mapAirbyteSourceToConnectorConfig(src));
+    }
+  };
+
+  const handleDeleteExistingSource = async (e: React.MouseEvent, src: AirbyteSource) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(`Tem certeza que deseja excluir a origem "${src.name}" do Airbyte? Essa ação não pode ser desfeita.`);
+    if (!confirmed) return;
+
+    setDeletingSourceId(src.sourceId);
+    try {
+      await deleteAirbyteSource(src.sourceId);
+      setExistingAirbyteSources(prev => prev.filter(s => s.sourceId !== src.sourceId));
+      if (selectedSourceId === src.sourceId) setSelectedSourceId('');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Falha ao excluir a origem no Airbyte.');
+    } finally {
+      setDeletingSourceId(null);
     }
   };
 
@@ -204,6 +223,82 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   const [destMode, setDestMode] = useState<'new' | 'existing'>('new');
   const [selectedDestId, setSelectedDestId] = useState<string>(destinations[0]?.id || '');
+
+  // Real destinations already registered in Airbyte, for "Usar Destino Existente"
+  const [existingAirbyteDestinations, setExistingAirbyteDestinations] = useState<AirbyteDestination[]>([]);
+  const [isLoadingExistingDestinations, setIsLoadingExistingDestinations] = useState(false);
+  const [existingDestinationsError, setExistingDestinationsError] = useState<string | null>(null);
+  const [hasFetchedExistingDestinations, setHasFetchedExistingDestinations] = useState(false);
+  const [deletingDestinationId, setDeletingDestinationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (destMode !== 'existing' || hasFetchedExistingDestinations) return;
+
+    let cancelled = false;
+    setIsLoadingExistingDestinations(true);
+    setExistingDestinationsError(null);
+
+    fetchExistingDestinations()
+      .then(list => {
+        if (cancelled) return;
+        setExistingAirbyteDestinations(list);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setExistingDestinationsError(err instanceof Error ? err.message : 'Falha ao carregar destinos do Airbyte.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoadingExistingDestinations(false);
+        setHasFetchedExistingDestinations(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [destMode, hasFetchedExistingDestinations]);
+
+  // Maps a real Airbyte destination into the local DestinationConnectorConfig shape
+  const mapAirbyteDestinationToConnectorConfig = (dst: AirbyteDestination): DestinationConnectorConfig => {
+    const cfg = dst.configuration || {};
+    const type = (dst.destinationType as DestinationType) || 'bigquery';
+    return {
+      id: dst.destinationId,
+      name: dst.name,
+      type,
+      provider: getProviderForDest(type),
+      accountOrProject: (cfg.project_id as string) || (cfg.account as string) || '-',
+      warehouseOrCluster: (cfg.dataset_location as string) || (cfg.warehouse as string) || undefined,
+      databaseOrDataset: (cfg.dataset_id as string) || (cfg.database as string) || '-',
+      authMethod: 'service_account',
+      writeMode: 'merge_upsert',
+      status: 'connected',
+      lastTestedAt: 'Sincronizado do Airbyte',
+      createdAt: dst.createdAt ? new Date(dst.createdAt * 1000).toISOString().split('T')[0] : '',
+    };
+  };
+
+  const handleSelectExistingDestination = (dst: AirbyteDestination) => {
+    setSelectedDestId(dst.destinationId);
+    if (!destinations.some(d => d.id === dst.destinationId)) {
+      onAddDestination(mapAirbyteDestinationToConnectorConfig(dst));
+    }
+  };
+
+  const handleDeleteExistingDestination = async (e: React.MouseEvent, dst: AirbyteDestination) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(`Tem certeza que deseja excluir o destino "${dst.name}" do Airbyte? Essa ação não pode ser desfeita.`);
+    if (!confirmed) return;
+
+    setDeletingDestinationId(dst.destinationId);
+    try {
+      await deleteAirbyteDestination(dst.destinationId);
+      setExistingAirbyteDestinations(prev => prev.filter(d => d.destinationId !== dst.destinationId));
+      if (selectedDestId === dst.destinationId) setSelectedDestId('');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Falha ao excluir o destino no Airbyte.');
+    } finally {
+      setDeletingDestinationId(null);
+    }
+  };
 
   // New destination form fields
   const [destName, setDestName] = useState('');
@@ -1232,7 +1327,18 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                           </div>
                           <div className="font-bold text-sm text-slate-900 mb-1">{src.name}</div>
                           <div className="text-xs text-slate-500 font-mono truncate">{subtitle}</div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end text-xs text-slate-600">
+                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteExistingSource(e, src)}
+                              disabled={deletingSourceId === src.sourceId}
+                              title="Excluir origem no Airbyte"
+                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingSourceId === src.sourceId
+                                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
                             <span className="text-indigo-600 font-semibold">{isSelected ? '✓ Selecionado' : 'Selecionar'}</span>
                           </div>
                         </div>
@@ -1573,7 +1679,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Usar Destino Existente ({destinations.length})
+                    Usar Destino Existente ({existingAirbyteDestinations.length})
                   </button>
                 </div>
               </div>
@@ -1581,24 +1687,47 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               {destMode === 'existing' ? (
                 <div className="space-y-4">
                   <label className="block text-xs font-semibold text-slate-700">
-                    Selecione um Destino Cadastrado Anteriormente
+                    Selecione um Destino Cadastrado no Airbyte
                   </label>
+
+                  {isLoadingExistingDestinations && (
+                    <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Carregando destinos cadastrados no Airbyte...</span>
+                    </div>
+                  )}
+
+                  {!isLoadingExistingDestinations && existingDestinationsError && (
+                    <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{existingDestinationsError}</span>
+                    </div>
+                  )}
+
+                  {!isLoadingExistingDestinations && !existingDestinationsError && existingAirbyteDestinations.length === 0 && (
+                    <div className="text-xs text-slate-500 p-3">
+                      Nenhum destino cadastrado no Airbyte ainda. Use "+ Cadastrar Novo Destino" para criar o primeiro.
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {destinations.map(dst => {
-                      const isSelected = selectedDestId === dst.id;
+                    {existingAirbyteDestinations.map(dst => {
+                      const isSelected = selectedDestId === dst.destinationId;
+                      const cfg = dst.configuration || {};
+                      const subtitle = `${(cfg.dataset_id as string) || '-'} (${(cfg.project_id as string) || '-'})`;
                       return (
                         <div
-                          key={dst.id}
-                          onClick={() => setSelectedDestId(dst.id)}
+                          key={dst.destinationId}
+                          onClick={() => handleSelectExistingDestination(dst)}
                           className={`p-4 rounded-xl border transition cursor-pointer ${
-                            isSelected 
-                              ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs' 
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs'
                               : 'border-slate-200 hover:border-slate-300 bg-white'
                           }`}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-slate-100 text-slate-700">
-                              {dst.type}
+                              {dst.destinationType}
                             </span>
                             <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1606,9 +1735,19 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                             </span>
                           </div>
                           <div className="font-bold text-sm text-slate-900 mb-1">{dst.name}</div>
-                          <div className="text-xs text-slate-500 font-mono truncate">{dst.databaseOrDataset} ({dst.accountOrProject})</div>
+                          <div className="text-xs text-slate-500 font-mono truncate">{subtitle}</div>
                           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                            <span className="uppercase text-[10px] font-semibold">{dst.writeMode}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteExistingDestination(e, dst)}
+                              disabled={deletingDestinationId === dst.destinationId}
+                              title="Excluir destino no Airbyte"
+                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingDestinationId === dst.destinationId
+                                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
                             <span className="text-indigo-600 font-semibold">{isSelected ? '✓ Selecionado' : 'Selecionar'}</span>
                           </div>
                         </div>
