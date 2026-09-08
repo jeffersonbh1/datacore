@@ -3,20 +3,22 @@ import {
   Wand2, Database, Server, Layers, Check, ArrowRight, ArrowLeft,
   Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle,
   Lock, Unlock, Key, Network, Eye, ExternalLink, Plus, Trash2,
-  HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight,
+  HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight, ChevronDown,
   FolderArchive, Boxes, Clock, Calendar, CalendarDays, CalendarRange,
   PlayCircle, X
 } from 'lucide-react';
 import {
   SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
   SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
-  DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary
+  DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary,
+  TableLoadType, TableSyncConfig
 } from '../../types';
 import {
-  AirbyteDestination, AirbyteSource, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
+  AirbyteDestination, AirbyteSource, AirbyteConnectionStreamInput, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
   fetchSourceCatalog, fetchStreams
 } from '../../lib/airbyteGateway';
+import { registrarOrigem, registrarDestino, registrarIntegracao } from '../../lib/supabase';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isRealAirbyteId = (id: string): boolean => UUID_PATTERN.test(id);
@@ -25,6 +27,9 @@ interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
   destinations: DestinationConnectorConfig[];
   integrations: AutoIntegration[];
+  /** Empresa (tenant) of the logged-in user. When null, sources/destinations/integrations
+   *  created in this wizard run are NOT persisted to Supabase (Airbyte creation still works). */
+  idEmpresa: number | null;
   onAddSource: (source: SourceConnectorConfig) => void;
   onAddDestination: (destination: DestinationConnectorConfig) => void;
   onCreateIntegration: (integration: AutoIntegration, generatedPipeline: Pipeline) => void;
@@ -36,6 +41,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   sources,
   destinations,
   integrations,
+  idEmpresa,
   onAddSource,
   onAddDestination,
   onCreateIntegration,
@@ -346,6 +352,78 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     return () => { cancelled = true; };
   }, [wizardStep, selectedSourceId, streamsFetchedForSourceId]);
 
+  // Per-table load configuration (sync mode, cursor field & column selection) —
+  // mirrors what the Airbyte UI asks when configuring a connection manually.
+  // Only overrides are kept here; missing entries fall back to sensible defaults
+  // (Full Refresh, every column selected) computed on the fly by getTableSyncConfig.
+  const [tableSyncConfigs, setTableSyncConfigs] = useState<Record<string, TableSyncConfig>>({});
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+
+  const getTableColumns = (tableName: string): string[] => {
+    if (usingRealStreams) {
+      return realStreams.find(s => s.streamName === tableName)?.columns || [];
+    }
+    return discoveredTables.find(t => t.name === tableName)?.columns || [];
+  };
+
+  const getStreamSummary = (tableName: string): AirbyteStreamSummary | undefined =>
+    usingRealStreams ? realStreams.find(s => s.streamName === tableName) : undefined;
+
+  const getTableSyncConfig = (tableName: string): TableSyncConfig => {
+    const existing = tableSyncConfigs[tableName];
+    if (existing) return existing;
+    const columns = getTableColumns(tableName);
+    const stream = getStreamSummary(tableName);
+    return {
+      loadType: 'full_refresh',
+      cursorField: stream?.sourceDefinedCursorField ? (stream.cursorField[0] || '') : '',
+      selectedColumns: columns,
+    };
+  };
+
+  const updateTableSyncConfig = (tableName: string, patch: Partial<TableSyncConfig>) => {
+    setTableSyncConfigs(prev => ({
+      ...prev,
+      [tableName]: { ...getTableSyncConfig(tableName), ...patch },
+    }));
+  };
+
+  const handleChangeLoadType = (tableName: string, loadType: TableLoadType) => {
+    const current = getTableSyncConfig(tableName);
+    const stream = getStreamSummary(tableName);
+    updateTableSyncConfig(tableName, {
+      loadType,
+      cursorField: loadType === 'full_refresh'
+        ? ''
+        : (current.cursorField || stream?.cursorField[0] || ''),
+    });
+  };
+
+  const handleChangeCursorField = (tableName: string, cursorField: string) => {
+    updateTableSyncConfig(tableName, { cursorField });
+  };
+
+  const handleToggleColumn = (tableName: string, column: string) => {
+    const cfg = getTableSyncConfig(tableName);
+    if (cfg.loadType === 'incremental' && cfg.cursorField === column) return; // cursor column can't be excluded
+    const nextColumns = cfg.selectedColumns.includes(column)
+      ? cfg.selectedColumns.filter(c => c !== column)
+      : [...cfg.selectedColumns, column];
+    updateTableSyncConfig(tableName, { selectedColumns: nextColumns });
+  };
+
+  // Validates that every selected table set to "Incremental" has a cursor field chosen —
+  // exactly like Airbyte's own UI requires before a connection can be saved.
+  const validateTableSyncConfigs = (): string | null => {
+    for (const tableName of selectedTables) {
+      const cfg = getTableSyncConfig(tableName);
+      if (cfg.loadType === 'incremental' && !cfg.cursorField) {
+        return `Selecione o campo de cursor da tabela "${tableName}" — obrigatório para carga incremental.`;
+      }
+    }
+    return null;
+  };
+
   const [syncFrequency, setSyncFrequency] = useState<SyncFrequencyOption>('daily');
   const [executionTimes, setExecutionTimes] = useState<string[]>(['02:00']);
   const [newTimeInput, setNewTimeInput] = useState<string>('08:00');
@@ -432,6 +510,15 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   // Form error notification
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // The error banner renders at the top of the page, but long steps (like Step 3) leave
+  // the user scrolled far below it when an action fails — without this they see no
+  // visible reaction at all. Scroll it into view whenever a new error appears.
+  useEffect(() => {
+    if (errorMessage) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [errorMessage]);
 
   // In-app confirmation modal for deleting a real Airbyte source/destination
   // (replaces the native window.confirm, which doesn't match the app's UI)
@@ -868,6 +955,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       return;
     }
 
+    const tableSyncValidationError = validateTableSyncConfigs();
+    if (tableSyncValidationError) {
+      setErrorMessage(tableSyncValidationError);
+      return;
+    }
+
     // Identify active source and destination
     const activeSource = sources.find(s => s.id === selectedSourceId) || sources[0];
     const activeDest = destinations.find(d => d.id === selectedDestId) || destinations[0];
@@ -879,20 +972,51 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
     setIsCreating(true);
 
+    // Snapshot each selected table's load configuration (defaults included) so it's
+    // persisted on the AutoIntegration record regardless of whether a real Airbyte
+    // connection ends up being created below.
+    const tableSyncConfigsSnapshot: Record<string, TableSyncConfig> = {};
+    for (const tableName of selectedTables) {
+      tableSyncConfigsSnapshot[tableName] = getTableSyncConfig(tableName);
+    }
+
     // Create the real Airbyte connection when both source and destination are real
     // Airbyte resources (confirmed for the source via the streams discovery above;
-    // heuristically for the destination via its UUID shape) and the user chose
-    // "daily" (the only frequency wired to a real schedule for now).
+    // heuristically for the destination via its UUID shape). All 4 frequency options
+    // now map onto a real Airbyte schedule: daily/weekly/monthly become a native Airbyte
+    // cron expression, and "once" creates the connection in manual mode (Airbyte has no
+    // native one-shot future schedule — see buildAirbyteSchedule on the gateway).
+    const realScheduleFrequencies: SyncFrequencyOption[] = ['daily', 'weekly', 'monthly', 'once'];
     let airbyteConnectionId: string | undefined;
-    if (usingRealStreams && isRealAirbyteId(selectedDestId) && syncFrequency === 'daily') {
+    if (usingRealStreams && isRealAirbyteId(selectedDestId) && realScheduleFrequencies.includes(syncFrequency)) {
       try {
+        const streams: AirbyteConnectionStreamInput[] = selectedTables.map(tableName => {
+          const cfg = tableSyncConfigsSnapshot[tableName];
+          const allColumns = getTableColumns(tableName);
+          return {
+            name: tableName,
+            loadType: cfg.loadType,
+            cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : undefined,
+            columns: cfg.selectedColumns.length < allColumns.length ? cfg.selectedColumns : undefined,
+          };
+        });
+
         const created = await createAirbyteConnection({
           name: integrationName.trim(),
           sourceId: selectedSourceId,
           destinationId: selectedDestId,
-          streamNames: selectedTables,
+          streams,
           writeMode: destWriteMode,
-          dailyTime: executionTimes[0] || '02:00',
+          schedule: {
+            frequency: syncFrequency as 'daily' | 'weekly' | 'monthly' | 'once',
+            executionTimes,
+            // weeklyDays holds UI keys ('seg', 'ter', ...) — convert to the Unix cron
+            // values ('0'-'6', Sun=0) the gateway expects before sending.
+            weeklyDays: syncFrequency === 'weekly'
+              ? weeklyDays.map(d => WEEKDAYS.find(w => w.key === d)?.cronVal || '1')
+              : undefined,
+            monthlyDay: syncFrequency === 'monthly' ? monthlyDay : undefined,
+          },
         });
         airbyteConnectionId = created.connectionId;
       } catch (err) {
@@ -1092,6 +1216,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       destinationConnectorName: activeDest.name,
       destinationType: activeDest.type,
       selectedTables,
+      tableSyncConfigs: tableSyncConfigsSnapshot,
       syncFrequency,
       executionTimes,
       weeklyDays: syncFrequency === 'weekly' ? weeklyDays : undefined,
@@ -1110,6 +1235,19 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setCreatedPipelineId(newPipeId);
     setIsCreating(false);
     setShowSuccessModal(true);
+
+    // Best-effort persistence to Supabase, scoped to the logged-in user's empresa —
+    // Airbyte remains the source of truth and the UI above already reflects success
+    // regardless of this outcome, so failures here are logged, not surfaced.
+    if (idEmpresa) {
+      try {
+        const origemDbId = await registrarOrigem(idEmpresa, activeSource);
+        const destinoDbId = await registrarDestino(idEmpresa, activeDest);
+        await registrarIntegracao(idEmpresa, newIntegration, origemDbId, destinoDbId);
+      } catch (err) {
+        console.error('Erro ao persistir integração no banco de dados:', err);
+      }
+    }
   };
 
   // Active source/dest instances for preview in step 3
@@ -2294,6 +2432,133 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 )}
               </div>
 
+              {/* Configuração de Carga por Tabela (Sync Mode, Cursor & Colunas) —
+                  mesmo comportamento da configuração manual de uma conexão no Airbyte. */}
+              {selectedTables.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-900">
+                      Configuração de Carga por Tabela <span className="text-rose-500">*</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Defina o tipo de carga de cada tabela e, se necessário, abra o detalhe para escolher as colunas que farão parte da sincronização.
+                    </p>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-200 overflow-hidden">
+                    {selectedTables.map(tableName => {
+                      const columns = getTableColumns(tableName);
+                      const cfg = getTableSyncConfig(tableName);
+                      const isExpanded = expandedTable === tableName;
+                      const stream = getStreamSummary(tableName);
+                      const cursorLocked = Boolean(stream?.sourceDefinedCursorField);
+                      const cursorMissing = cfg.loadType === 'incremental' && !cfg.cursorField;
+
+                      return (
+                        <div key={tableName} className="bg-white">
+                          {/* Table Row: name/expand, load type, cursor field */}
+                          <div className="flex flex-col md:flex-row md:items-center gap-3 p-3.5">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedTable(isExpanded ? null : tableName)}
+                              className="flex items-center gap-2 text-left flex-1 min-w-0 cursor-pointer group"
+                            >
+                              <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                              <Table className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span className="text-xs font-bold text-slate-900 font-mono truncate group-hover:underline">{tableName}</span>
+                              <span className="text-[10px] text-slate-400 font-medium shrink-0">
+                                ({cfg.selectedColumns.length}/{columns.length} colunas)
+                              </span>
+                            </button>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <select
+                                value={cfg.loadType}
+                                onChange={(e) => handleChangeLoadType(tableName, e.target.value as TableLoadType)}
+                                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                <option value="full_refresh">Full Refresh (Carga Completa)</option>
+                                <option value="incremental">Incremental</option>
+                              </select>
+
+                              {cfg.loadType === 'incremental' ? (
+                                <select
+                                  value={cfg.cursorField}
+                                  onChange={(e) => handleChangeCursorField(tableName, e.target.value)}
+                                  disabled={cursorLocked}
+                                  className={`px-2.5 py-1.5 bg-white border rounded-lg text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500 min-w-36 ${
+                                    cursorMissing ? 'border-rose-300 text-rose-600' : 'border-slate-300 text-slate-800'
+                                  } ${cursorLocked ? 'bg-slate-50 cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+                                >
+                                  <option value="">Selecione o cursor...</option>
+                                  {columns.map(col => (
+                                    <option key={col} value={col}>{col}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="px-2.5 py-1.5 text-[11px] text-slate-400 italic min-w-36">
+                                  Cursor não aplicável
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Columns Detail (Expanded) — default: all columns selected */}
+                          {isExpanded && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50/60 border-t border-slate-100">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+                                  Colunas ({columns.length})
+                                </span>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateTableSyncConfig(tableName, { selectedColumns: columns })}
+                                    className="text-[11px] text-indigo-700 hover:underline cursor-pointer"
+                                  >
+                                    Marcar todas
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateTableSyncConfig(tableName, {
+                                      selectedColumns: cfg.loadType === 'incremental' && cfg.cursorField ? [cfg.cursorField] : []
+                                    })}
+                                    className="text-[11px] text-slate-500 hover:underline cursor-pointer"
+                                  >
+                                    Desmarcar todas
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1.5">
+                                {columns.map(col => {
+                                  const checked = cfg.selectedColumns.includes(col);
+                                  const isCursorColumn = cfg.loadType === 'incremental' && cfg.cursorField === col;
+                                  return (
+                                    <label key={col} className={`flex items-center gap-1.5 text-xs text-slate-700 ${isCursorColumn ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => handleToggleColumn(tableName, col)}
+                                        disabled={isCursorColumn}
+                                        className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                                      />
+                                      <span className={`font-mono truncate ${isCursorColumn ? 'text-indigo-700 font-semibold' : ''}`}>{col}</span>
+                                      {isCursorColumn && (
+                                        <span className="text-[9px] text-indigo-600 font-semibold uppercase shrink-0">cursor</span>
+                                      )}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Frequência de Sincronização e Horários de Execução */}
               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
@@ -2320,15 +2585,15 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 </div>
 
                 {usingRealStreams && isRealAirbyteId(selectedDestId) && (
-                  syncFrequency === 'daily' ? (
-                    <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Esta integração será criada de verdade no Airbyte, sincronizando diariamente às {executionTimes[0] || '02:00'}.</span>
-                    </div>
-                  ) : (
+                  syncFrequency === 'once' ? (
                     <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Por enquanto, apenas a frequência <strong>Diário</strong> cria uma integração real no Airbyte. Esta opção só gera o pipeline visual (simulado) — sem sincronização real de dados.</span>
+                      <span>Esta integração será criada de verdade no Airbyte em modo <strong>manual</strong> — o Airbyte não agenda uma execução única automática, então a sincronização precisará ser disparada manualmente (na tela do Airbyte ou por um recurso futuro de agendamento único).</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Esta integração será criada de verdade no Airbyte, com o agendamento cron nativo configurado ({getScheduleSummaryText()}).</span>
                     </div>
                   )
                 )}

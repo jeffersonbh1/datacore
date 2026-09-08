@@ -151,6 +151,17 @@ export interface TeamUser {
   lastActive: string;
   mfaEnabled: boolean;
   canViewUnmaskedPII: boolean;
+  idEmpresa?: number | null;
+}
+
+export interface Empresa {
+  id: number;
+  nome: string;
+  slug: string;
+  airbyteWorkspaceId?: string | null;
+  status: 'ativo' | 'suspenso' | 'trial' | 'cancelado';
+  plano?: string | null;
+  criadoEm: string;
 }
 
 export interface RolePermissions {
@@ -243,7 +254,19 @@ export interface AirbyteStreamSummary {
   streamName: string;
   primaryKey: string[][];
   cursorField: string[];
+  sourceDefinedCursorField: boolean;
   columns: string[];
+}
+
+// Mirrors Airbyte's per-stream "Sync mode" choice as exposed when configuring a
+// connection manually in the Airbyte UI: Full Refresh (no cursor) or Incremental
+// (requires a cursor field chosen from the table's own columns).
+export type TableLoadType = 'full_refresh' | 'incremental';
+
+export interface TableSyncConfig {
+  loadType: TableLoadType;
+  cursorField: string;
+  selectedColumns: string[];
 }
 
 export interface AutoIntegration {
@@ -256,6 +279,7 @@ export interface AutoIntegration {
   destinationConnectorName: string;
   destinationType: DestinationType;
   selectedTables: string[];
+  tableSyncConfigs?: Record<string, TableSyncConfig>;
   syncFrequency: SyncFrequencyOption;
   executionTimes?: string[];
   weeklyDays?: string[];

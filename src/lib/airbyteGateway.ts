@@ -98,6 +98,7 @@ export async function deleteAirbyteDestination(destinationId: string): Promise<v
 interface RawAirbyteStream {
   streamName: string;
   defaultCursorField?: string[];
+  sourceDefinedCursorField?: boolean;
   sourceDefinedPrimaryKey?: string[][];
   propertyFields: string[][];
 }
@@ -108,6 +109,7 @@ export async function fetchStreams(sourceId: string): Promise<AirbyteStreamSumma
     streamName: s.streamName,
     primaryKey: s.sourceDefinedPrimaryKey || [],
     cursorField: s.defaultCursorField || [],
+    sourceDefinedCursorField: Boolean(s.sourceDefinedCursorField),
     columns: s.propertyFields.map(path => path.join('.')),
   }));
 }
@@ -120,13 +122,30 @@ export interface AirbyteConnection {
   status: string;
 }
 
+export interface AirbyteConnectionStreamInput {
+  name: string;
+  loadType: 'full_refresh' | 'incremental';
+  cursorField?: string;
+  /** All columns for the stream, minus the ones the user unchecked. Omitted (or equal to all columns) means "sync every column". */
+  columns?: string[];
+}
+
+export interface AirbyteConnectionScheduleInput {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'once';
+  executionTimes: string[];
+  /** Only for "weekly". Unix cron convention: '0'-'6', Sunday = '0' (matches the wizard's weekday picker). */
+  weeklyDays?: string[];
+  /** Only for "monthly". Day of month, 1-31. */
+  monthlyDay?: number;
+}
+
 export async function createAirbyteConnection(payload: {
   name: string;
   sourceId: string;
   destinationId: string;
-  streamNames: string[];
+  streams: AirbyteConnectionStreamInput[];
   writeMode: 'append' | 'merge_upsert' | 'overwrite';
-  dailyTime: string;
+  schedule: AirbyteConnectionScheduleInput;
 }): Promise<AirbyteConnection> {
   return gatewayFetch<AirbyteConnection>('/api/airbyte/connections', {
     method: 'POST',

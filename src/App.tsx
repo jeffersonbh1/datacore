@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   INITIAL_PIPELINES, INITIAL_LOGS, INITIAL_ALERT_RULES, 
   INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS, INITIAL_FINOPS, 
@@ -21,7 +21,11 @@ import { RbacManager } from './components/Security/RbacManager';
 import { CadastroUsuarioView } from './components/Security/CadastroUsuarioView';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
-import { isSupabaseConfigured, supabase, mapSupabaseUserToTeamUser, logoutFromSupabase } from './lib/supabase';
+import {
+  isSupabaseConfigured, supabase, mapSupabaseUserToTeamUser, logoutFromSupabase,
+  fetchOrigensPorEmpresa, fetchDestinosPorEmpresa, fetchIntegracoesPorEmpresa
+} from './lib/supabase';
+import { EmpresasView } from './components/Empresas/EmpresasView';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -95,6 +99,30 @@ export default function App() {
   const [sources, setSources] = useState<SourceConnectorConfig[]>(INITIAL_SOURCES);
   const [destinations, setDestinations] = useState<DestinationConnectorConfig[]>(INITIAL_DESTINATIONS);
   const [integrations, setIntegrations] = useState<AutoIntegration[]>(INITIAL_INTEGRATIONS);
+
+  // Loads origens/destinos/integrações persistidos no Supabase para a empresa do
+  // usuário logado, para que sobrevivam a um refresh (antes só existiam em memória).
+  // Uses a ref (not state) as the guard: React.StrictMode double-invokes effects in
+  // dev, and a state-based guard isn't committed in time to stop the second call,
+  // which duplicated every persisted row in the UI (each fetch prepended its own copy).
+  const hasLoadedEmpresaDataRef = useRef(false);
+  useEffect(() => {
+    const idEmpresa = currentUser.idEmpresa;
+    if (!isSupabaseConfigured() || !idEmpresa || hasLoadedEmpresaDataRef.current) return;
+
+    hasLoadedEmpresaDataRef.current = true;
+    Promise.all([
+      fetchOrigensPorEmpresa(idEmpresa),
+      fetchDestinosPorEmpresa(idEmpresa),
+      fetchIntegracoesPorEmpresa(idEmpresa),
+    ])
+      .then(([persistedSources, persistedDestinations, persistedIntegrations]) => {
+        if (persistedSources.length) setSources(prev => [...persistedSources, ...prev]);
+        if (persistedDestinations.length) setDestinations(prev => [...persistedDestinations, ...prev]);
+        if (persistedIntegrations.length) setIntegrations(prev => [...persistedIntegrations, ...prev]);
+      })
+      .catch(err => console.error('Erro ao carregar dados persistidos da empresa:', err));
+  }, [currentUser.idEmpresa]);
 
   // Derived role permissions
   const roleDef = ROLE_DEFINITIONS[currentRole] || ROLE_DEFINITIONS.admin;
@@ -321,6 +349,7 @@ export default function App() {
                 sources={sources}
                 destinations={destinations}
                 integrations={integrations}
+                idEmpresa={currentUser.idEmpresa ?? null}
                 onAddSource={handleAddSource}
                 onAddDestination={handleAddDestination}
                 onCreateIntegration={handleCreateAutoIntegration}
@@ -379,6 +408,10 @@ export default function App() {
                 }}
                 canManageUsers={permissions.canManageUsers}
               />
+            )}
+
+            {activeTab === 'empresas' && (
+              <EmpresasView canManage={permissions.canManageUsers} />
             )}
           </div>
         </main>

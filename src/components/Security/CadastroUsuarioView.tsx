@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { 
-  UserPlus, Mail, Lock, Shield, Building, Eye, EyeOff, 
+import React, { useEffect, useState } from 'react';
+import {
+  UserPlus, Mail, Lock, Shield, Building, Eye, EyeOff,
   CheckCircle2, AlertTriangle, ArrowLeft, RefreshCw, Database,
   Sliders, Key, Sparkles, Check, Info
 } from 'lucide-react';
-import { UserRole, TeamUser, NewUsuarioPayload } from '../../types';
+import { UserRole, TeamUser, NewUsuarioPayload, Empresa } from '../../types';
 import { ROLE_DEFINITIONS } from '../../data/initialData';
-import { isSupabaseConfigured, cadastrarUsuarioNaTabela } from '../../lib/supabase';
+import { isSupabaseConfigured, cadastrarUsuarioNaTabela, fetchEmpresas } from '../../lib/supabase';
 
 interface CadastroUsuarioViewProps {
   onUserCreated?: (user: TeamUser) => void;
@@ -35,8 +35,22 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showSqlSchema, setShowSqlSchema] = useState(false);
 
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [isLoadingEmpresas, setIsLoadingEmpresas] = useState(true);
+
   const supabaseReady = isSupabaseConfigured();
   const selectedRoleDef = ROLE_DEFINITIONS[papel] || ROLE_DEFINITIONS.viewer;
+
+  useEffect(() => {
+    if (!supabaseReady) {
+      setIsLoadingEmpresas(false);
+      return;
+    }
+    fetchEmpresas()
+      .then(setEmpresas)
+      .catch(() => setEmpresas([]))
+      .finally(() => setIsLoadingEmpresas(false));
+  }, [supabaseReady]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -302,21 +316,29 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
               </span>
             </div>
 
-            {/* ID Empresa */}
+            {/* Empresa */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ID da Empresa (Opcional)
+                Empresa (Opcional)
               </label>
-              <input
+              <select
                 id="input-user-id-empresa"
-                type="number"
-                placeholder="Ex: 1001"
                 value={idEmpresa}
                 onChange={(e) => setIdEmpresa(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-              />
+                disabled={isLoadingEmpresas || empresas.length === 0}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition disabled:opacity-60"
+              >
+                <option value="">Sem empresa vinculada</option>
+                {empresas.map(empresa => (
+                  <option key={empresa.id} value={empresa.id}>{empresa.nome}</option>
+                ))}
+              </select>
               <span className="text-[10px] text-slate-400 mt-1 block">
-                Gravado na coluna: <code className="font-mono text-slate-600">id_empresa bigint null</code>
+                {isLoadingEmpresas
+                  ? 'Carregando empresas...'
+                  : empresas.length === 0
+                    ? <>Nenhuma empresa cadastrada — crie uma em <strong>Empresas</strong> primeiro.</>
+                    : <>Gravado na coluna: <code className="font-mono text-slate-600">id_empresa</code> (FK para <code className="font-mono text-slate-600">empresas</code>)</>}
               </span>
             </div>
           </div>

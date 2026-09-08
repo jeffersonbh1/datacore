@@ -1,6 +1,10 @@
 import { createClient, SupabaseClient, User as SupabaseUser } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
-import { TeamUser, UserRole, UsuarioDbRecord, NewUsuarioPayload } from '../types';
+import {
+  TeamUser, UserRole, UsuarioDbRecord, NewUsuarioPayload, Empresa,
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
+  SourceType, DestinationType, CloudProvider, TableSyncConfig, SyncFrequencyOption
+} from '../types';
 
 // Environment variables configured via .env / Vite
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -211,6 +215,10 @@ export function mapUsuarioRowToTeamUser(row: Record<string, unknown>): TeamUser 
       : (role === 'admin' || role === 'dpo_compliance')
   );
 
+  const idEmpresa = row.id_empresa !== undefined && row.id_empresa !== null
+    ? Number(row.id_empresa)
+    : null;
+
   return {
     id,
     name,
@@ -221,6 +229,7 @@ export function mapUsuarioRowToTeamUser(row: Record<string, unknown>): TeamUser 
     lastActive: row.ultimo_acesso_em ? new Date(String(row.ultimo_acesso_em)).toLocaleDateString('pt-BR') : 'Agora',
     mfaEnabled,
     canViewUnmaskedPII,
+    idEmpresa,
   };
 }
 
@@ -429,4 +438,280 @@ export async function logoutFromSupabase(): Promise<void> {
       // ignore
     }
   }
+}
+
+// =============================================================================
+// Empresas (tenants) — ver sql/001_multi_tenant_empresas.sql
+// =============================================================================
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || `empresa-${Date.now()}`;
+}
+
+function mapEmpresaRow(row: Record<string, unknown>): Empresa {
+  return {
+    id: Number(row.id),
+    nome: String(row.nome || ''),
+    slug: String(row.slug || ''),
+    airbyteWorkspaceId: (row.airbyte_workspace_id as string) || null,
+    status: (row.status as Empresa['status']) || 'ativo',
+    plano: (row.plano as string) || null,
+    criadoEm: row.criado_em ? String(row.criado_em) : '',
+  };
+}
+
+export async function fetchEmpresas(): Promise<Empresa[]> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { data, error } = await supabase.from('empresas').select('*').order('nome', { ascending: true });
+  if (error) throw new Error(`Erro ao buscar empresas: ${error.message}`);
+  return (data || []).map(mapEmpresaRow);
+}
+
+export async function createEmpresa(payload: {
+  nome: string;
+  plano?: string | null;
+  airbyteWorkspaceId?: string | null;
+}): Promise<Empresa> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const nome = payload.nome.trim();
+  const slug = slugify(nome);
+
+  const { data, error } = await supabase
+    .from('empresas')
+    .insert([{
+      nome,
+      slug,
+      plano: payload.plano?.trim() || null,
+      airbyte_workspace_id: payload.airbyteWorkspaceId?.trim() || null,
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`Já existe uma empresa com identificador (slug) "${slug}". Escolha um nome diferente.`);
+    }
+    throw new Error(`Erro ao criar empresa: ${error.message}`);
+  }
+
+  return mapEmpresaRow(data);
+}
+
+export async function updateEmpresaStatus(id: number, status: Empresa['status']): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { error } = await supabase
+    .from('empresas')
+    .update({ status, atualizado_em: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw new Error(`Erro ao atualizar status da empresa: ${error.message}`);
+}
+
+export async function vincularUsuarioAEmpresa(usuarioId: string, idEmpresa: number | null): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { error } = await supabase.from('usuarios').update({ id_empresa: idEmpresa }).eq('id', usuarioId);
+  if (error) throw new Error(`Erro ao vincular usuário à empresa: ${error.message}`);
+}
+
+// =============================================================================
+// Origens / Destinos / Integrações — persistência por empresa do que hoje só
+// existe como estado React no wizard de Pipeline Automático.
+// =============================================================================
+
+function mapOrigemRowToSourceConfig(row: Record<string, unknown>): SourceConnectorConfig {
+  const cfg = (row.configuracao as Record<string, unknown>) || {};
+  return {
+    id: String(row.airbyte_source_id),
+    name: String(row.nome || ''),
+    type: (row.tipo as SourceType) || 'postgres',
+    provider: (cfg.provider as CloudProvider) || 'generic',
+    host: (cfg.host as string) || '-',
+    port: (cfg.port as number) ?? 0,
+    database: (cfg.database as string) || '-',
+    username: (cfg.username as string) || '',
+    schema: cfg.schema as string | undefined,
+    ssl: Boolean(cfg.ssl),
+    discoveredTables: [],
+    status: (row.status as SourceConnectorConfig['status']) || 'connected',
+    lastTestedAt: 'Sincronizado do banco',
+    createdAt: row.criado_em ? String(row.criado_em).split('T')[0] : '',
+  };
+}
+
+export async function fetchOrigensPorEmpresa(idEmpresa: number): Promise<SourceConnectorConfig[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('origens')
+    .select('*')
+    .eq('id_empresa', idEmpresa)
+    .order('criado_em', { ascending: false });
+  if (error) throw new Error(`Erro ao buscar origens da empresa: ${error.message}`);
+  return (data || []).map(mapOrigemRowToSourceConfig);
+}
+
+/** Upserts a real Airbyte source into the tenant-scoped registry. Returns the row's own bigint id. */
+export async function registrarOrigem(idEmpresa: number, source: SourceConnectorConfig): Promise<number> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { data, error } = await supabase
+    .from('origens')
+    .upsert(
+      {
+        id_empresa: idEmpresa,
+        airbyte_source_id: source.id,
+        nome: source.name,
+        tipo: source.type,
+        configuracao: {
+          provider: source.provider,
+          host: source.host,
+          port: source.port,
+          database: source.database,
+          username: source.username,
+          schema: source.schema,
+          ssl: source.ssl,
+        },
+        status: source.status,
+      },
+      { onConflict: 'id_empresa,airbyte_source_id' }
+    )
+    .select('id')
+    .single();
+
+  if (error) throw new Error(`Erro ao registrar origem no banco: ${error.message}`);
+  return Number(data.id);
+}
+
+function mapDestinoRowToDestConfig(row: Record<string, unknown>): DestinationConnectorConfig {
+  const cfg = (row.configuracao as Record<string, unknown>) || {};
+  return {
+    id: String(row.airbyte_destination_id),
+    name: String(row.nome || ''),
+    type: (row.tipo as DestinationType) || 'bigquery',
+    provider: (cfg.provider as CloudProvider) || 'generic',
+    accountOrProject: (cfg.accountOrProject as string) || '-',
+    warehouseOrCluster: cfg.warehouseOrCluster as string | undefined,
+    databaseOrDataset: (cfg.databaseOrDataset as string) || '-',
+    schema: cfg.schema as string | undefined,
+    authMethod: (cfg.authMethod as DestinationConnectorConfig['authMethod']) || 'service_account',
+    writeMode: (row.modo_escrita as DestinationConnectorConfig['writeMode']) || 'merge_upsert',
+    status: (row.status as DestinationConnectorConfig['status']) || 'connected',
+    lastTestedAt: 'Sincronizado do banco',
+    createdAt: row.criado_em ? String(row.criado_em).split('T')[0] : '',
+  };
+}
+
+export async function fetchDestinosPorEmpresa(idEmpresa: number): Promise<DestinationConnectorConfig[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('destinos')
+    .select('*')
+    .eq('id_empresa', idEmpresa)
+    .order('criado_em', { ascending: false });
+  if (error) throw new Error(`Erro ao buscar destinos da empresa: ${error.message}`);
+  return (data || []).map(mapDestinoRowToDestConfig);
+}
+
+/** Upserts a real Airbyte destination into the tenant-scoped registry. Returns the row's own bigint id. */
+export async function registrarDestino(idEmpresa: number, dest: DestinationConnectorConfig): Promise<number> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { data, error } = await supabase
+    .from('destinos')
+    .upsert(
+      {
+        id_empresa: idEmpresa,
+        airbyte_destination_id: dest.id,
+        nome: dest.name,
+        tipo: dest.type,
+        configuracao: {
+          provider: dest.provider,
+          accountOrProject: dest.accountOrProject,
+          warehouseOrCluster: dest.warehouseOrCluster,
+          databaseOrDataset: dest.databaseOrDataset,
+          schema: dest.schema,
+          authMethod: dest.authMethod,
+        },
+        modo_escrita: dest.writeMode,
+        status: dest.status,
+      },
+      { onConflict: 'id_empresa,airbyte_destination_id' }
+    )
+    .select('id')
+    .single();
+
+  if (error) throw new Error(`Erro ao registrar destino no banco: ${error.message}`);
+  return Number(data.id);
+}
+
+function mapIntegracaoRow(row: Record<string, unknown>): AutoIntegration {
+  const origem = (row.origens as Record<string, unknown>) || {};
+  const destino = (row.destinos as Record<string, unknown>) || {};
+  const selectedTables = (row.tabelas_selecionadas as string[]) || [];
+
+  return {
+    id: String(row.id),
+    name: String(row.nome || ''),
+    sourceConnectorId: String(origem.airbyte_source_id || ''),
+    sourceConnectorName: String(origem.nome || ''),
+    sourceType: (origem.tipo as SourceType) || 'postgres',
+    destinationConnectorId: String(destino.airbyte_destination_id || ''),
+    destinationConnectorName: String(destino.nome || ''),
+    destinationType: (destino.tipo as DestinationType) || 'bigquery',
+    selectedTables,
+    tableSyncConfigs: (row.table_sync_configs as Record<string, TableSyncConfig>) || {},
+    syncFrequency: (row.frequencia_sync as SyncFrequencyOption) || 'daily',
+    executionTimes: (row.horarios_execucao as string[]) || [],
+    weeklyDays: (row.dias_semana as string[] | null) || undefined,
+    monthlyDay: row.dia_mensal !== null && row.dia_mensal !== undefined ? Number(row.dia_mensal) : undefined,
+    onceDate: (row.data_execucao_unica as string) || undefined,
+    scheduleSummary: (row.resumo_agendamento as string) || undefined,
+    applyLgpdSanitization: Boolean(row.aplicar_sanitizacao_lgpd),
+    airbyteConnectionId: (row.airbyte_connection_id as string) || undefined,
+    status: (row.status as AutoIntegration['status']) || 'active',
+    pipelineId: String(row.pipeline_id || ''),
+    createdAt: row.criado_em ? String(row.criado_em).split('T')[0] : '',
+    tablesCount: selectedTables.length,
+  };
+}
+
+export async function fetchIntegracoesPorEmpresa(idEmpresa: number): Promise<AutoIntegration[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('integracoes')
+    .select('*, origens(nome, tipo, airbyte_source_id), destinos(nome, tipo, airbyte_destination_id)')
+    .eq('id_empresa', idEmpresa)
+    .order('criado_em', { ascending: false });
+  if (error) throw new Error(`Erro ao buscar integrações da empresa: ${error.message}`);
+  return (data || []).map(mapIntegracaoRow);
+}
+
+/** Persists an AutoIntegration record. origemDbId/destinoDbId are the bigint ids from registrarOrigem/registrarDestino (not the Airbyte UUIDs). */
+export async function registrarIntegracao(
+  idEmpresa: number,
+  integration: AutoIntegration,
+  origemDbId: number,
+  destinoDbId: number
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { error } = await supabase.from('integracoes').insert([{
+    id_empresa: idEmpresa,
+    origem_id: origemDbId,
+    destino_id: destinoDbId,
+    airbyte_connection_id: integration.airbyteConnectionId || null,
+    nome: integration.name,
+    tabelas_selecionadas: integration.selectedTables,
+    table_sync_configs: integration.tableSyncConfigs || {},
+    frequencia_sync: integration.syncFrequency,
+    horarios_execucao: integration.executionTimes || [],
+    dias_semana: integration.weeklyDays || null,
+    dia_mensal: integration.monthlyDay ?? null,
+    data_execucao_unica: integration.onceDate || null,
+    resumo_agendamento: integration.scheduleSummary || null,
+    aplicar_sanitizacao_lgpd: integration.applyLgpdSanitization,
+    status: integration.status,
+    pipeline_id: integration.pipelineId,
+  }]);
+  if (error) throw new Error(`Erro ao registrar integração no banco: ${error.message}`);
 }

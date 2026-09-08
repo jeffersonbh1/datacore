@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  Network, Layers, ShieldCheck, DollarSign, 
-  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus
+import {
+  Network, Layers, ShieldCheck, DollarSign,
+  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2
 } from 'lucide-react';
 
-export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario';
+export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -63,6 +63,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'cadastro-usuario',
       label: 'Cadastrar Usuário',
       icon: <UserPlus className="w-4 h-4 text-indigo-600 shrink-0" />
+    },
+    {
+      id: 'empresas',
+      label: 'Empresas',
+      icon: <Building2 className="w-4 h-4 text-indigo-600 shrink-0" />
     }
   ];
 
