@@ -58,7 +58,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [isLoadingExistingSources, setIsLoadingExistingSources] = useState(false);
   const [existingSourcesError, setExistingSourcesError] = useState<string | null>(null);
   const [hasFetchedExistingSources, setHasFetchedExistingSources] = useState(false);
-  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (sourceMode !== 'existing' || hasFetchedExistingSources) return;
@@ -116,21 +115,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
   };
 
-  const handleDeleteExistingSource = async (e: React.MouseEvent, src: AirbyteSource) => {
+  const handleRequestDeleteSource = (e: React.MouseEvent, src: AirbyteSource) => {
     e.stopPropagation();
-    const confirmed = window.confirm(`Tem certeza que deseja excluir a origem "${src.name}" do Airbyte? Essa ação não pode ser desfeita.`);
-    if (!confirmed) return;
-
-    setDeletingSourceId(src.sourceId);
-    try {
-      await deleteAirbyteSource(src.sourceId);
-      setExistingAirbyteSources(prev => prev.filter(s => s.sourceId !== src.sourceId));
-      if (selectedSourceId === src.sourceId) setSelectedSourceId('');
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Falha ao excluir a origem no Airbyte.');
-    } finally {
-      setDeletingSourceId(null);
-    }
+    setDeleteConfirmTarget({ kind: 'source', id: src.sourceId, name: src.name });
   };
 
   // Real connector catalog (fetched from the Airbyte Gateway backend)
@@ -229,7 +216,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [isLoadingExistingDestinations, setIsLoadingExistingDestinations] = useState(false);
   const [existingDestinationsError, setExistingDestinationsError] = useState<string | null>(null);
   const [hasFetchedExistingDestinations, setHasFetchedExistingDestinations] = useState(false);
-  const [deletingDestinationId, setDeletingDestinationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (destMode !== 'existing' || hasFetchedExistingDestinations) return;
@@ -283,21 +269,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
   };
 
-  const handleDeleteExistingDestination = async (e: React.MouseEvent, dst: AirbyteDestination) => {
+  const handleRequestDeleteDestination = (e: React.MouseEvent, dst: AirbyteDestination) => {
     e.stopPropagation();
-    const confirmed = window.confirm(`Tem certeza que deseja excluir o destino "${dst.name}" do Airbyte? Essa ação não pode ser desfeita.`);
-    if (!confirmed) return;
-
-    setDeletingDestinationId(dst.destinationId);
-    try {
-      await deleteAirbyteDestination(dst.destinationId);
-      setExistingAirbyteDestinations(prev => prev.filter(d => d.destinationId !== dst.destinationId));
-      if (selectedDestId === dst.destinationId) setSelectedDestId('');
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Falha ao excluir o destino no Airbyte.');
-    } finally {
-      setDeletingDestinationId(null);
-    }
+    setDeleteConfirmTarget({ kind: 'destination', id: dst.destinationId, name: dst.name });
   };
 
   // New destination form fields
@@ -458,6 +432,35 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   // Form error notification
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // In-app confirmation modal for deleting a real Airbyte source/destination
+  // (replaces the native window.confirm, which doesn't match the app's UI)
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ kind: 'source' | 'destination'; id: string; name: string } | null>(null);
+  const [isDeletingConfirmed, setIsDeletingConfirmed] = useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmTarget) return;
+    const { kind, id } = deleteConfirmTarget;
+
+    setIsDeletingConfirmed(true);
+    try {
+      if (kind === 'source') {
+        await deleteAirbyteSource(id);
+        setExistingAirbyteSources(prev => prev.filter(s => s.sourceId !== id));
+        if (selectedSourceId === id) setSelectedSourceId('');
+      } else {
+        await deleteAirbyteDestination(id);
+        setExistingAirbyteDestinations(prev => prev.filter(d => d.destinationId !== id));
+        if (selectedDestId === id) setSelectedDestId('');
+      }
+      setDeleteConfirmTarget(null);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : `Falha ao excluir ${kind === 'source' ? 'a origem' : 'o destino'} no Airbyte.`);
+      setDeleteConfirmTarget(null);
+    } finally {
+      setIsDeletingConfirmed(false);
+    }
+  };
 
   // Real-backend submission state for Steps 1 & 2
   const [isSubmittingStep1, setIsSubmittingStep1] = useState(false);
@@ -1330,14 +1333,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
                             <button
                               type="button"
-                              onClick={(e) => handleDeleteExistingSource(e, src)}
-                              disabled={deletingSourceId === src.sourceId}
+                              onClick={(e) => handleRequestDeleteSource(e, src)}
                               title="Excluir origem no Airbyte"
-                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
+                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
                             >
-                              {deletingSourceId === src.sourceId
-                                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                : <Trash2 className="w-3.5 h-3.5" />}
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                             <span className="text-indigo-600 font-semibold">{isSelected ? '✓ Selecionado' : 'Selecionar'}</span>
                           </div>
@@ -1739,14 +1739,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
                             <button
                               type="button"
-                              onClick={(e) => handleDeleteExistingDestination(e, dst)}
-                              disabled={deletingDestinationId === dst.destinationId}
+                              onClick={(e) => handleRequestDeleteDestination(e, dst)}
                               title="Excluir destino no Airbyte"
-                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer disabled:opacity-50"
+                              className="p-1.5 -ml-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
                             >
-                              {deletingDestinationId === dst.destinationId
-                                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                : <Trash2 className="w-3.5 h-3.5" />}
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                             <span className="text-indigo-600 font-semibold">{isSelected ? '✓ Selecionado' : 'Selecionar'}</span>
                           </div>
@@ -2946,6 +2943,56 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Ver Todas as Integrações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Source/Destination Confirmation Modal */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 mx-auto flex items-center justify-center">
+              <Trash2 className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">
+                Excluir {deleteConfirmTarget.kind === 'source' ? 'Origem' : 'Destino'}?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Tem certeza que deseja excluir <strong className="text-slate-800">"{deleteConfirmTarget.name}"</strong> do Airbyte?
+                Essa ação não pode ser desfeita.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                disabled={isDeletingConfirmed}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeletingConfirmed}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingConfirmed ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
