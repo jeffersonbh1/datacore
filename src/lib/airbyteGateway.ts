@@ -38,6 +38,8 @@ export interface AirbyteSource {
   name: string;
   sourceType: string;
   workspaceId: string;
+  configuration?: Record<string, unknown>;
+  createdAt?: number;
 }
 
 export async function createAirbyteSource(payload: {
@@ -49,6 +51,11 @@ export async function createAirbyteSource(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchExistingSources(): Promise<AirbyteSource[]> {
+  const data = await gatewayFetch<{ data: AirbyteSource[] }>('/api/airbyte/sources');
+  return data.data;
 }
 
 export interface AirbyteDestination {

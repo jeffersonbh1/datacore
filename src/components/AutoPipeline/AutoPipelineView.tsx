@@ -13,8 +13,8 @@ import {
   DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary
 } from '../../types';
 import {
-  createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
-  fetchSourceCatalog, fetchStreams
+  AirbyteSource, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
+  fetchExistingSources, fetchSourceCatalog, fetchStreams
 } from '../../lib/airbyteGateway';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,6 +50,69 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   const [sourceMode, setSourceMode] = useState<'new' | 'existing'>('new');
   const [selectedSourceId, setSelectedSourceId] = useState<string>(sources[0]?.id || '');
+
+  // Real sources already registered in Airbyte, for "Usar Origem Existente"
+  // (replaces the locally-mocked `sources` list entirely — Airbyte is the source of truth)
+  const [existingAirbyteSources, setExistingAirbyteSources] = useState<AirbyteSource[]>([]);
+  const [isLoadingExistingSources, setIsLoadingExistingSources] = useState(false);
+  const [existingSourcesError, setExistingSourcesError] = useState<string | null>(null);
+  const [hasFetchedExistingSources, setHasFetchedExistingSources] = useState(false);
+
+  useEffect(() => {
+    if (sourceMode !== 'existing' || hasFetchedExistingSources) return;
+
+    let cancelled = false;
+    setIsLoadingExistingSources(true);
+    setExistingSourcesError(null);
+
+    fetchExistingSources()
+      .then(list => {
+        if (cancelled) return;
+        setExistingAirbyteSources(list);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setExistingSourcesError(err instanceof Error ? err.message : 'Falha ao carregar origens do Airbyte.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoadingExistingSources(false);
+        setHasFetchedExistingSources(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [sourceMode, hasFetchedExistingSources]);
+
+  // Maps a real Airbyte source (arbitrary per-type configuration) into the local
+  // SourceConnectorConfig shape used elsewhere in the wizard/app.
+  const mapAirbyteSourceToConnectorConfig = (src: AirbyteSource): SourceConnectorConfig => {
+    const cfg = src.configuration || {};
+    const type = (src.sourceType as SourceType) || 'postgres';
+    const sslMode = (cfg.ssl_mode as { mode?: string } | undefined)?.mode;
+    return {
+      id: src.sourceId,
+      name: src.name,
+      type,
+      provider: getProviderForSource(type),
+      host: (cfg.host as string) || (cfg.spreadsheetId as string) || 'faker-generator',
+      port: (cfg.port as number) ?? 0,
+      database: (cfg.database as string) || (cfg.dataset_id as string) || '-',
+      username: (cfg.username as string) || '',
+      schema: Array.isArray(cfg.schemas) ? (cfg.schemas as string[])[0] : undefined,
+      ssl: Boolean(sslMode && sslMode !== 'disable' && sslMode !== 'disabled'),
+      discoveredTables: [],
+      status: 'connected',
+      lastTestedAt: 'Sincronizado do Airbyte',
+      createdAt: src.createdAt ? new Date(src.createdAt * 1000).toISOString().split('T')[0] : '',
+    };
+  };
+
+  const handleSelectExistingSource = (src: AirbyteSource) => {
+    setSelectedSourceId(src.sourceId);
+    if (!sources.some(s => s.id === src.sourceId)) {
+      onAddSource(mapAirbyteSourceToConnectorConfig(src));
+    }
+  };
 
   // Real connector catalog (fetched from the Airbyte Gateway backend)
   const [sourceCatalog, setSourceCatalog] = useState<SourceCatalogEntry[]>([]);
@@ -1112,7 +1175,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Usar Origem Existente ({sources.length})
+                    Usar Origem Existente ({existingAirbyteSources.length})
                   </button>
                 </div>
               </div>
@@ -1120,24 +1183,47 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               {sourceMode === 'existing' ? (
                 <div className="space-y-4">
                   <label className="block text-xs font-semibold text-slate-700">
-                    Selecione uma Origem Cadastrada Anteriormente
+                    Selecione uma Origem Cadastrada no Airbyte
                   </label>
+
+                  {isLoadingExistingSources && (
+                    <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Carregando origens cadastradas no Airbyte...</span>
+                    </div>
+                  )}
+
+                  {!isLoadingExistingSources && existingSourcesError && (
+                    <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{existingSourcesError}</span>
+                    </div>
+                  )}
+
+                  {!isLoadingExistingSources && !existingSourcesError && existingAirbyteSources.length === 0 && (
+                    <div className="text-xs text-slate-500 p-3">
+                      Nenhuma origem cadastrada no Airbyte ainda. Use "+ Cadastrar Nova Origem" para criar a primeira.
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {sources.map(src => {
-                      const isSelected = selectedSourceId === src.id;
+                    {existingAirbyteSources.map(src => {
+                      const isSelected = selectedSourceId === src.sourceId;
+                      const cfg = src.configuration || {};
+                      const subtitle = (cfg.host as string) || (cfg.spreadsheetId as string) || 'Sem host (Faker)';
                       return (
                         <div
-                          key={src.id}
-                          onClick={() => setSelectedSourceId(src.id)}
+                          key={src.sourceId}
+                          onClick={() => handleSelectExistingSource(src)}
                           className={`p-4 rounded-xl border transition cursor-pointer ${
-                            isSelected 
-                              ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs' 
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs'
                               : 'border-slate-200 hover:border-slate-300 bg-white'
                           }`}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-slate-100 text-slate-700">
-                              {src.type}
+                              {src.sourceType}
                             </span>
                             <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1145,9 +1231,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                             </span>
                           </div>
                           <div className="font-bold text-sm text-slate-900 mb-1">{src.name}</div>
-                          <div className="text-xs text-slate-500 font-mono truncate">{src.host}:{src.port}</div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                            <span>{src.discoveredTables.length} tabelas</span>
+                          <div className="text-xs text-slate-500 font-mono truncate">{subtitle}</div>
+                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end text-xs text-slate-600">
                             <span className="text-indigo-600 font-semibold">{isSelected ? '✓ Selecionado' : 'Selecionar'}</span>
                           </div>
                         </div>
