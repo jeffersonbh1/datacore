@@ -17,6 +17,9 @@ import {
   fetchSourceCatalog, fetchStreams
 } from '../../lib/airbyteGateway';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isRealAirbyteId = (id: string): boolean => UUID_PATTERN.test(id);
+
 interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
   destinations: DestinationConnectorConfig[];
@@ -173,34 +176,43 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [integrationName, setIntegrationName] = useState('');
   const [selectedTables, setSelectedTables] = useState<string[]>(['clientes', 'pedidos', 'transacoes_pagamento']);
 
-  // Real stream discovery (Airbyte) for the source created in Step 1
+  // Real stream discovery (Airbyte) for the currently selected/created source —
+  // works the same whether the source was just created (new) or picked from
+  // "Usar Origem Existente", since both paths keep `selectedSourceId` in sync
+  // with the real Airbyte source id.
   const [realStreams, setRealStreams] = useState<AirbyteStreamSummary[]>([]);
   const [isLoadingStreams, setIsLoadingStreams] = useState(false);
   const [streamsError, setStreamsError] = useState<string | null>(null);
-  const usingRealStreams = Boolean(airbyteSourceId);
+  const [streamsFetchedForSourceId, setStreamsFetchedForSourceId] = useState<string | null>(null);
+  const usingRealStreams = realStreams.length > 0;
 
   useEffect(() => {
-    if (wizardStep !== 3 || !airbyteSourceId || realStreams.length > 0 || isLoadingStreams) return;
+    if (wizardStep !== 3 || !selectedSourceId) return;
+    if (streamsFetchedForSourceId === selectedSourceId) return;
 
     let cancelled = false;
     setIsLoadingStreams(true);
     setStreamsError(null);
 
-    fetchStreams(airbyteSourceId)
+    fetchStreams(selectedSourceId)
       .then(streams => {
         if (cancelled) return;
         setRealStreams(streams);
         setSelectedTables(streams.map(s => s.streamName));
       })
       .catch(err => {
-        if (!cancelled) setStreamsError(err instanceof Error ? err.message : 'Falha ao descobrir as tabelas da origem.');
+        if (cancelled) return;
+        setRealStreams([]);
+        setStreamsError(err instanceof Error ? err.message : 'Falha ao descobrir as tabelas reais da origem. Exibindo dados de exemplo.');
       })
       .finally(() => {
-        if (!cancelled) setIsLoadingStreams(false);
+        if (cancelled) return;
+        setIsLoadingStreams(false);
+        setStreamsFetchedForSourceId(selectedSourceId);
       });
 
     return () => { cancelled = true; };
-  }, [wizardStep, airbyteSourceId]);
+  }, [wizardStep, selectedSourceId, streamsFetchedForSourceId]);
 
   const [syncFrequency, setSyncFrequency] = useState<SyncFrequencyOption>('daily');
   const [executionTimes, setExecutionTimes] = useState<string[]>(['02:00']);
@@ -673,15 +685,17 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
     setIsCreating(true);
 
-    // Create the real Airbyte connection when we have real source/destination IDs
-    // and the user chose "daily" (the only frequency wired to a real schedule for now).
+    // Create the real Airbyte connection when both source and destination are real
+    // Airbyte resources (confirmed for the source via the streams discovery above;
+    // heuristically for the destination via its UUID shape) and the user chose
+    // "daily" (the only frequency wired to a real schedule for now).
     let airbyteConnectionId: string | undefined;
-    if (airbyteSourceId && airbyteDestinationId && syncFrequency === 'daily') {
+    if (usingRealStreams && isRealAirbyteId(selectedDestId) && syncFrequency === 'daily') {
       try {
         const created = await createAirbyteConnection({
           name: integrationName.trim(),
-          sourceId: airbyteSourceId,
-          destinationId: airbyteDestinationId,
+          sourceId: selectedSourceId,
+          destinationId: selectedDestId,
           streamNames: selectedTables,
           writeMode: destWriteMode,
           dailyTime: executionTimes[0] || '02:00',
@@ -1894,14 +1908,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   </div>
                 </div>
 
-                {usingRealStreams && isLoadingStreams && (
+                {isLoadingStreams && (
                   <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     <span>Descobrindo tabelas reais da origem via Airbyte...</span>
                   </div>
                 )}
 
-                {usingRealStreams && streamsError && (
+                {!isLoadingStreams && streamsError && (
                   <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>{streamsError}</span>
@@ -1909,7 +1923,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 )}
 
                 {/* Table Checkbox Cards */}
-                {!(usingRealStreams && isLoadingStreams) && (
+                {!isLoadingStreams && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {usingRealStreams
                       ? realStreams.map(stream => {
@@ -2029,7 +2043,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   </div>
                 </div>
 
-                {usingRealStreams && airbyteDestinationId && (
+                {usingRealStreams && isRealAirbyteId(selectedDestId) && (
                   syncFrequency === 'daily' ? (
                     <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
