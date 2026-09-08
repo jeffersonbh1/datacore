@@ -548,17 +548,50 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
   };
 
-  // Test destination connection simulator
-  const handleTestDestination = () => {
-    setIsTestingDest(true);
+  // BigQuery's "Default Dataset ID" always carries the raw_ prefix, identifying the raw layer
+  const getFullDatasetId = () => `raw_${destDatabaseOrDataset.trim()}`;
+
+  // Test destination connection: for BigQuery, creates (and validates) the real destination in Airbyte
+  const handleTestDestination = async () => {
     setDestTestSuccess(null);
     setDestTestMessage('');
 
-    setTimeout(() => {
-      setIsTestingDest(false);
+    if (destType !== 'bigquery') {
+      setIsTestingDest(true);
+      setTimeout(() => {
+        setIsTestingDest(false);
+        setDestTestSuccess(true);
+        setDestTestMessage('Autenticação bem-sucedida! Permissão de escrita e schema validados.');
+      }, 800);
+      return;
+    }
+
+    if (!destAccountOrProject.trim() || !destDatabaseOrDataset.trim() || !destCredentials.trim()) {
+      setDestTestSuccess(false);
+      setDestTestMessage('Preencha o Projeto GCP, o Default Dataset ID e faça upload das credenciais antes de testar.');
+      return;
+    }
+
+    setIsTestingDest(true);
+    try {
+      const created = await createBigQueryDestination({
+        name: destName.trim() || 'Novo Destino BigQuery',
+        config: {
+          projectId: destAccountOrProject.trim(),
+          datasetId: getFullDatasetId(),
+          datasetLocation: destWarehouseOrCluster.trim() || undefined,
+          credentialsJson: destCredentials,
+        },
+      });
+      setAirbyteDestinationId(created.destinationId);
       setDestTestSuccess(true);
-      setDestTestMessage('Autenticação bem-sucedida! Permissão de escrita e schema validados.');
-    }, 800);
+      setDestTestMessage(`Conexão real estabelecida no Airbyte! Destination ID: ${created.destinationId}`);
+    } catch (err) {
+      setDestTestSuccess(false);
+      setDestTestMessage(err instanceof Error ? err.message : 'Falha ao conectar no Airbyte.');
+    } finally {
+      setIsTestingDest(false);
+    }
   };
 
   // Quick connector selection helpers
@@ -749,7 +782,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         return;
       }
       if (!destAccountOrProject.trim() || !destDatabaseOrDataset.trim()) {
-        setErrorMessage('Por favor, informe o Projeto/Account e Database/Dataset do Destino.');
+        setErrorMessage('Por favor, informe o Projeto/Account e o Default Dataset ID do Destino.');
         return;
       }
       if (destType === 'bigquery' && !destCredentials.trim()) {
@@ -765,7 +798,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             name: destName.trim(),
             config: {
               projectId: destAccountOrProject.trim(),
-              datasetId: destDatabaseOrDataset.trim(),
+              datasetId: getFullDatasetId(),
               datasetLocation: destWarehouseOrCluster.trim() || undefined,
               credentialsJson: destCredentials,
             },
@@ -781,7 +814,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
           provider: getProviderForDest(destType),
           accountOrProject: destAccountOrProject.trim(),
           warehouseOrCluster: destWarehouseOrCluster.trim(),
-          databaseOrDataset: destDatabaseOrDataset.trim(),
+          databaseOrDataset: destType === 'bigquery' ? getFullDatasetId() : destDatabaseOrDataset.trim(),
           schema: destSchema.trim(),
           authMethod: destAuthMethod,
           credentials: destCredentials,
@@ -1831,15 +1864,37 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Database / Dataset <span className="text-rose-500">*</span>
+                          {destType === 'bigquery' ? 'Default Dataset ID' : 'Database / Dataset'} <span className="text-rose-500">*</span>
                         </label>
-                        <input
-                          type="text"
-                          value={destDatabaseOrDataset}
-                          onChange={(e) => setDestDatabaseOrDataset(e.target.value)}
-                          placeholder="analytics_curated"
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                        />
+                        {destType === 'bigquery' ? (
+                          <>
+                            <div className="flex">
+                              <span className="inline-flex items-center px-2.5 bg-slate-100 border border-r-0 border-slate-300 rounded-l-lg text-xs font-mono text-slate-500 whitespace-nowrap">
+                                raw_
+                              </span>
+                              <input
+                                type="text"
+                                value={destDatabaseOrDataset}
+                                onChange={(e) => setDestDatabaseOrDataset(e.target.value)}
+                                placeholder="analytics_curated"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-r-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </div>
+                            {destDatabaseOrDataset.trim() && (
+                              <p className="text-[11px] text-slate-500 mt-1">
+                                Dataset final no BigQuery: <span className="font-mono font-semibold text-slate-700">{getFullDatasetId()}</span>
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <input
+                            type="text"
+                            value={destDatabaseOrDataset}
+                            onChange={(e) => setDestDatabaseOrDataset(e.target.value)}
+                            placeholder="analytics_curated"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        )}
                       </div>
 
                       <div>
@@ -1933,12 +1988,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         {isTestingDest ? (
                           <>
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Validando Destino...</span>
+                            <span>{destType === 'bigquery' ? 'Conectando ao Airbyte...' : 'Validando Destino...'}</span>
                           </>
                         ) : (
                           <>
                             <Zap className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Testar Permissões de Escrita no Destino</span>
+                            <span>{destType === 'bigquery' ? 'Testar Conexão & Criar no Airbyte' : 'Testar Permissões de Escrita no Destino'}</span>
                           </>
                         )}
                       </button>
