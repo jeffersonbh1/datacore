@@ -10,9 +10,12 @@ import {
 import {
   SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
   SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
-  DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry
+  DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary
 } from '../../types';
-import { createAirbyteSource, createBigQueryDestination, fetchSourceCatalog } from '../../lib/airbyteGateway';
+import {
+  createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
+  fetchSourceCatalog, fetchStreams
+} from '../../lib/airbyteGateway';
 
 interface AutoPipelineViewProps {
   sources: SourceConnectorConfig[];
@@ -169,6 +172,36 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   const [integrationName, setIntegrationName] = useState('');
   const [selectedTables, setSelectedTables] = useState<string[]>(['clientes', 'pedidos', 'transacoes_pagamento']);
+
+  // Real stream discovery (Airbyte) for the source created in Step 1
+  const [realStreams, setRealStreams] = useState<AirbyteStreamSummary[]>([]);
+  const [isLoadingStreams, setIsLoadingStreams] = useState(false);
+  const [streamsError, setStreamsError] = useState<string | null>(null);
+  const usingRealStreams = Boolean(airbyteSourceId);
+
+  useEffect(() => {
+    if (wizardStep !== 3 || !airbyteSourceId || realStreams.length > 0 || isLoadingStreams) return;
+
+    let cancelled = false;
+    setIsLoadingStreams(true);
+    setStreamsError(null);
+
+    fetchStreams(airbyteSourceId)
+      .then(streams => {
+        if (cancelled) return;
+        setRealStreams(streams);
+        setSelectedTables(streams.map(s => s.streamName));
+      })
+      .catch(err => {
+        if (!cancelled) setStreamsError(err instanceof Error ? err.message : 'Falha ao descobrir as tabelas da origem.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingStreams(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [wizardStep, airbyteSourceId]);
+
   const [syncFrequency, setSyncFrequency] = useState<SyncFrequencyOption>('daily');
   const [executionTimes, setExecutionTimes] = useState<string[]>(['02:00']);
   const [newTimeInput, setNewTimeInput] = useState<string>('08:00');
@@ -616,7 +649,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   // FINALIZE & CREATE INTEGRATION
   // --------------------------------------------------------------------------
-  const handleCreateAutoIntegration = () => {
+  const handleCreateAutoIntegration = async () => {
     setErrorMessage(null);
 
     if (!integrationName.trim()) {
@@ -639,6 +672,27 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
 
     setIsCreating(true);
+
+    // Create the real Airbyte connection when we have real source/destination IDs
+    // and the user chose "daily" (the only frequency wired to a real schedule for now).
+    let airbyteConnectionId: string | undefined;
+    if (airbyteSourceId && airbyteDestinationId && syncFrequency === 'daily') {
+      try {
+        const created = await createAirbyteConnection({
+          name: integrationName.trim(),
+          sourceId: airbyteSourceId,
+          destinationId: airbyteDestinationId,
+          streamNames: selectedTables,
+          writeMode: destWriteMode,
+          dailyTime: executionTimes[0] || '02:00',
+        });
+        airbyteConnectionId = created.connectionId;
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Falha ao criar a integração no Airbyte.');
+        setIsCreating(false);
+        return;
+      }
+    }
 
     const newPipeId = `pipe-auto-${Date.now()}`;
     const newIntegrationId = `int-auto-${Date.now()}`;
@@ -837,18 +891,17 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       onceDate: syncFrequency === 'once' ? onceDate : undefined,
       scheduleSummary,
       applyLgpdSanitization,
+      airbyteConnectionId,
       status: 'active',
       pipelineId: newPipeId,
       createdAt: new Date().toISOString().split('T')[0],
       tablesCount: selectedTables.length
     };
 
-    setTimeout(() => {
-      onCreateIntegration(newIntegration, newPipeline);
-      setCreatedPipelineId(newPipeId);
-      setIsCreating(false);
-      setShowSuccessModal(true);
-    }, 600);
+    onCreateIntegration(newIntegration, newPipeline);
+    setCreatedPipelineId(newPipeId);
+    setIsCreating(false);
+    setShowSuccessModal(true);
   };
 
   // Active source/dest instances for preview in step 3
@@ -1818,13 +1871,15 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       Selecione as Tabelas para Integrar <span className="text-rose-500">*</span>
                     </label>
                     <p className="text-[11px] text-slate-500">
-                      Tabelas descobertas automaticamente na origem ({selectedTables.length} de {discoveredTables.length} selecionadas)
+                      {usingRealStreams
+                        ? `Tabelas reais descobertas via Airbyte (${selectedTables.length} de ${realStreams.length} selecionadas)`
+                        : `Tabelas descobertas automaticamente na origem (${selectedTables.length} de ${discoveredTables.length} selecionadas)`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleSelectAllTables}
+                      onClick={usingRealStreams ? () => setSelectedTables(realStreams.map(s => s.streamName)) : handleSelectAllTables}
                       className="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-semibold cursor-pointer"
                     >
                       Selecionar Todas
@@ -1839,68 +1894,114 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   </div>
                 </div>
 
+                {usingRealStreams && isLoadingStreams && (
+                  <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Descobrindo tabelas reais da origem via Airbyte...</span>
+                  </div>
+                )}
+
+                {usingRealStreams && streamsError && (
+                  <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{streamsError}</span>
+                  </div>
+                )}
+
                 {/* Table Checkbox Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {discoveredTables.map(tbl => {
-                    const isChecked = selectedTables.includes(tbl.name);
-                    return (
-                      <div
-                        key={tbl.name}
-                        onClick={() => handleToggleTable(tbl.name)}
-                        className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                          isChecked 
-                            ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-500/30' 
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}} // Handled by parent div
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
-                            />
-                            <div>
-                              <div className="text-xs font-bold text-slate-900 font-mono">{tbl.name}</div>
-                              <div className="text-[10px] text-slate-500">~{tbl.rowCount.toLocaleString('pt-BR')} registros</div>
+                {!(usingRealStreams && isLoadingStreams) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {usingRealStreams
+                      ? realStreams.map(stream => {
+                          const isChecked = selectedTables.includes(stream.streamName);
+                          return (
+                            <div
+                              key={stream.streamName}
+                              onClick={() => handleToggleTable(stream.streamName)}
+                              className={`p-3.5 rounded-xl border transition cursor-pointer ${
+                                isChecked
+                                  ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-500/30'
+                                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}} // Handled by parent div
+                                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                                />
+                                <div className="text-xs font-bold text-slate-900 font-mono">{stream.streamName}</div>
+                              </div>
+                              <div className="mt-2.5 pt-2 border-t border-slate-100/80 text-[11px] text-slate-500 truncate">
+                                Campos: {stream.columns.slice(0, 4).join(', ')}{stream.columns.length > 4 ? '...' : ''}
+                              </div>
                             </div>
-                          </div>
+                          );
+                        })
+                      : discoveredTables.map(tbl => {
+                          const isChecked = selectedTables.includes(tbl.name);
+                          return (
+                            <div
+                              key={tbl.name}
+                              onClick={() => handleToggleTable(tbl.name)}
+                              className={`p-3.5 rounded-xl border transition cursor-pointer ${
+                                isChecked
+                                  ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-500/30'
+                                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}} // Handled by parent div
+                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                                  />
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-900 font-mono">{tbl.name}</div>
+                                    <div className="text-[10px] text-slate-500">~{tbl.rowCount.toLocaleString('pt-BR')} registros</div>
+                                  </div>
+                                </div>
 
-                          {tbl.hasPII && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold flex items-center gap-1 shrink-0">
-                              <ShieldCheck className="w-3 h-3 text-amber-600" />
-                              PII
-                            </span>
-                          )}
-                        </div>
+                                {tbl.hasPII && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold flex items-center gap-1 shrink-0">
+                                    <ShieldCheck className="w-3 h-3 text-amber-600" />
+                                    PII
+                                  </span>
+                                )}
+                              </div>
 
-                        <div className="mt-2.5 pt-2 border-t border-slate-100/80 text-[11px] text-slate-500 truncate">
-                          Campos: {tbl.columns.slice(0, 4).join(', ')}{tbl.columns.length > 4 ? '...' : ''}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                              <div className="mt-2.5 pt-2 border-t border-slate-100/80 text-[11px] text-slate-500 truncate">
+                                Campos: {tbl.columns.slice(0, 4).join(', ')}{tbl.columns.length > 4 ? '...' : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
+                  </div>
+                )}
 
-                {/* Add Custom Table Input */}
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={newCustomTable}
-                    onChange={(e) => setNewCustomTable(e.target.value)}
-                    placeholder="Adicionar outra tabela manualmente (ex: fiscal_nfe)"
-                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 max-w-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddCustomTable}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Adicionar Tabela</span>
-                  </button>
-                </div>
+                {/* Add Custom Table Input (only for the simulated/legacy flow — real streams come strictly from Airbyte's discovery) */}
+                {!usingRealStreams && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newCustomTable}
+                      onChange={(e) => setNewCustomTable(e.target.value)}
+                      placeholder="Adicionar outra tabela manualmente (ex: fiscal_nfe)"
+                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 max-w-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomTable}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar Tabela</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Frequência de Sincronização e Horários de Execução */}
@@ -1927,6 +2028,20 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                     <span className="font-semibold text-slate-900 truncate max-w-sm">{getScheduleSummaryText()}</span>
                   </div>
                 </div>
+
+                {usingRealStreams && airbyteDestinationId && (
+                  syncFrequency === 'daily' ? (
+                    <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Esta integração será criada de verdade no Airbyte, sincronizando diariamente às {executionTimes[0] || '02:00'}.</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Por enquanto, apenas a frequência <strong>Diário</strong> cria uma integração real no Airbyte. Esta opção só gera o pipeline visual (simulado) — sem sincronização real de dados.</span>
+                    </div>
+                  )
+                )}
 
                 {/* 4 Frequency Options Grid: Diário, Semanal, Mensal, Carga única */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

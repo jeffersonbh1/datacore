@@ -1,4 +1,4 @@
-import { SourceCatalogEntry } from '../types';
+import { AirbyteStreamSummary, SourceCatalogEntry } from '../types';
 
 const gatewayUrl = import.meta.env.VITE_AIRBYTE_GATEWAY_URL || '';
 const gatewayApiKey = import.meta.env.VITE_AIRBYTE_GATEWAY_API_KEY || '';
@@ -70,5 +70,44 @@ export async function createBigQueryDestination(payload: {
   return gatewayFetch<AirbyteDestination>('/api/airbyte/destinations', {
     method: 'POST',
     body: JSON.stringify({ name: payload.name, destinationType: 'bigquery', config: payload.config }),
+  });
+}
+
+interface RawAirbyteStream {
+  streamName: string;
+  defaultCursorField?: string[];
+  sourceDefinedPrimaryKey?: string[][];
+  propertyFields: string[][];
+}
+
+export async function fetchStreams(sourceId: string): Promise<AirbyteStreamSummary[]> {
+  const data = await gatewayFetch<{ data: RawAirbyteStream[] }>(`/api/airbyte/streams?sourceId=${sourceId}`);
+  return data.data.map(s => ({
+    streamName: s.streamName,
+    primaryKey: s.sourceDefinedPrimaryKey || [],
+    cursorField: s.defaultCursorField || [],
+    columns: s.propertyFields.map(path => path.join('.')),
+  }));
+}
+
+export interface AirbyteConnection {
+  connectionId: string;
+  name: string;
+  sourceId: string;
+  destinationId: string;
+  status: string;
+}
+
+export async function createAirbyteConnection(payload: {
+  name: string;
+  sourceId: string;
+  destinationId: string;
+  streamNames: string[];
+  writeMode: 'append' | 'merge_upsert' | 'overwrite';
+  dailyTime: string;
+}): Promise<AirbyteConnection> {
+  return gatewayFetch<AirbyteConnection>('/api/airbyte/connections', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

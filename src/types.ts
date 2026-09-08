@@ -239,6 +239,13 @@ export interface DestinationConnectorConfig {
 
 export type SyncFrequencyOption = 'daily' | 'weekly' | 'monthly' | 'once' | 'realtime' | '15m' | 'hourly' | 'manual';
 
+export interface AirbyteStreamSummary {
+  streamName: string;
+  primaryKey: string[][];
+  cursorField: string[];
+  columns: string[];
+}
+
 export interface AutoIntegration {
   id: string;
   name: string;
@@ -256,6 +263,7 @@ export interface AutoIntegration {
   onceDate?: string;
   scheduleSummary?: string;
   applyLgpdSanitization: boolean;
+  airbyteConnectionId?: string;
   status: 'active' | 'paused';
   pipelineId: string;
   createdAt: string;
