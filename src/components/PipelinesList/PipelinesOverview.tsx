@@ -44,7 +44,9 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
 
   const totalRecordsToday = pipelines.reduce((sum, p) => sum + p.recordsProcessedToday, 0);
   const totalCost = pipelines.reduce((sum, p) => sum + p.monthlyCostUsd, 0);
-  const avgSla = (pipelines.reduce((sum, p) => sum + p.actualSla, 0) / pipelines.length).toFixed(2);
+  const avgSla = pipelines.length
+    ? (pipelines.reduce((sum, p) => sum + p.actualSla, 0) / pipelines.length).toFixed(2)
+    : '0.00';
   const activeCount = pipelines.filter(p => p.status === 'active').length;
 
   const getProviderBadge = (provider: CloudProvider) => {
@@ -298,7 +300,26 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           );
         })}
 
-        {filteredPipelines.length === 0 && (
+        {filteredPipelines.length === 0 && pipelines.length === 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3 shadow-sm">
+            <Database className="w-10 h-10 text-slate-300 mx-auto" />
+            <h4 className="text-base font-semibold text-slate-800">Nenhum pipeline criado ainda</h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Crie sua primeira integração no Pipeline Automático para vê-la listada aqui.
+            </p>
+            {canCreate && onNavigateToAutoPipeline && (
+              <button
+                onClick={onNavigateToAutoPipeline}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+              >
+                <Wand2 className="w-4 h-4" />
+                Novo Pipeline Automático
+              </button>
+            )}
+          </div>
+        )}
+
+        {filteredPipelines.length === 0 && pipelines.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3 shadow-sm">
             <Database className="w-10 h-10 text-slate-300 mx-auto" />
             <h4 className="text-base font-semibold text-slate-800">Nenhum pipeline encontrado</h4>

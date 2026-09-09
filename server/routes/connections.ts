@@ -144,3 +144,55 @@ connectionsRouter.post('/', async (req, res) => {
     handleAirbyteError(res, err);
   }
 });
+
+interface AirbyteJob {
+  jobId: number;
+  status: 'pending' | 'running' | 'incomplete' | 'failed' | 'succeeded' | 'cancelled';
+  jobType: 'sync' | 'reset' | 'clear' | 'refresh';
+  connectionId: string;
+  startTime: string;
+  lastUpdatedTime?: string;
+  duration?: string;
+  bytesSynced?: number;
+  rowsSynced?: number;
+}
+
+// Real sync/execution history for a connection — the source of truth Fase 2's
+// pipeline_runs is populated from (see src/lib/pipelineRuns.ts), instead of the
+// static placeholder metrics the canvas used to show.
+connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const data = await airbyteFetch<{ data: AirbyteJob[] }>(
+      `/jobs?connectionId=${connectionId}&jobType=sync&limit=${limit}`
+    );
+    res.json(data);
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});
+
+// Pauses/resumes a connection's own Airbyte schedule (independent from DataCore's
+// "integracoes.status" flag in Supabase — that flag alone does NOT stop a
+// scheduled sync from running, only this does).
+connectionsRouter.patch('/:connectionId', async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { status } = req.body as { status?: 'active' | 'inactive' };
+
+    if (status !== 'active' && status !== 'inactive') {
+      res.status(400).json({ error: 'Campo "status" deve ser "active" ou "inactive".' });
+      return;
+    }
+
+    const data = await airbyteFetch(`/connections/${connectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+
+    res.json(data);
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});

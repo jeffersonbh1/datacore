@@ -6,9 +6,17 @@ import { buildSourceConfiguration } from '../sourceConfigBuilder';
 
 export const sourcesRouter = Router();
 
-sourcesRouter.get('/', async (_req, res) => {
+// Every tenant (empresa) gets its own Airbyte workspace (Fase 3 — see sql/001's
+// empresas.airbyte_workspace_id). The caller passes it explicitly; falling back
+// to the single shared AIRBYTE_WORKSPACE_ID keeps the original tenant (whose
+// row was backfilled to this same id) and any not-yet-updated caller working.
+function resolveWorkspaceId(candidate: unknown): string {
+  return (typeof candidate === 'string' && candidate) || process.env.AIRBYTE_WORKSPACE_ID || '';
+}
+
+sourcesRouter.get('/', async (req, res) => {
   try {
-    const workspaceId = process.env.AIRBYTE_WORKSPACE_ID || '';
+    const workspaceId = resolveWorkspaceId(req.query.workspaceId);
     const data = await airbyteFetch(`/sources?workspaceIds=${workspaceId}`);
     res.json(data);
   } catch (err) {
@@ -18,10 +26,11 @@ sourcesRouter.get('/', async (_req, res) => {
 
 sourcesRouter.post('/', async (req, res) => {
   try {
-    const { name, catalogId, config } = req.body as {
+    const { name, catalogId, config, workspaceId: workspaceIdInput } = req.body as {
       name: string;
       catalogId: string;
       config: Record<string, unknown>;
+      workspaceId?: string;
     };
 
     if (!name || !catalogId) {
@@ -36,7 +45,7 @@ sourcesRouter.post('/', async (req, res) => {
     }
 
     const configuration = buildSourceConfiguration(catalogEntry.airbyteSourceType, config || {});
-    const workspaceId = process.env.AIRBYTE_WORKSPACE_ID || '';
+    const workspaceId = resolveWorkspaceId(workspaceIdInput);
 
     const data = await airbyteFetch('/sources', {
       method: 'POST',

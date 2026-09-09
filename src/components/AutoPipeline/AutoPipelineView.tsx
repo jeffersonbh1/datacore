@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import {
   SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration,
-  SourceType, DestinationType, Pipeline, CloudProvider, CanvasNode, CanvasEdge,
+  SourceType, DestinationType, Pipeline, CloudProvider,
   DiscoveredTable, SyncFrequencyOption, SourceCatalogEntry, AirbyteStreamSummary,
   TableLoadType, TableSyncConfig
 } from '../../types';
@@ -18,7 +18,8 @@ import {
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
   fetchSourceCatalog, fetchStreams
 } from '../../lib/airbyteGateway';
-import { registrarOrigem, registrarDestino, registrarIntegracao } from '../../lib/supabase';
+import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline } from '../../lib/supabase';
+import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isRealAirbyteId = (id: string): boolean => UUID_PATTERN.test(id);
@@ -30,6 +31,8 @@ interface AutoPipelineViewProps {
   /** Empresa (tenant) of the logged-in user. When null, sources/destinations/integrations
    *  created in this wizard run are NOT persisted to Supabase (Airbyte creation still works). */
   idEmpresa: number | null;
+  /** Empresa's own Airbyte workspace (Fase 3). Null falls back to the gateway's shared workspace. */
+  airbyteWorkspaceId: string | null;
   onAddSource: (source: SourceConnectorConfig) => void;
   onAddDestination: (destination: DestinationConnectorConfig) => void;
   onCreateIntegration: (integration: AutoIntegration, generatedPipeline: Pipeline) => void;
@@ -42,6 +45,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   destinations,
   integrations,
   idEmpresa,
+  airbyteWorkspaceId,
   onAddSource,
   onAddDestination,
   onCreateIntegration,
@@ -72,7 +76,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setIsLoadingExistingSources(true);
     setExistingSourcesError(null);
 
-    fetchExistingSources()
+    fetchExistingSources(airbyteWorkspaceId || undefined)
       .then(list => {
         if (cancelled) return;
         setExistingAirbyteSources(list);
@@ -230,7 +234,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setIsLoadingExistingDestinations(true);
     setExistingDestinationsError(null);
 
-    fetchExistingDestinations()
+    fetchExistingDestinations(airbyteWorkspaceId || undefined)
       .then(list => {
         if (cancelled) return;
         setExistingAirbyteDestinations(list);
@@ -300,19 +304,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // --------------------------------------------------------------------------
   // STEP 3: INTEGRATION SETUP & TABLE SELECTION
   // --------------------------------------------------------------------------
-  // Weekday definitions for weekly schedule
-  const WEEKDAYS = [
-    { key: 'seg', label: 'Seg', full: 'Segunda-feira', cronVal: '1' },
-    { key: 'ter', label: 'Ter', full: 'Terça-feira', cronVal: '2' },
-    { key: 'qua', label: 'Qua', full: 'Quarta-feira', cronVal: '3' },
-    { key: 'qui', label: 'Qui', full: 'Quinta-feira', cronVal: '4' },
-    { key: 'sex', label: 'Sex', full: 'Sexta-feira', cronVal: '5' },
-    { key: 'sab', label: 'Sáb', full: 'Sábado', cronVal: '6' },
-    { key: 'dom', label: 'Dom', full: 'Domingo', cronVal: '0' },
-  ];
-
   const [integrationName, setIntegrationName] = useState('');
-  const [selectedTables, setSelectedTables] = useState<string[]>(['clientes', 'pedidos', 'transacoes_pagamento']);
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
 
   // Real stream discovery (Airbyte) for the currently selected/created source —
   // works the same whether the source was just created (new) or picked from
@@ -623,6 +616,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         name: sourceName.trim() || 'Nova Origem DataCore',
         catalogId: sourceType,
         config: buildSourceConfigForCurrentType(),
+        workspaceId: airbyteWorkspaceId || undefined,
       });
       setAirbyteSourceId(created.sourceId);
       setSourceTestSuccess(true);
@@ -669,6 +663,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
           datasetLocation: destWarehouseOrCluster.trim() || undefined,
           credentialsJson: destCredentials,
         },
+        workspaceId: airbyteWorkspaceId || undefined,
       });
       setAirbyteDestinationId(created.destinationId);
       setDestTestSuccess(true);
@@ -821,6 +816,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             name: sourceName.trim(),
             catalogId: sourceType,
             config: buildSourceConfigForCurrentType(),
+            workspaceId: airbyteWorkspaceId || undefined,
           });
           realSourceId = created.sourceId;
           setAirbyteSourceId(realSourceId);
@@ -889,6 +885,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               datasetLocation: destWarehouseOrCluster.trim() || undefined,
               credentialsJson: destCredentials,
             },
+            workspaceId: airbyteWorkspaceId || undefined,
           });
           realDestinationId = created.destinationId;
           setAirbyteDestinationId(realDestinationId);
@@ -1026,186 +1023,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       }
     }
 
-    const newPipeId = `pipe-auto-${Date.now()}`;
     const newIntegrationId = `int-auto-${Date.now()}`;
-
-    // Construct Visual Canvas Nodes according to 4-Step Lakehouse Architecture:
-    // Step 1: Source -> Step 2: Raw Data -> Step 3: Bronze -> Step 4: Silver
-    const nodes: CanvasNode[] = [];
-    const edges: CanvasEdge[] = [];
-
-    // 1. Step 1: Source (Origem)
-    const sourceNodeId = `node-src-${Date.now()}`;
-    nodes.push({
-      id: sourceNodeId,
-      type: 'source',
-      title: activeSource.name,
-      subtitle: `${activeSource.type.toUpperCase()} • ${activeSource.database}`,
-      provider: activeSource.provider,
-      iconName: activeSource.type === 'kafka' ? 'Radio' : 'Database',
-      x: 60,
-      y: 190,
-      status: 'success',
-      config: {
-        connector: activeSource.name,
-        tableOrBucket: selectedTables.join(', '),
-        format: activeSource.type === 'kafka' ? 'AVRO/JSON CDC Stream' : 'CDC Relacional (Debezium Engine)'
-      },
-      metrics: {
-        recordsIn: 320500,
-        recordsOut: 320500,
-        durationMs: 38
-      }
-    });
-
-    // 2. Step 2: Raw Data (Landing Zone Imutável)
-    const rawNodeId = `node-raw-${Date.now()}`;
-    nodes.push({
-      id: rawNodeId,
-      type: 'raw_data',
-      title: 'Raw Data Landing Zone',
-      subtitle: `s3://corp-lakehouse-raw/${activeSource.database}/`,
-      provider: activeSource.provider === 'generic' ? 'aws' : activeSource.provider,
-      iconName: 'FolderArchive',
-      x: 330,
-      y: 190,
-      status: 'success',
-      config: {
-        tableOrBucket: `datalake-raw/${activeSource.database}/staging/`,
-        format: 'Snappy Parquet Raw (Metadados CDC: _op, _source_ts, _ingested_at)'
-      },
-      metrics: {
-        recordsIn: 320500,
-        recordsOut: 320500,
-        durationMs: 25
-      }
-    });
-
-    edges.push({
-      id: `edge-src-raw-${Date.now()}`,
-      source: sourceNodeId,
-      target: rawNodeId,
-      animated: true
-    });
-
-    // 3. Step 3: Bronze Layer (Validação de Schema, Deduplicação & LGPD)
-    const bronzeNodeId = `node-bronze-${Date.now()}`;
-    nodes.push({
-      id: bronzeNodeId,
-      type: 'bronze',
-      title: 'Camada Bronze (Validação & LGPD)',
-      subtitle: applyLgpdSanitization ? 'Delta Lake • Cifragem PII Ativa' : 'Delta Lake • Validação & Dedup',
-      provider: 'generic',
-      iconName: 'ShieldCheck',
-      x: 600,
-      y: 190,
-      status: 'success',
-      config: {
-        query: `VALIDATE SCHEMA & DEDUPLICATE (${selectedTables.join(', ')})`,
-        maskingRules: applyLgpdSanitization ? [
-          { field: 'cpf', piiType: 'cpf', method: 'anonymize' },
-          { field: 'email', piiType: 'email', method: 'sha256_hash' },
-          { field: 'telefone', piiType: 'phone', method: 'partial_redact' },
-          { field: 'cartao_token', piiType: 'credit_card', method: 'tokenization' }
-        ] : undefined
-      },
-      metrics: {
-        recordsIn: 320500,
-        recordsOut: 320500,
-        durationMs: 34
-      }
-    });
-
-    edges.push({
-      id: `edge-raw-bronze-${Date.now()}`,
-      source: rawNodeId,
-      target: bronzeNodeId,
-      animated: true
-    });
-
-    // 4. Step 4: Silver Layer (Curadoria Analítica & Destino DW)
-    const silverNodeId = `node-silver-${Date.now()}`;
-    nodes.push({
-      id: silverNodeId,
-      type: 'silver',
-      title: `Camada Silver (${activeDest.name})`,
-      subtitle: `${activeDest.type.toUpperCase()} • ${activeDest.databaseOrDataset}`,
-      provider: activeDest.provider,
-      iconName: 'Boxes',
-      x: 870,
-      y: 190,
-      status: 'idle',
-      config: {
-        destinationTable: `${activeDest.databaseOrDataset}.[${selectedTables.join(', ')}]`,
-        writeMode: activeDest.writeMode
-      },
-      metrics: {
-        recordsIn: 320500,
-        recordsOut: 320500,
-        durationMs: 48
-      }
-    });
-
-    edges.push({
-      id: `edge-bronze-silver-${Date.now()}`,
-      source: bronzeNodeId,
-      target: silverNodeId,
-      animated: true
-    });
-
-    // Calculate cron expression & schedule summary
     const scheduleSummary = getScheduleSummaryText();
-    let cronExpr: string | undefined = undefined;
 
-    if (syncFrequency === 'daily') {
-      cronExpr = executionTimes.map(t => {
-        const [h, m] = t.split(':');
-        return `${parseInt(m, 10)} ${parseInt(h, 10)} * * *`;
-      }).join('; ');
-    } else if (syncFrequency === 'weekly') {
-      const cronDays = weeklyDays.map(d => WEEKDAYS.find(w => w.key === d)?.cronVal || '1').join(',');
-      cronExpr = executionTimes.map(t => {
-        const [h, m] = t.split(':');
-        return `${parseInt(m, 10)} ${parseInt(h, 10)} * * ${cronDays}`;
-      }).join('; ');
-    } else if (syncFrequency === 'monthly') {
-      cronExpr = executionTimes.map(t => {
-        const [h, m] = t.split(':');
-        return `${parseInt(m, 10)} ${parseInt(h, 10)} ${monthlyDay} * *`;
-      }).join('; ');
-    }
-
-    const nextRun = syncFrequency === 'once' 
-      ? `Agendado para ${onceDate.split('-').reverse().join('/')} às ${executionTimes.join(', ')}`
-      : `Próxima execução: ${executionTimes[0] || '02:00'}`;
-
-    // Create the full Pipeline object
-    const newPipeline: Pipeline = {
-      id: newPipeId,
-      name: integrationName.trim(),
-      description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${activeSource.name} com ${activeDest.name}. Tabelas: ${selectedTables.join(', ')}. ${scheduleSummary}.`,
-      category: 'Integração Automática Lakehouse',
-      status: 'active',
-      trigger: syncFrequency === 'once' ? 'manual' : 'cron',
-      cronExpression: cronExpr,
-      mode: 'batch',
-      cloudProviders: Array.from(new Set([activeSource.provider, activeDest.provider])),
-      nodes,
-      edges,
-      lastRunAt: 'Pronto para execução',
-      nextRunAt: nextRun,
-      slaTarget: 99.9,
-      actualSla: 100,
-      recordsProcessedToday: 0,
-      avgLatencyMs: 120,
-      monthlyCostUsd: 48.00,
-      owner: 'Engenheiro de Dados (Auto-Pipeline)',
-      containsPII: applyLgpdSanitization,
-      legalBasis: 'Art. 7º, I - Consentimento / Art. 7º, V - Execução de Contrato',
-      version: 'v1.0.0'
-    };
-
-    // Create the AutoIntegration record
+    // Create the AutoIntegration record first — the canvas (nodes/edges/cron/etc.)
+    // is fully derivable from it via buildPipelineFromIntegration, which is the
+    // same function used to reconstruct pipelines from persisted integrations on
+    // reload (see App.tsx), so a freshly-created pipeline and a reloaded one are
+    // never out of sync.
     const newIntegration: AutoIntegration = {
       id: newIntegrationId,
       name: integrationName.trim(),
@@ -1226,10 +1051,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       applyLgpdSanitization,
       airbyteConnectionId,
       status: 'active',
-      pipelineId: newPipeId,
+      pipelineId: '', // set below once we know the pipeline's stable id
       createdAt: new Date().toISOString().split('T')[0],
       tablesCount: selectedTables.length
     };
+
+    const newPipeId = `pipe-auto-${Date.now()}`;
+    newIntegration.pipelineId = newPipeId;
+    const newPipeline = buildPipelineFromIntegration(newPipeId, newIntegration, activeSource, activeDest);
 
     onCreateIntegration(newIntegration, newPipeline);
     setCreatedPipelineId(newPipeId);
@@ -1243,9 +1072,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       try {
         const origemDbId = await registrarOrigem(idEmpresa, activeSource);
         const destinoDbId = await registrarDestino(idEmpresa, activeDest);
-        await registrarIntegracao(idEmpresa, newIntegration, origemDbId, destinoDbId);
+        const integracaoDbId = await registrarIntegracao(idEmpresa, newIntegration, origemDbId, destinoDbId);
+        await persistPipeline(idEmpresa, integracaoDbId, newPipeline);
       } catch (err) {
-        console.error('Erro ao persistir integração no banco de dados:', err);
+        console.error('Erro ao persistir integração/pipeline no banco de dados:', err);
       }
     }
   };
@@ -2434,7 +2264,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
               {/* Configuração de Carga por Tabela (Sync Mode, Cursor & Colunas) —
                   mesmo comportamento da configuração manual de uma conexão no Airbyte. */}
-              {selectedTables.length > 0 && (
+              {!isLoadingStreams && selectedTables.length > 0 && (
                 <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-900">

@@ -4,9 +4,17 @@ import { handleAirbyteError } from '../handleAirbyteError';
 
 export const destinationsRouter = Router();
 
-destinationsRouter.get('/', async (_req, res) => {
+// Every tenant (empresa) gets its own Airbyte workspace (Fase 3 — see sql/001's
+// empresas.airbyte_workspace_id). The caller passes it explicitly; falling back
+// to the single shared AIRBYTE_WORKSPACE_ID keeps the original tenant (whose
+// row was backfilled to this same id) and any not-yet-updated caller working.
+function resolveWorkspaceId(candidate: unknown): string {
+  return (typeof candidate === 'string' && candidate) || process.env.AIRBYTE_WORKSPACE_ID || '';
+}
+
+destinationsRouter.get('/', async (req, res) => {
   try {
-    const workspaceId = process.env.AIRBYTE_WORKSPACE_ID || '';
+    const workspaceId = resolveWorkspaceId(req.query.workspaceId);
     const data = await airbyteFetch(`/destinations?workspaceIds=${workspaceId}`);
     res.json(data);
   } catch (err) {
@@ -16,10 +24,11 @@ destinationsRouter.get('/', async (_req, res) => {
 
 destinationsRouter.post('/', async (req, res) => {
   try {
-    const { name, destinationType, config } = req.body as {
+    const { name, destinationType, config, workspaceId: workspaceIdInput } = req.body as {
       name: string;
       destinationType: string;
       config: Record<string, unknown>;
+      workspaceId?: string;
     };
 
     if (!name || !destinationType) {
@@ -40,7 +49,7 @@ destinationsRouter.post('/', async (req, res) => {
       credentials_json: config?.credentialsJson,
     };
 
-    const workspaceId = process.env.AIRBYTE_WORKSPACE_ID || '';
+    const workspaceId = resolveWorkspaceId(workspaceIdInput);
     const data = await airbyteFetch('/destinations', {
       method: 'POST',
       body: JSON.stringify({ name, workspaceId, configuration }),

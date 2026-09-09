@@ -294,23 +294,6 @@ export interface AutoIntegration {
   tablesCount: number;
 }
 
-export interface UsuarioDbRecord {
-  id?: string;
-  nome: string;
-  email: string;
-  senha_hash: string;
-  papel: UserRole;
-  departamento?: string | null;
-  avatar_iniciais?: string | null;
-  mfa_habilitado?: boolean;
-  pode_visualizar_pii_bruto?: boolean;
-  ultimo_acesso_em?: string | null;
-  dt_criacao?: string;
-  dt_alteracao?: string;
-  ind_cadastro_ativo?: boolean;
-  id_empresa?: number | null;
-}
-
 export interface NewUsuarioPayload {
   nome: string;
   email: string;

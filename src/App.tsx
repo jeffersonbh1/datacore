@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  INITIAL_PIPELINES, INITIAL_LOGS, INITIAL_ALERT_RULES, 
-  INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS, INITIAL_FINOPS, 
+import {
+  INITIAL_LOGS, INITIAL_ALERT_RULES,
+  INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS, INITIAL_FINOPS,
   INITIAL_USERS, ROLE_DEFINITIONS,
   INITIAL_SOURCES, INITIAL_DESTINATIONS, INITIAL_INTEGRATIONS
 } from './data/initialData';
@@ -20,11 +20,18 @@ import { CostAnalytics } from './components/FinOps/CostAnalytics';
 import { RbacManager } from './components/Security/RbacManager';
 import { CadastroUsuarioView } from './components/Security/CadastroUsuarioView';
 import { LoginScreen } from './components/Auth/LoginScreen';
+import { ResetPasswordScreen } from './components/Auth/ResetPasswordScreen';
 import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
 import {
-  isSupabaseConfigured, supabase, mapSupabaseUserToTeamUser, logoutFromSupabase,
-  fetchOrigensPorEmpresa, fetchDestinosPorEmpresa, fetchIntegracoesPorEmpresa
+  isSupabaseConfigured, supabase, logoutFromSupabase,
+  fetchUsuarioPorAuthId, mapUsuarioRowToTeamUser,
+  fetchOrigensPorEmpresa, fetchDestinosPorEmpresa, fetchIntegracoesPorEmpresa,
+  fetchPipelinesPorEmpresa, persistPipeline, updateIntegracaoStatus, PipelineDbRecord,
+  fetchEmpresaPorId
 } from './lib/supabase';
+import { buildPipelineFromIntegration } from './lib/pipelineBuilder';
+import { refreshPipelineMetrics } from './lib/pipelineRuns';
+import { updateAirbyteConnectionStatus } from './lib/airbyteGateway';
 import { EmpresasView } from './components/Empresas/EmpresasView';
 
 export default function App() {
@@ -46,37 +53,69 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('pipelines');
   const [currentRole, setCurrentRole] = useState<UserRole>(() => currentUser?.role || 'admin');
 
-  // Supabase Auth State Listener & Session Synchronization
+  // True while the URL carries a Supabase password-recovery token
+  // (#access_token=...&type=recovery). A recovery link DOES authenticate the
+  // browser with a real session — without this guard that session would just
+  // log the user straight into the app, silently skipping the "set a new
+  // password" step entirely (their old/temp password would keep working).
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState<boolean>(
+    () => window.location.hash.includes('type=recovery')
+  );
+
+  // Supabase Auth State Listener & Session Synchronization (Fase 4).
+  // A session alone isn't enough to log in: the user's actual role/id_empresa
+  // live in their linked "usuarios" profile row, never in the Auth session's
+  // own metadata — a session with no linked profile is treated as invalid.
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) return;
 
-    // Check active session on initial load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const teamUser = mapSupabaseUserToTeamUser(session.user);
+    const isRecoveryLink = window.location.hash.includes('type=recovery');
+
+    const applySession = async (authUserId: string) => {
+      try {
+        const usuarioRow = await fetchUsuarioPorAuthId(authUserId);
+        if (!usuarioRow || usuarioRow.ind_cadastro_ativo === false) {
+          await supabase.auth.signOut();
+          return;
+        }
+        const teamUser = mapUsuarioRowToTeamUser(usuarioRow);
         setCurrentUser(teamUser);
         setCurrentRole(teamUser.role);
         setIsAuthenticated(true);
-        setActiveTab('pipelines');
         localStorage.setItem('datacore_auth_active', 'true');
         localStorage.setItem('datacore_user_id', teamUser.id);
+        localStorage.setItem('datacore_user_profile', JSON.stringify(teamUser));
+      } catch (err) {
+        console.error('Erro ao restaurar sessão:', err);
+      }
+    };
+
+    // Restore an existing session on page load (refresh, new tab, etc.). A stale
+    // "datacore_auth_active" flag from before Fase 4 (or any tampering) with no
+    // real session behind it must NOT leave the app looking logged in. A
+    // recovery-link session is left alone here — ResetPasswordScreen handles it.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && !isRecoveryLink) {
+        applySession(session.user.id);
+      } else if (!session?.user) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('datacore_auth_active');
+        localStorage.removeItem('datacore_user_id');
+        localStorage.removeItem('datacore_user_profile');
       }
     });
 
-    // Listen for real-time auth changes (sign in, sign out, token refresh)
+    // Keep in sync with sign-in/out happening in this tab (login form, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const teamUser = mapSupabaseUserToTeamUser(session.user);
-        setCurrentUser(teamUser);
-        setCurrentRole(teamUser.role);
-        setIsAuthenticated(true);
-        setActiveTab('pipelines');
-        localStorage.setItem('datacore_auth_active', 'true');
-        localStorage.setItem('datacore_user_id', teamUser.id);
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecoveryMode(true);
+      } else if (event === 'SIGNED_IN' && session?.user && !isRecoveryLink) {
+        applySession(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
         localStorage.removeItem('datacore_auth_active');
         localStorage.removeItem('datacore_user_id');
+        localStorage.removeItem('datacore_user_profile');
       }
     });
 
@@ -85,9 +124,33 @@ export default function App() {
     };
   }, []);
 
+  // Called by ResetPasswordScreen after the new password is saved — now safe to
+  // log the (already-authenticated-via-recovery) user into the app normally.
+  const handlePasswordSet = () => {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    setPasswordRecoveryMode(false);
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          fetchUsuarioPorAuthId(session.user.id).then(usuarioRow => {
+            if (!usuarioRow) return;
+            const teamUser = mapUsuarioRowToTeamUser(usuarioRow);
+            setCurrentUser(teamUser);
+            setCurrentRole(teamUser.role);
+            setIsAuthenticated(true);
+            localStorage.setItem('datacore_auth_active', 'true');
+            localStorage.setItem('datacore_user_id', teamUser.id);
+            localStorage.setItem('datacore_user_profile', JSON.stringify(teamUser));
+          });
+        }
+      });
+    }
+  };
+
   // Core Data States
-  const [pipelines, setPipelines] = useState<Pipeline[]>(INITIAL_PIPELINES);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string>(INITIAL_PIPELINES[0].id);
+  // Pipelines only exist once a real Auto Pipeline integration creates one — no demo/mock seed here.
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [alertRules, setAlertRules] = useState(INITIAL_ALERT_RULES);
   const [incidents, setIncidents] = useState(INITIAL_INCIDENTS);
@@ -100,6 +163,11 @@ export default function App() {
   const [destinations, setDestinations] = useState<DestinationConnectorConfig[]>(INITIAL_DESTINATIONS);
   const [integrations, setIntegrations] = useState<AutoIntegration[]>(INITIAL_INTEGRATIONS);
 
+  // Empresa's own Airbyte workspace (Fase 3 — isolates each tenant's connectors
+  // from every other tenant's). Null until resolved, which still works: the
+  // gateway falls back to its single shared workspace.
+  const [airbyteWorkspaceId, setAirbyteWorkspaceId] = useState<string | null>(null);
+
   // Loads origens/destinos/integrações persistidos no Supabase para a empresa do
   // usuário logado, para que sobrevivam a um refresh (antes só existiam em memória).
   // Uses a ref (not state) as the guard: React.StrictMode double-invokes effects in
@@ -111,15 +179,70 @@ export default function App() {
     if (!isSupabaseConfigured() || !idEmpresa || hasLoadedEmpresaDataRef.current) return;
 
     hasLoadedEmpresaDataRef.current = true;
+
+    fetchEmpresaPorId(idEmpresa)
+      .then(empresa => setAirbyteWorkspaceId(empresa?.airbyteWorkspaceId || null))
+      .catch(err => console.error('Erro ao buscar o workspace Airbyte da empresa:', err));
+
     Promise.all([
       fetchOrigensPorEmpresa(idEmpresa),
       fetchDestinosPorEmpresa(idEmpresa),
       fetchIntegracoesPorEmpresa(idEmpresa),
     ])
-      .then(([persistedSources, persistedDestinations, persistedIntegrations]) => {
+      .then(async ([persistedSources, persistedDestinations, persistedIntegrations]) => {
         if (persistedSources.length) setSources(prev => [...persistedSources, ...prev]);
         if (persistedDestinations.length) setDestinations(prev => [...persistedDestinations, ...prev]);
         if (persistedIntegrations.length) setIntegrations(prev => [...persistedIntegrations, ...prev]);
+        if (!persistedIntegrations.length) return;
+
+        // Reconstruct each integration's Studio canvas deterministically (never a
+        // stored blob — see buildPipelineFromIntegration) so pipelines survive a
+        // refresh instead of only existing for the session that created them.
+        const persistedPipelines = await fetchPipelinesPorEmpresa(idEmpresa);
+        const pipelineByIntegracaoId = new Map<number, PipelineDbRecord>(
+          persistedPipelines.map(p => [p.integracaoId, p])
+        );
+
+        const rebuilt: Pipeline[] = [];
+        for (const integration of persistedIntegrations) {
+          const source = persistedSources.find(s => s.id === integration.sourceConnectorId);
+          const destination = persistedDestinations.find(d => d.id === integration.destinationConnectorId);
+          if (!source || !destination) continue;
+
+          const integracaoDbId = Number(integration.id);
+          let record = pipelineByIntegracaoId.get(integracaoDbId);
+          if (!record) {
+            // Backfill: integrações persistidas antes da tabela "pipelines" existir
+            // (ou cujo insert falhou na criação) ainda não têm essa linha — cria agora.
+            try {
+              const newId = await persistPipeline(idEmpresa, integracaoDbId, {
+                name: integration.name,
+                category: 'Integração Automática Lakehouse',
+              });
+              record = { id: newId, integracaoId: integracaoDbId, layoutOverrides: {} };
+            } catch (err) {
+              console.error('Erro ao criar registro de pipeline retroativo:', err);
+              continue;
+            }
+          }
+
+          let pipeline = buildPipelineFromIntegration(`pipe-${record.id}`, integration, source, destination);
+
+          // Fase 2: overlay real Airbyte sync history onto the deterministic
+          // canvas — best-effort, a pipeline with no real connection yet (or a
+          // gateway hiccup) just keeps its honest "nothing synced" defaults.
+          if (integration.airbyteConnectionId) {
+            try {
+              pipeline = await refreshPipelineMetrics(idEmpresa, record.id, integration.airbyteConnectionId, pipeline);
+            } catch (err) {
+              console.error(`Erro ao buscar métricas reais do pipeline "${pipeline.name}":`, err);
+            }
+          }
+
+          rebuilt.push(pipeline);
+        }
+
+        if (rebuilt.length) setPipelines(prev => [...rebuilt, ...prev]);
       })
       .catch(err => console.error('Erro ao carregar dados persistidos da empresa:', err));
   }, [currentUser.idEmpresa]);
@@ -141,13 +264,33 @@ export default function App() {
   };
 
   const handleTogglePipelineStatus = (pipelineId: string) => {
-    setPipelines(prev => prev.map(p => {
-      if (p.id === pipelineId) {
-        const nextStatus = p.status === 'active' ? 'paused' : 'active';
-        return { ...p, status: nextStatus };
+    const pipeline = pipelines.find(p => p.id === pipelineId);
+    if (!pipeline) return;
+    const nextStatus = pipeline.status === 'active' ? 'paused' : 'active';
+
+    setPipelines(prev => prev.map(p => (p.id === pipelineId ? { ...p, status: nextStatus } : p)));
+
+    // Best-effort: pause/resume the real Airbyte schedule and persist the flag —
+    // the UI above already reflects success regardless of this outcome. Pausing
+    // only "integracoes.status" in Supabase would NOT stop Airbyte from running
+    // the sync on schedule, so the Airbyte call is the one that actually matters.
+    const integration = integrations.find(i => i.pipelineId === pipelineId);
+    if (!integration) return;
+    setIntegrations(prev => prev.map(i => (i.pipelineId === pipelineId ? { ...i, status: nextStatus } : i)));
+
+    (async () => {
+      try {
+        if (integration.airbyteConnectionId) {
+          await updateAirbyteConnectionStatus(integration.airbyteConnectionId, nextStatus === 'active' ? 'active' : 'inactive');
+        }
+        const integracaoDbId = Number(integration.id);
+        if (Number.isFinite(integracaoDbId)) {
+          await updateIntegracaoStatus(integracaoDbId, nextStatus);
+        }
+      } catch (err) {
+        console.error('Erro ao pausar/retomar a integração no Airbyte/banco:', err);
       }
-      return p;
-    }));
+    })();
   };
 
   const handleTriggerRun = (pipelineId: string) => {
@@ -288,6 +431,10 @@ export default function App() {
     });
   };
 
+  if (passwordRecoveryMode) {
+    return <ResetPasswordScreen onPasswordSet={handlePasswordSet} />;
+  }
+
   if (!isAuthenticated) {
     return <LoginScreen onLogin={handleLogin} />;
   }
@@ -333,14 +480,33 @@ export default function App() {
                   onToggleStatus={handleTogglePipelineStatus}
                 />
 
-                {/* Visual Studio Node Canvas */}
-                <VisualCanvas
-                  pipeline={currentPipeline}
-                  onUpdatePipeline={handleUpdatePipeline}
-                  canEdit={permissions.canEditPipelines}
-                  canExecute={permissions.canTriggerExecutions}
-                  canViewRawPII={permissions.canViewRawPII}
-                />
+                {/* Visual Studio Node Canvas (only once a real pipeline exists/is selected) */}
+                {currentPipeline ? (
+                  <VisualCanvas
+                    pipeline={currentPipeline}
+                    onUpdatePipeline={handleUpdatePipeline}
+                    canEdit={permissions.canEditPipelines}
+                    canExecute={permissions.canTriggerExecutions}
+                    canViewRawPII={permissions.canViewRawPII}
+                  />
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
+                    <Layers className="w-10 h-10 text-slate-300 mx-auto" />
+                    <h4 className="text-base font-semibold text-slate-800">Nenhum pipeline criado ainda</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Crie sua primeira integração no Pipeline Automático para gerar um pipeline e visualizá-lo aqui no Studio Visual ETL.
+                    </p>
+                    {permissions.canCreatePipelines && (
+                      <button
+                        onClick={() => setActiveTab('auto-pipeline')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+                      >
+                        <Wand2 className="w-4 h-4" />
+                        Novo Pipeline Automático
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -350,6 +516,7 @@ export default function App() {
                 destinations={destinations}
                 integrations={integrations}
                 idEmpresa={currentUser.idEmpresa ?? null}
+                airbyteWorkspaceId={airbyteWorkspaceId}
                 onAddSource={handleAddSource}
                 onAddDestination={handleAddDestination}
                 onCreateIntegration={handleCreateAutoIntegration}

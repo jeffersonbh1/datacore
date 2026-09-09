@@ -7,7 +7,7 @@ import {
 import { TeamUser, UserRole } from '../../types';
 import { INITIAL_USERS } from '../../data/initialData';
 import { DataCoreLogo } from '../common/DataCoreLogo';
-import { isSupabaseConfigured, authenticateWithUsuarioTable } from '../../lib/supabase';
+import { isSupabaseConfigured, loginWithSupabaseAuth, supabase } from '../../lib/supabase';
 
 interface LoginScreenProps {
   onLogin: (user: TeamUser, role: UserRole) => void;
@@ -21,8 +21,36 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [isSendingReset, setIsSendingReset] = useState(false);
 
   const supabaseReady = isSupabaseConfigured();
+
+  const handleForgotPassword = async () => {
+    setError(null);
+    setResetMessage(null);
+
+    if (!supabaseReady || !supabase) {
+      alert('Para redefinição de credenciais corporativas, contate o administrador da plataforma em secops@datacore.io');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Informe seu e-mail no campo acima antes de solicitar a redefinição de senha.');
+      return;
+    }
+
+    setIsSendingReset(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+    setIsSendingReset(false);
+
+    // Supabase doesn't reveal whether the email exists (avoids leaking which
+    // addresses are registered) — the same message covers both cases.
+    if (resetError) {
+      setError(resetError.message);
+    } else {
+      setResetMessage('Se este e-mail estiver cadastrado, enviamos um link para redefinir a senha.');
+    }
+  };
 
   // Authenticate submit handler
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,15 +72,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
     setIsLoading(true);
 
-    // Autenticação via Supabase (tabela usuarios / usuario)
+    // Autenticação via sessão real do Supabase Auth (Fase 4)
     if (supabaseReady) {
       try {
-        const { user, role } = await authenticateWithUsuarioTable(inputUser, inputPass);
+        const { user, role } = await loginWithSupabaseAuth(inputUser, inputPass);
         setIsLoading(false);
         onLogin(user, role);
       } catch (err: unknown) {
         setIsLoading(false);
-        const errMsg = err instanceof Error ? err.message : 'Falha na autenticação com a tabela usuarios no Supabase.';
+        const errMsg = err instanceof Error ? err.message : 'Falha na autenticação com o Supabase.';
         setError(errMsg);
       }
     } else {
@@ -121,6 +149,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               </div>
             )}
 
+            {resetMessage && (
+              <div className="mb-5 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{resetMessage}</span>
+              </div>
+            )}
+
             {/* Credentials Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -150,10 +185,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                   </label>
                   <button
                     type="button"
-                    onClick={() => alert('Para redefinição de credenciais corporativas, contate o administrador da plataforma em secops@datacore.io')}
-                    className="text-[11px] text-[#0FA98F] hover:text-[#0c8e78] transition cursor-pointer font-medium"
+                    onClick={handleForgotPassword}
+                    disabled={isSendingReset}
+                    className="text-[11px] text-[#0FA98F] hover:text-[#0c8e78] transition cursor-pointer font-medium disabled:opacity-50"
                   >
-                    Esqueceu a senha?
+                    {isSendingReset ? 'Enviando...' : 'Esqueceu a senha?'}
                   </button>
                 </div>
                 <div className="relative">
@@ -313,45 +349,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="font-semibold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold">3</span>
-                  Estrutura da tabela &quot;usuarios&quot; no Supabase
+                  Autenticação real via Supabase Auth
                 </div>
                 <p className="text-slate-600 mb-1.5">
-                  O DataCore valida diretamente o login e realiza cadastros consultando a tabela <strong className="text-slate-900 font-mono">public.usuarios</strong>:
+                  Login e senha são geridos inteiramente pelo <strong className="text-slate-900 font-mono">Supabase Auth</strong> — a senha nunca passa pelas tabelas da aplicação. A tabela <strong className="text-slate-900 font-mono">public.usuarios</strong> guarda só o perfil (papel, empresa, permissões), vinculado à identidade real por <code className="font-mono text-slate-800">auth_user_id</code>.
                 </p>
-                <pre className="p-2.5 rounded bg-slate-900 text-emerald-400 font-mono text-[10px] overflow-x-auto select-all leading-relaxed">
-{`-- Tipo ENUM para papéis de usuário
-CREATE TYPE public.papel_usuario AS ENUM (
-  'admin', 'data_engineer', 'data_analyst', 'dpo_compliance', 'viewer'
-);
-
--- Tabela de Usuários (SQL Editor no Supabase)
-create table public.usuarios (
-  id uuid not null default gen_random_uuid (),
-  nome character varying(150) not null,
-  email character varying(255) not null,
-  senha_hash character varying(255) not null,
-  papel public.papel_usuario not null default 'viewer'::papel_usuario,
-  departamento character varying(150) null,
-  avatar_iniciais character varying(5) null,
-  mfa_habilitado boolean not null default false,
-  pode_visualizar_pii_bruto boolean not null default false,
-  ultimo_acesso_em timestamp with time zone null,
-  dt_criacao timestamp with time zone not null default now(),
-  dt_alteracao timestamp with time zone not null default now(),
-  ind_cadastro_ativo boolean not null default true,
-  id_empresa bigint null,
-  constraint usuarios_pkey primary key (id),
-  constraint usuarios_email_key unique (email)
-);
-
--- Políticas de RLS para anon (Leitura e Cadastro)
-ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir leitura anon" ON public.usuarios FOR SELECT TO anon USING (true);
-CREATE POLICY "Permitir cadastro anon" ON public.usuarios FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "Permitir atualizacao login anon" ON public.usuarios FOR UPDATE TO anon USING (true);`}
-                </pre>
-                <p className="text-[11px] text-slate-500 mt-2">
-                  Formatos aceitos em <code className="font-mono text-slate-800">senha_hash</code>: <strong>Bcrypt</strong> (<code className="font-mono text-[10px]">$2a$</code> gerado pelo formulário de cadastro com salt 10), <strong>SHA-256</strong>, <strong>SHA-512</strong> ou texto direto.
+                <p className="text-[11px] text-slate-500">
+                  Novas contas são criadas pelo administrador em <strong>Segurança &amp; RBAC → Cadastrar Usuário</strong>, que usa a Admin API do Supabase Auth (via o gateway, com a service role key) para provisionar o login e o perfil juntos.
                 </p>
               </div>
 

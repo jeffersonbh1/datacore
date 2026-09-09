@@ -1,0 +1,21 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -f
+      - Dockerfile.frontend
+      - -t
+      - '${_IMAGE}'
+      - --build-arg
+      - 'VITE_SUPABASE_URL=${_VITE_SUPABASE_URL}'
+      - --build-arg
+      - 'VITE_SUPABASE_ANON_KEY=${_VITE_SUPABASE_ANON_KEY}'
+      - --build-arg
+      - 'VITE_AIRBYTE_GATEWAY_URL=${_VITE_AIRBYTE_GATEWAY_URL}'
+      - --build-arg
+      - 'VITE_AIRBYTE_GATEWAY_API_KEY=${_VITE_AIRBYTE_GATEWAY_API_KEY}'
+      - .
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY

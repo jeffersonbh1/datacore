@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Empresa } from '../../types';
 import { isSupabaseConfigured, fetchEmpresas, createEmpresa, updateEmpresaStatus } from '../../lib/supabase';
+import { createAirbyteWorkspace } from '../../lib/airbyteGateway';
 
 interface EmpresasViewProps {
   canManage?: boolean;
@@ -69,10 +70,28 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
 
     setIsSaving(true);
     try {
+      // Fase 3: cada empresa isolada num workspace próprio do Airbyte — provisiona
+      // um automaticamente quando o campo é deixado em branco (o campo manual
+      // continua existindo pra quem já tem um workspace pra reaproveitar).
+      let workspaceId = airbyteWorkspaceId.trim();
+      if (!workspaceId) {
+        try {
+          const workspace = await createAirbyteWorkspace(nome.trim());
+          workspaceId = workspace.workspaceId;
+        } catch (err) {
+          setFormError(
+            `Falha ao provisionar o workspace no Airbyte: ${err instanceof Error ? err.message : 'erro desconhecido'}. ` +
+            `Você pode informar um Workspace ID manualmente ou tentar novamente.`
+          );
+          setIsSaving(false);
+          return;
+        }
+      }
+
       const created = await createEmpresa({
         nome: nome.trim(),
         plano: plano.trim() || null,
-        airbyteWorkspaceId: airbyteWorkspaceId.trim() || null,
+        airbyteWorkspaceId: workspaceId,
       });
       setEmpresas(prev => [...prev, created].sort((a, b) => a.nome.localeCompare(b.nome)));
       setSuccessMsg(`Empresa "${created.nome}" criada com sucesso (slug: ${created.slug}).`);
@@ -205,7 +224,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
                 </div>
                 <input
                   type="text"
-                  placeholder="uuid do workspace no Airbyte"
+                  placeholder="Deixe em branco para provisionar um novo automaticamente"
                   value={airbyteWorkspaceId}
                   onChange={(e) => setAirbyteWorkspaceId(e.target.value)}
                   className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
@@ -214,7 +233,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
             </div>
           </div>
           <p className="text-[11px] text-slate-500">
-            O identificador (slug) é gerado automaticamente a partir do nome. Deixe o Workspace ID em branco se todas as empresas ainda compartilham o mesmo workspace do Airbyte.
+            O identificador (slug) é gerado automaticamente a partir do nome. Deixando o Workspace ID em branco, um workspace novo e isolado é criado no Airbyte na hora — cada empresa tem o seu, sem compartilhar origens/destinos com outras. Só preencha manualmente se já existir um workspace pra reaproveitar.
           </p>
           <div className="flex justify-end">
             <button

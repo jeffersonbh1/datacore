@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { UserRole, TeamUser, NewUsuarioPayload, Empresa } from '../../types';
 import { ROLE_DEFINITIONS } from '../../data/initialData';
-import { isSupabaseConfigured, cadastrarUsuarioNaTabela, fetchEmpresas } from '../../lib/supabase';
+import { isSupabaseConfigured, registerUsuario, fetchEmpresas } from '../../lib/supabase';
 
 interface CadastroUsuarioViewProps {
   onUserCreated?: (user: TeamUser) => void;
@@ -68,8 +68,8 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
       return;
     }
 
-    if (!senha || senha.length < 3) {
-      setErrorMsg('A senha deve possuir no mínimo 3 caracteres.');
+    if (!senha || senha.length < 6) {
+      setErrorMsg('A senha deve possuir no mínimo 6 caracteres (exigência do Supabase Auth).');
       return;
     }
 
@@ -92,10 +92,10 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
         id_empresa: idEmpresa.trim() ? Number(idEmpresa.trim()) : null
       };
 
-      const newUser = await cadastrarUsuarioNaTabela(payload);
+      const newUser = await registerUsuario(payload);
 
       setIsLoading(false);
-      setSuccessMsg(`Usuário "${newUser.name}" (${newUser.email}) gravado com sucesso na tabela "usuarios"!`);
+      setSuccessMsg(`Usuário "${newUser.name}" (${newUser.email}) criado com sucesso — já pode fazer login com a senha definida.`);
       
       // Reset sensitive fields
       setSenha('');
@@ -136,7 +136,7 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Inserção direta na tabela <code className="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded">public.usuarios</code> com criptografia <strong className="font-semibold text-slate-700">senha_hash</strong> (Bcrypt).
+              Cria a conta real no <strong className="font-semibold text-slate-700">Supabase Auth</strong> e o perfil em <code className="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded">public.usuarios</code>, vinculados.
             </p>
           </div>
         </div>
@@ -169,32 +169,19 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
           <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <span className="flex items-center gap-2">
               <Database className="w-4 h-4" />
-              Estrutura DDL da tabela public.usuarios
+              Fluxo de cadastro (Fase 4 — Supabase Auth)
             </span>
-            <span className="text-[10px] text-slate-500 uppercase">PostgreSQL / Supabase</span>
+            <span className="text-[10px] text-slate-500 uppercase">Admin API / PostgreSQL</span>
           </div>
           <pre className="text-[11px] text-emerald-300 leading-relaxed overflow-x-auto select-all p-2 bg-slate-950/80 rounded border border-slate-800/80">
-{`create table public.usuarios (
-  id uuid not null default gen_random_uuid (),
-  nome character varying(150) not null,
-  email character varying(255) not null,
-  senha_hash character varying(255) not null,
-  papel public.papel_usuario not null default 'viewer'::papel_usuario,
-  departamento character varying(150) null,
-  avatar_iniciais character varying(5) null,
-  mfa_habilitado boolean not null default false,
-  pode_visualizar_pii_bruto boolean not null default false,
-  ultimo_acesso_em timestamp with time zone null,
-  dt_criacao timestamp with time zone not null default now(),
-  dt_alteracao timestamp with time zone not null default now(),
-  ind_cadastro_ativo boolean not null default true,
-  id_empresa bigint null,
-  constraint usuarios_pkey primary key (id),
-  constraint usuarios_email_key unique (email)
-);`}
+{`1. Gateway (service role) chama supabase.auth.admin.createUser({ email, password })
+   -> cria a identidade real no Supabase Auth (senha nunca toca as tabelas da app)
+2. Gateway insere em public.usuarios: { auth_user_id, nome, papel, id_empresa, ... }
+   -> perfil da aplicação, vinculado 1:1 à identidade acima
+3. Se o passo 2 falhar, o usuário criado no passo 1 é revertido (rollback)`}
           </pre>
           <p className="text-[11px] text-slate-400">
-            A senha inserida no formulário é convertida para Hash Bcrypt via <code className="text-amber-300">bcryptjs</code> antes da gravação no campo <strong className="text-white">senha_hash</strong>.
+            A coluna <code className="text-amber-300">senha_hash</code> em <code className="text-amber-300">usuarios</code> está obsoleta — mantida só por compatibilidade de schema, nunca lida.
           </p>
         </div>
       )}

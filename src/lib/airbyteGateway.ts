@@ -28,6 +28,19 @@ async function gatewayFetch<T>(path: string, init: RequestInit = {}): Promise<T>
   return json as T;
 }
 
+export interface AirbyteWorkspace {
+  workspaceId: string;
+  name: string;
+}
+
+/** Provisions a new, isolated Airbyte workspace for a tenant (Fase 3). */
+export async function createAirbyteWorkspace(name: string): Promise<AirbyteWorkspace> {
+  return gatewayFetch<AirbyteWorkspace>('/api/airbyte/workspaces', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function fetchSourceCatalog(): Promise<SourceCatalogEntry[]> {
   const data = await gatewayFetch<{ data: SourceCatalogEntry[] }>('/api/connectors/sources');
   return data.data;
@@ -46,6 +59,8 @@ export async function createAirbyteSource(payload: {
   name: string;
   catalogId: string;
   config: Record<string, unknown>;
+  /** Empresa's own Airbyte workspace (Fase 3). Omit to fall back to the gateway's shared workspace. */
+  workspaceId?: string;
 }): Promise<AirbyteSource> {
   return gatewayFetch<AirbyteSource>('/api/airbyte/sources', {
     method: 'POST',
@@ -53,8 +68,9 @@ export async function createAirbyteSource(payload: {
   });
 }
 
-export async function fetchExistingSources(): Promise<AirbyteSource[]> {
-  const data = await gatewayFetch<{ data: AirbyteSource[] }>('/api/airbyte/sources');
+export async function fetchExistingSources(workspaceId?: string): Promise<AirbyteSource[]> {
+  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  const data = await gatewayFetch<{ data: AirbyteSource[] }>(`/api/airbyte/sources${query}`);
   return data.data;
 }
 
@@ -79,15 +95,23 @@ export async function createBigQueryDestination(payload: {
     datasetLocation?: string;
     credentialsJson: string;
   };
+  /** Empresa's own Airbyte workspace (Fase 3). Omit to fall back to the gateway's shared workspace. */
+  workspaceId?: string;
 }): Promise<AirbyteDestination> {
   return gatewayFetch<AirbyteDestination>('/api/airbyte/destinations', {
     method: 'POST',
-    body: JSON.stringify({ name: payload.name, destinationType: 'bigquery', config: payload.config }),
+    body: JSON.stringify({
+      name: payload.name,
+      destinationType: 'bigquery',
+      config: payload.config,
+      workspaceId: payload.workspaceId,
+    }),
   });
 }
 
-export async function fetchExistingDestinations(): Promise<AirbyteDestination[]> {
-  const data = await gatewayFetch<{ data: AirbyteDestination[] }>('/api/airbyte/destinations');
+export async function fetchExistingDestinations(workspaceId?: string): Promise<AirbyteDestination[]> {
+  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  const data = await gatewayFetch<{ data: AirbyteDestination[] }>(`/api/airbyte/destinations${query}`);
   return data.data;
 }
 
@@ -151,4 +175,35 @@ export async function createAirbyteConnection(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** Pauses ('inactive') or resumes ('active') a connection's own Airbyte schedule. */
+export async function updateAirbyteConnectionStatus(
+  connectionId: string,
+  status: 'active' | 'inactive'
+): Promise<AirbyteConnection> {
+  return gatewayFetch<AirbyteConnection>(`/api/airbyte/connections/${connectionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export interface AirbyteJob {
+  jobId: number;
+  status: 'pending' | 'running' | 'incomplete' | 'failed' | 'succeeded' | 'cancelled';
+  jobType: string;
+  connectionId: string;
+  startTime: string;
+  lastUpdatedTime?: string;
+  duration?: string;
+  bytesSynced?: number;
+  rowsSynced?: number;
+}
+
+/** Real sync/execution history for a connection, most recent first. */
+export async function fetchConnectionJobs(connectionId: string, limit = 30): Promise<AirbyteJob[]> {
+  const data = await gatewayFetch<{ data: AirbyteJob[] }>(
+    `/api/airbyte/connections/${connectionId}/jobs?limit=${limit}`
+  );
+  return data.data;
 }

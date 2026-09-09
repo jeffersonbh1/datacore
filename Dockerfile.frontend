@@ -1,0 +1,27 @@
+FROM node:20-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+
+# Vite bakes VITE_* vars into the bundle at build time — they must be present
+# as real env vars here (there's no .env.local in the build context, see
+# .dockerignore), not read from any file.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_AIRBYTE_GATEWAY_URL
+ARG VITE_AIRBYTE_GATEWAY_API_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
+    VITE_AIRBYTE_GATEWAY_URL=$VITE_AIRBYTE_GATEWAY_URL \
+    VITE_AIRBYTE_GATEWAY_API_KEY=$VITE_AIRBYTE_GATEWAY_API_KEY
+
+RUN npm run build
+
+FROM node:20-slim
+WORKDIR /app
+RUN npm install -g serve@14
+COPY --from=build /app/dist ./dist
+
+EXPOSE 8080
+CMD serve -s dist -l ${PORT:-8080}

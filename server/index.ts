@@ -3,11 +3,13 @@ import './loadEnv';
 import cors from 'cors';
 import express from 'express';
 import { requireGatewayApiKey } from './authMiddleware';
+import { authAdminRouter } from './routes/authAdmin';
 import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { destinationsRouter } from './routes/destinations';
 import { sourcesRouter } from './routes/sources';
 import { streamsRouter } from './routes/streams';
+import { workspacesRouter } from './routes/workspaces';
 
 const app = express();
 app.use(cors());
@@ -22,6 +24,8 @@ app.use('/api/airbyte/sources', requireGatewayApiKey, sourcesRouter);
 app.use('/api/airbyte/destinations', requireGatewayApiKey, destinationsRouter);
 app.use('/api/airbyte/streams', requireGatewayApiKey, streamsRouter);
 app.use('/api/airbyte/connections', requireGatewayApiKey, connectionsRouter);
+app.use('/api/airbyte/workspaces', requireGatewayApiKey, workspacesRouter);
+app.use('/api/auth', requireGatewayApiKey, authAdminRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {
