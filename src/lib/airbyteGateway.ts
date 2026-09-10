@@ -239,6 +239,14 @@ export interface DbtModelTableSpec {
  * Gera/regenera os modelos dbt da Bronze de uma integração (um por tabela) em
  * dbt/models/generated/<slug>/. Chamado logo após criar a conexão no Airbyte.
  */
+export interface DbtModelsResult {
+  slug: string;
+  files: string[];
+  models: string[];
+  git: string;
+  gitDetail?: string;
+}
+
 export async function generateDbtModels(payload: {
   slug: string;
   projectId: string;
@@ -246,10 +254,22 @@ export async function generateDbtModels(payload: {
   bronzeDataset: string;
   applyLgpd?: boolean;
   tables: DbtModelTableSpec[];
-}): Promise<{ slug: string; files: string[]; models: string[]; git: string; gitDetail?: string }> {
+}): Promise<DbtModelsResult> {
   return gatewayFetch('/api/dbt/models', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Regenera os modelos dbt de uma integração a partir do estado persistido
+ * (Supabase + PKs do Airbyte). Idempotente — usar para retry/garantia e, no
+ * futuro, como o hook chamado pela orquestração (Airflow).
+ */
+export async function regenerateDbtModelsFromIntegration(connectionId: string): Promise<DbtModelsResult> {
+  return gatewayFetch('/api/dbt/models/from-integration', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId }),
   });
 }
 

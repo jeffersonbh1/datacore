@@ -102,7 +102,19 @@ dbt build --select models/staging models/medallion
 dbt docs generate && dbt docs serve
 ```
 
-## Testar o codegen (gateway rodando)
+## Endpoints do codegen (gateway)
+
+| Método | Rota | Uso |
+|--------|------|-----|
+| `POST` | `/api/dbt/models` | spec completo no corpo — chamado na criação da integração |
+| `POST` | `/api/dbt/models/from-integration` | `{ connectionId }` — reconstrói o spec do estado persistido (Supabase + PKs do Airbyte) e regenera. **Idempotente**: retry manual, e o hook que a orquestração (Airflow) vai chamar |
+| `GET`  | `/api/dbt/models` | lista os slugs gerados |
+| `DELETE` | `/api/dbt/models/:slug` | remove o diretório da integração |
+
+Na criação da integração (`AutoPipelineView`): 3 tentativas do `POST /api/dbt/models`
+→ fallback para `POST /api/dbt/models/from-integration` → se tudo falhar, erro
+visível no wizard. A escrita de arquivos no gateway já tem retry para EPERM
+transitório de FS (Windows/OneDrive).
 
 ```bash
 curl -X POST http://localhost:8080/api/dbt/models \

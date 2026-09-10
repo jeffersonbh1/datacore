@@ -16,7 +16,7 @@ import {
 import {
   AirbyteDestination, AirbyteSource, AirbyteConnectionStreamInput, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
-  fetchSourceCatalog, fetchStreams, generateDbtModels
+  fetchSourceCatalog, fetchStreams, generateDbtModels, regenerateDbtModelsFromIntegration
 } from '../../lib/airbyteGateway';
 import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline } from '../../lib/supabase';
 import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
@@ -1065,37 +1065,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setIsCreating(false);
     setShowSuccessModal(true);
 
-    // Gera os modelos dbt da camada Bronze — um por tabela da integração — em
-    // dbt/models/generated/<slug>/. É o que o gateway roda depois (dbt build
-    // --select tag:<slug>); a Bronze não é mais construída fora do dbt.
-    // Best-effort: a integração já foi criada; falha aqui só loga.
-    if (activeDest.type === 'bigquery' && airbyteConnectionId && activeDest.accountOrProject) {
-      const slug = `conn_${airbyteConnectionId.replace(/[^A-Za-z0-9_]/g, '_')}`;
-      const rawDs = activeDest.databaseOrDataset;
-      try {
-        await generateDbtModels({
-          slug,
-          projectId: activeDest.accountOrProject,
-          rawDataset: rawDs,
-          bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),
-          applyLgpd: applyLgpdSanitization,
-          tables: selectedTables.map(tableName => {
-            const cfg = tableSyncConfigsSnapshot[tableName];
-            const stream = getStreamSummary(tableName);
-            return {
-              name: tableName,
-              columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
-              primaryKey: (stream?.primaryKey || []).map(p => p.join('.')),
-              cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
-              loadType: cfg.loadType,
-            };
-          }),
-        });
-      } catch (err) {
-        console.error('Falha ao gerar os modelos dbt da camada Bronze:', err);
-      }
-    }
-
     // Best-effort persistence to Supabase, scoped to the logged-in user's empresa —
     // Airbyte remains the source of truth and the UI above already reflects success
     // regardless of this outcome, so failures here are logged, not surfaced.
@@ -1107,6 +1076,63 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         await persistPipeline(idEmpresa, integracaoDbId, newPipeline);
       } catch (err) {
         console.error('Erro ao persistir integração/pipeline no banco de dados:', err);
+      }
+    }
+
+    // Garante que a integração tem um modelo dbt Bronze por tabela em
+    // dbt/models/generated/<slug>/ — é o que o gateway roda depois
+    // (dbt build --select tag:<slug>). A Bronze não é mais construída fora do dbt.
+    if (activeDest.type === 'bigquery' && airbyteConnectionId && activeDest.accountOrProject) {
+      const rawDs = activeDest.databaseOrDataset;
+      const slug = `conn_${airbyteConnectionId.replace(/[^A-Za-z0-9_]/g, '_')}`;
+      const buildModels = () => generateDbtModels({
+        slug,
+        projectId: activeDest.accountOrProject!,
+        rawDataset: rawDs,
+        bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),
+        applyLgpd: applyLgpdSanitization,
+        tables: selectedTables.map(tableName => {
+          const cfg = tableSyncConfigsSnapshot[tableName];
+          const stream = getStreamSummary(tableName);
+          return {
+            name: tableName,
+            columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
+            primaryKey: (stream?.primaryKey || []).map(p => p.join('.')),
+            cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
+            loadType: cfg.loadType,
+          };
+        }),
+      });
+
+      let modelsOk = false;
+      let lastErr: unknown;
+      // 3 tentativas do caminho direto (EPERM transitório de FS já tem retry no
+      // gateway; aqui cobre falha de rede), depois o caminho por estado persistido.
+      for (let attempt = 0; attempt < 3 && !modelsOk; attempt++) {
+        try {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 700 * attempt));
+          await buildModels();
+          modelsOk = true;
+        } catch (err) {
+          lastErr = err;
+          console.error(`Geração de modelos dbt — tentativa ${attempt + 1} falhou:`, err);
+        }
+      }
+      if (!modelsOk) {
+        try {
+          await regenerateDbtModelsFromIntegration(airbyteConnectionId);
+          modelsOk = true;
+        } catch (err) {
+          lastErr = err;
+          console.error('Regeneração de modelos dbt por integração falhou:', err);
+        }
+      }
+      if (!modelsOk) {
+        setErrorMessage(
+          'Integração criada, mas a geração dos modelos dbt da camada Bronze falhou: ' +
+          (lastErr instanceof Error ? lastErr.message : 'erro desconhecido') +
+          '. A Bronze não poderá ser construída até regerar os modelos.',
+        );
       }
     }
   };

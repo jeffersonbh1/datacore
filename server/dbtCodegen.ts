@@ -47,6 +47,21 @@ export interface WriteModelsResult {
   gitDetail?: string;
 }
 
+// Windows + OneDrive/AV às vezes seguram um handle no diretório e devolvem
+// EPERM/EBUSY momentâneo — repete a operação de FS algumas vezes.
+function retrySync<T>(fn: () => T, tries = 5, delayMs = 120): T {
+  for (let i = 0; ; i++) {
+    try {
+      return fn();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (i >= tries - 1 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'ENOTEMPTY')) throw err;
+      const until = Date.now() + delayMs * (i + 1);
+      while (Date.now() < until) { /* espera bloqueante curta */ }
+    }
+  }
+}
+
 /** dbt exige nomes de nó no formato [A-Za-z_][A-Za-z0-9_]*. */
 export function sanitizeIdent(raw: string): string {
   const s = raw.replace(/[^A-Za-z0-9_]/g, '_');
@@ -296,12 +311,14 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
 
   const projectDir = resolveDbtProjectDir();
   const dir = join(projectDir, 'models', 'generated', spec.slug);
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
-
   const rendered = renderIntegrationModels(spec);
+
+  // Regenera o diretório do zero (cobre tabela removida da integração), com
+  // retry para os EPERM transitórios de FS no Windows.
+  retrySync(() => rmSync(dir, { recursive: true, force: true }));
+  retrySync(() => mkdirSync(dir, { recursive: true }));
   for (const f of rendered) {
-    writeFileSync(join(dir, f.name), f.content, 'utf8');
+    retrySync(() => writeFileSync(join(dir, f.name), f.content, 'utf8'));
   }
 
   const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
