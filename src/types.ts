@@ -64,6 +64,9 @@ export interface CanvasEdge {
 
 export interface Pipeline {
   id: string;
+  /** id (bigint) da integração de origem em `integracoes`, quando persistida.
+   *  Usado para excluir a integração (e seu pipeline/runs, por cascade) do banco. */
+  integrationId?: number;
   name: string;
   description: string;
   category: string;

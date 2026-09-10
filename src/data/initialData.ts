@@ -614,25 +614,7 @@ export const INITIAL_DESTINATIONS: DestinationConnectorConfig[] = [
   }
 ];
 
-export const INITIAL_INTEGRATIONS: AutoIntegration[] = [
-  {
-    id: 'int-ecommerce-vendas-bq',
-    name: 'Integração Vendas Postgres para BigQuery Lakehouse',
-    sourceConnectorId: 'src-postgres-vendas',
-    sourceConnectorName: 'PostgreSQL Vendas OLTP (AWS RDS)',
-    sourceType: 'postgresql',
-    destinationConnectorId: 'dest-bigquery-curated',
-    destinationConnectorName: 'Google BigQuery Analytics Datalake',
-    destinationType: 'bigquery',
-    selectedTables: ['clientes', 'pedidos', 'pagamentos_cartao'],
-    syncFrequency: 'daily',
-    executionTimes: ['02:00', '14:00'],
-    scheduleSummary: 'Diário às 02:00 e 14:00',
-    applyLgpdSanitization: true,
-    status: 'active',
-    pipelineId: 'pipe-ecommerce-bq',
-    createdAt: '2026-02-28',
-    tablesCount: 3
-  }
-];
+// Sem seed de exemplo — integrações só existem quando o usuário cria uma de
+// verdade (persistida em Supabase e carregada em App.tsx).
+export const INITIAL_INTEGRATIONS: AutoIntegration[] = [];
 

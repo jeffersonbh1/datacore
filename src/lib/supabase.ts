@@ -570,6 +570,17 @@ export async function updateIntegracaoStatus(id: number, status: AutoIntegration
   if (error) throw new Error(`Erro ao atualizar status da integração: ${error.message}`);
 }
 
+/**
+ * Exclui uma integração do banco. As linhas de "pipelines" e "pipeline_runs"
+ * ligadas a ela caem por ON DELETE CASCADE (ver sql/002 e sql/003). Não mexe no
+ * Airbyte (a conexão continua lá) nem nos modelos dbt gerados.
+ */
+export async function deletarIntegracao(id: number): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { error } = await supabase.from('integracoes').delete().eq('id', id);
+  if (error) throw new Error(`Erro ao excluir a integração: ${error.message}`);
+}
+
 // =============================================================================
 // Pipelines — Fase 1 da persistência do Studio Visual ETL (ver sql/002_pipelines.sql).
 // A tabela guarda só o vínculo estável com a integração e metadados de exibição;

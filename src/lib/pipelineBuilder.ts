@@ -192,6 +192,9 @@ export function buildPipelineFromIntegration(
 
   return {
     id: pipelineId,
+    // Persisted integrations map to a numeric `integracoes.id` (see mapIntegracaoRow);
+    // locally-created ones use a "int-auto-<ts>" string and aren't in the DB.
+    integrationId: /^\d+$/.test(integration.id) ? Number(integration.id) : undefined,
     name: integration.name,
     description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${source.name} com ${destination.name}. Tabelas: ${selectedTables.join(', ')}. ${integration.scheduleSummary || ''}.`,
     category: 'Integração Automática Lakehouse',

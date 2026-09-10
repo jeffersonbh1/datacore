@@ -26,7 +26,7 @@ import {
   isSupabaseConfigured, supabase, logoutFromSupabase,
   fetchUsuarioPorAuthId, mapUsuarioRowToTeamUser,
   fetchOrigensPorEmpresa, fetchDestinosPorEmpresa, fetchIntegracoesPorEmpresa,
-  fetchPipelinesPorEmpresa, persistPipeline, updateIntegracaoStatus, PipelineDbRecord,
+  fetchPipelinesPorEmpresa, persistPipeline, updateIntegracaoStatus, deletarIntegracao, PipelineDbRecord,
   fetchEmpresaPorId
 } from './lib/supabase';
 import { buildPipelineFromIntegration } from './lib/pipelineBuilder';
@@ -323,6 +323,22 @@ export default function App() {
     }));
   };
 
+  const handleDeletePipeline = (pipeline: Pipeline) => {
+    // Remove da UI já (otimista) — o pipeline e seus runs somem por cascade no banco.
+    setPipelines(prev => prev.filter(p => p.id !== pipeline.id));
+    setIntegrations(prev => prev.filter(i =>
+      i.pipelineId !== pipeline.id &&
+      (pipeline.integrationId === undefined || i.id !== String(pipeline.integrationId))
+    ));
+    if (selectedPipelineId === pipeline.id) setSelectedPipelineId('');
+
+    if (pipeline.integrationId !== undefined) {
+      deletarIntegracao(pipeline.integrationId).catch(err =>
+        console.error('Erro ao excluir a integração no banco:', err)
+      );
+    }
+  };
+
   const handleCreatePipeline = (newPipe: Pipeline) => {
     setPipelines(prev => [newPipe, ...prev]);
     setSelectedPipelineId(newPipe.id);
@@ -531,6 +547,7 @@ export default function App() {
                 onSelectPipeline={handleSelectPipeline}
                 onToggleStatus={handleTogglePipelineStatus}
                 onTriggerRun={handleTriggerRun}
+                onDeletePipeline={handleDeletePipeline}
                 onCreatePipeline={handleCreatePipeline}
                 onNavigateToAutoPipeline={() => setActiveTab('auto-pipeline')}
                 canCreate={permissions.canCreatePipelines}
