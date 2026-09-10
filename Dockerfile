@@ -16,6 +16,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 COPY dbt ./dbt
+# Pacotes dbt (dbt_utils) fora de /app/dbt — server/dbtRunner.ts também aponta
+# DBT_PACKAGES_INSTALL_PATH para cá, então o `dbt deps` do build é reaproveitado
+# em runtime (sem re-instalar na 1ª requisição).
+ENV DBT_PACKAGES_INSTALL_PATH=/app/dbt_packages
 RUN pip3 install --no-cache-dir --break-system-packages -r dbt/requirements.txt \
  && dbt deps --project-dir ./dbt --profiles-dir ./dbt
 ENV DBT_PROJECT_DIR=/app/dbt \

@@ -240,13 +240,13 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   // Camada Bronze real (Fase 5): mirrors every table Airbyte replicated into
   // raw_ into the matching bronze_ dataset via the gateway's BigQuery route.
   // Manual trigger for now — not wired to run automatically after each sync.
-  const handleBuildBronze = async (node: CanvasNode) => {
+  const handleBuildBronze = async (node: CanvasNode, fullRefresh = false) => {
     const bq = node.config.bigquery;
     if (!bq || bronzeBuild.status === 'running') return;
 
     setBronzeBuild({ status: 'running' });
     try {
-      const { results } = await buildBronzeLayer(bq);
+      const { results } = await buildBronzeLayer({ ...bq, fullRefresh });
       const hasFailure = results.some(r => r.status === 'error');
       setBronzeBuild({ status: hasFailure ? 'error' : 'done', results });
 
@@ -1611,7 +1611,7 @@ with DAG(
           onClose={() => setDbtEditingNode(null)}
           canBuildBronze={canExecute}
           bronzeBuild={bronzeBuild}
-          onBuildBronze={() => handleBuildBronze(dbtEditingNode)}
+          onBuildBronze={(fullRefresh) => handleBuildBronze(dbtEditingNode, fullRefresh)}
         />
       )}
     </div>

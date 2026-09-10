@@ -16,6 +16,12 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+# Pacotes (dbt_utils) fora da pasta do projeto por padrão — quando o projeto
+# está num diretório sincronizado (OneDrive), o symlink `integration_tests` do
+# dbt_utils vira um reparse point que trava `dbt deps`/rm. O gateway
+# (server/dbtRunner.ts) e o Dockerfile definem DBT_PACKAGES_INSTALL_PATH.
+packages-install-path: "{{ env_var('DBT_PACKAGES_INSTALL_PATH', 'dbt_packages') }}"
+
 require-dbt-version: [">=1.8.0", "<2.0.0"]
 
 # ---------------------------------------------------------------------------

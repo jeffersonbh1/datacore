@@ -3,7 +3,7 @@ import { airbyteFetch } from '../airbyteClient';
 import {
   listGeneratedSlugs,
   removeIntegrationModels,
-  sanitizeIdent,
+  slugFromConnectionId,
   slugIsValid,
   writeIntegrationModels,
   type IntegrationModelsSpec,
@@ -116,7 +116,7 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
     });
 
     const spec: IntegrationModelsSpec = {
-      slug: `conn_${sanitizeIdent(connectionId)}`,
+      slug: slugFromConnectionId(connectionId),
       projectId,
       rawDataset,
       bronzeDataset: rawDataset.replace(/^raw_/, 'bronze_'),

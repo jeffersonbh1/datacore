@@ -286,6 +286,9 @@ export async function buildBronzeLayer(payload: {
   tables: string[];
   location?: string;
   slug?: string;
+  /** `--full-refresh`: reconstrói modelos incrementais do zero. Necessário na 1ª
+   *  construção quando `bronze_<t>` já existe com schema incompatível. */
+  fullRefresh?: boolean;
 }): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/bronze/build', {
     method: 'POST',

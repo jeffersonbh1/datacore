@@ -1,6 +1,9 @@
 import { Router } from 'express';
-import { bronzeModelName, sanitizeIdent } from '../dbtCodegen';
+import { bronzeModelName, slugFromConnectionId } from '../dbtCodegen';
 import { DbtUnavailableError, runDbt, type RunDbtResult } from '../dbtRunner';
+
+// Re-export para bronzeAutoSync.ts (mantém o import existente).
+export { slugFromConnectionId };
 
 export const bronzeRouter = Router();
 
@@ -13,6 +16,10 @@ export interface BuildBronzeInput {
   location?: string;
   /** Identificador da integração ("conn_<airbyteConnectionId>") — seleciona os modelos dbt gerados. */
   slug?: string;
+  /** Passa `--full-refresh` ao `dbt build`: reconstrói modelos incrementais do zero.
+   *  Necessário na 1ª construção quando a tabela bronze_<t> já existe com schema
+   *  incompatível (ex.: criada pelo antigo CTAS 1:1). */
+  fullRefresh?: boolean;
 }
 
 export interface TableResult {
@@ -58,6 +65,7 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
     bronzeDataset: input.bronzeDataset,
     location: input.location,
     select: `tag:${slug}`,
+    fullRefresh: input.fullRefresh,
   });
 
   // Falha total (compilação/parse/conexão): não mascara, reporta o erro por tabela.
@@ -114,7 +122,7 @@ export async function buildBronzeForTables(input: BuildBronzeInput): Promise<Tab
 
 bronzeRouter.post('/build', async (req, res) => {
   try {
-    const { projectId, rawDataset, bronzeDataset, tables, location, slug } = req.body as BuildBronzeInput;
+    const { projectId, rawDataset, bronzeDataset, tables, location, slug, fullRefresh } = req.body as BuildBronzeInput;
 
     if (!projectId || !rawDataset || !bronzeDataset || !Array.isArray(tables) || tables.length === 0) {
       res.status(400).json({
@@ -123,7 +131,7 @@ bronzeRouter.post('/build', async (req, res) => {
       return;
     }
 
-    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, location, slug });
+    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, location, slug, fullRefresh });
     const hasFailure = results.some((r) => r.status === 'error') || !dbt.ok;
     res.status(hasFailure ? 207 : 200).json({ dataset: bronzeDataset, results, dbt });
   } catch (err) {
@@ -131,8 +139,3 @@ bronzeRouter.post('/build', async (req, res) => {
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erro ao construir a camada Bronze.' });
   }
 });
-
-// Exportado para bronzeAutoSync.ts derivar o slug a partir do connectionId.
-export function slugFromConnectionId(connectionId: string): string {
-  return `conn_${sanitizeIdent(connectionId)}`;
-}

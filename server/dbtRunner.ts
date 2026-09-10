@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -212,6 +212,10 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
   const projectDir = resolveDbtProjectDir();
   const target = input.target || process.env.DBT_TARGET || 'prod';
   const select = input.select || process.env.DBT_BRONZE_SELECT || DEFAULT_SELECT;
+  // select "tag:<slug>" => só os modelos dessa integração participam do parse
+  // (DBT_ACTIVE_SLUG). Evita colisão de alias entre integrações que dividem o
+  // mesmo bronze dataset.
+  const activeSlugMatch = /(?:^|\s)tag:(conn_[A-Za-z0-9_]+)(?:\s|$)/.exec(select);
 
   const keyfile = ensureKeyfile();
   if (target !== 'dev' && !keyfile) {
@@ -236,14 +240,19 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
     // com o alias `bronze_<t>` dos gerados.
     DBT_GENERATED_ENABLED: 'true',
     DBT_DEMO_ENABLED: 'false',
+    // Instala os pacotes dbt (dbt_utils) FORA da pasta do projeto. Quando o
+    // projeto está num diretório sincronizado (OneDrive), o symlink
+    // `integration_tests` do dbt_utils vira um reparse point que trava rm/deps.
+    DBT_PACKAGES_INSTALL_PATH: process.env.DBT_PACKAGES_INSTALL_PATH || join(homedir(), '.datacore-dbt-packages'),
   };
+  if (activeSlugMatch) childEnv.DBT_ACTIVE_SLUG = activeSlugMatch[1];
   if (keyfile) childEnv.DBT_GCP_KEYFILE = keyfile;
 
   return withLock(async () => {
     let stdout = '';
     let stderr = '';
 
-    if (!depsInstalled && !existsSync(join(projectDir, 'dbt_packages'))) {
+    if (!depsInstalled && !existsSync(join(childEnv.DBT_PACKAGES_INSTALL_PATH as string, 'dbt_utils'))) {
       const deps = await spawnDbt(['--no-use-colors', 'deps', '--project-dir', projectDir, '--profiles-dir', childEnv.DBT_PROFILES_DIR as string], projectDir, childEnv);
       stdout += deps.stdout;
       stderr += deps.stderr;

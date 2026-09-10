@@ -72,6 +72,17 @@ export function slugIsValid(slug: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]{1,120}$/.test(slug);
 }
 
+/**
+ * Slug estável de uma integração a partir do airbyteConnectionId.
+ * DEVE bater exatamente com o frontend (src/lib/pipelineBuilder.ts e
+ * AutoPipelineView.handleCreateAutoIntegration). O prefixo "conn_" já garante
+ * início com letra, então NÃO usa sanitizeIdent (que prefixaria "t_" quando o
+ * connectionId começa com dígito, quebrando o casamento).
+ */
+export function slugFromConnectionId(connectionId: string): string {
+  return `conn_${connectionId.replace(/[^A-Za-z0-9_]/g, '_')}`;
+}
+
 /** Nome do modelo Bronze gerado para uma tabela (único no projeto via prefixo do slug). */
 export function bronzeModelName(slug: string, table: string): string {
   return `bronze_${slug}__${sanitizeIdent(table)}`;
@@ -121,10 +132,17 @@ function renderStagingSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec):
   const projection = cols
     ? t.columns!.map((c) => `        ${c},`).join('\n')
     : '        *,';
-  return `{{ config(materialized = 'ephemeral', tags = ['generated', '${spec.slug}', 'staging']) }}
+  return `{{ config(
+    materialized = 'ephemeral',
+    enabled = env_var('DBT_ACTIVE_SLUG', '${spec.slug}') == '${spec.slug}',
+    tags = ['generated', '${spec.slug}', 'staging'],
+) }}
 
 -- GERADO por server/dbtCodegen.ts — integração ${spec.slug}, tabela ${t.name}.
 -- Ephemeral: compilado como CTE dentro do bronze_ correspondente (sem objeto no BQ).
+-- enabled: só participa do parse quando DBT_ACTIVE_SLUG é esta integração (ou
+-- não está setado). Evita colisão de alias quando integrações compartilham o
+-- mesmo bronze dataset.
 with fonte as (
     select * from ${src}
 ),
@@ -153,6 +171,9 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
     // schema vem do +schema em dbt_project.yml (models.generated) — não repetir
     // aqui: dentro de {{ config(...) }} um "{{ env_var(...) }}" aninhado não é
     // reavaliado, viraria string literal.
+    // enabled: só quando DBT_ACTIVE_SLUG é esta integração (ou não setado) —
+    // integrações que compartilham bronze dataset colidiriam no alias bronze_<t>.
+    `    , enabled = env_var('DBT_ACTIVE_SLUG', '${spec.slug}') == '${spec.slug}'`,
     `    , tags = ['generated', '${spec.slug}', 'bronze']`,
     `    , partition_by = {'field': 'dt_ingestao_lake', 'data_type': 'timestamp', 'granularity': 'day'}`,
   ];

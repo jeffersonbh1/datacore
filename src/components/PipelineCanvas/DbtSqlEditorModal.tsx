@@ -17,7 +17,7 @@ interface DbtSqlEditorModalProps {
   /** Real "Construir Camada Bronze" action — only rendered for bronze nodes with a BigQuery destination. */
   canBuildBronze: boolean;
   bronzeBuild: { status: 'idle' | 'running' | 'done' | 'error'; results?: BronzeTableResult[]; error?: string };
-  onBuildBronze: () => void;
+  onBuildBronze: (fullRefresh?: boolean) => void;
 }
 
 export type DbtLayer = 'bronze' | 'silver' | 'gold';
@@ -603,24 +603,41 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                   ({node.config.bigquery.tables.length} {node.config.bigquery.tables.length === 1 ? 'tabela' : 'tabelas'})
                 </span>
               </div>
-              <button
-                type="button"
-                id="btn-build-bronze"
-                disabled={!canBuildBronze || bronzeBuild.status === 'running'}
-                onClick={onBuildBronze}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  !canBuildBronze || bronzeBuild.status === 'running'
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-orange-600 hover:bg-orange-500 text-white'
-                }`}
-              >
-                {bronzeBuild.status === 'running' ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Play className="w-3.5 h-3.5" />
-                )}
-                <span>{bronzeBuild.status === 'running' ? 'Construindo...' : 'Construir Camada Bronze (BigQuery real)'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  id="btn-build-bronze"
+                  disabled={!canBuildBronze || bronzeBuild.status === 'running'}
+                  onClick={() => onBuildBronze(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    !canBuildBronze || bronzeBuild.status === 'running'
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-orange-600 hover:bg-orange-500 text-white'
+                  }`}
+                >
+                  {bronzeBuild.status === 'running' ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5" />
+                  )}
+                  <span>{bronzeBuild.status === 'running' ? 'Construindo...' : 'Construir Camada Bronze (BigQuery real)'}</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-build-bronze-full"
+                  disabled={!canBuildBronze || bronzeBuild.status === 'running'}
+                  onClick={() => onBuildBronze(true)}
+                  title="Reconstrói do zero (--full-refresh). Use na 1ª vez, ou quando o schema mudou / a tabela veio do modo antigo."
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer border ${
+                    !canBuildBronze || bronzeBuild.status === 'running'
+                      ? 'bg-slate-800 text-slate-600 border-slate-800 cursor-not-allowed'
+                      : 'bg-slate-800 hover:bg-slate-700 text-orange-300 border-orange-900/60'
+                  }`}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Do zero</span>
+                </button>
+              </div>
             </div>
 
             {bronzeBuild.error && (

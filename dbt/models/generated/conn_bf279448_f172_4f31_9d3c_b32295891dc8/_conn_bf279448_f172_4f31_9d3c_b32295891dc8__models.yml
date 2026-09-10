@@ -1,0 +1,56 @@
+version: 2
+
+# GERADO por server/dbtCodegen.ts — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8.
+models:
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__dbt_execucoes
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela dbt_execucoes."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__dbt_modelos
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela dbt_modelos."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__dbt_ultima_execucao
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__destinos
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela destinos."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__empresas
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela empresas."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__integracoes
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela integracoes."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__origens
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela origens."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__pipeline_runs
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela pipeline_runs."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__pipelines
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela pipelines."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__tabelas_carregadas
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela tabelas_carregadas."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_conn_bf279448_f172_4f31_9d3c_b32295891dc8__usuarios
+    description: "Bronze gerado — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8, tabela usuarios."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
