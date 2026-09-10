@@ -179,41 +179,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [isTestingSource, setIsTestingSource] = useState(false);
   const [sourceTestSuccess, setSourceTestSuccess] = useState<boolean | null>(null);
   const [sourceTestMessage, setSourceTestMessage] = useState('');
-  const [discoveredTables, setDiscoveredTables] = useState<DiscoveredTable[]>([
-    {
-      name: 'clientes',
-      rowCount: 54200,
-      columns: ['id', 'nome_completo', 'cpf', 'email', 'telefone', 'criado_em'],
-      hasPII: true,
-      piiFields: ['cpf', 'email', 'telefone']
-    },
-    {
-      name: 'pedidos',
-      rowCount: 189400,
-      columns: ['id', 'cliente_id', 'valor_total', 'status', 'data_pedido'],
-      hasPII: false
-    },
-    {
-      name: 'transacoes_pagamento',
-      rowCount: 189400,
-      columns: ['id', 'pedido_id', 'metodo', 'bandeira', 'token_cartao', 'cpf_titular'],
-      hasPII: true,
-      piiFields: ['cpf_titular', 'token_cartao']
-    },
-    {
-      name: 'produtos_catalogo',
-      rowCount: 12400,
-      columns: ['id', 'sku', 'nome', 'categoria', 'preco', 'estoque'],
-      hasPII: false
-    },
-    {
-      name: 'enderecos_entrega',
-      rowCount: 48900,
-      columns: ['id', 'cliente_id', 'logradouro', 'cep', 'cidade', 'estado'],
-      hasPII: true,
-      piiFields: ['logradouro', 'cep']
-    }
-  ]);
+  // As tabelas do Passo 3 vêm exclusivamente da descoberta real do Airbyte
+  // (realStreams), que só acontece depois de criar a origem no Passo 1. Sem
+  // dados de exemplo/mock — só o que o usuário adiciona manualmente entra aqui.
+  const [discoveredTables, setDiscoveredTables] = useState<DiscoveredTable[]>([]);
 
   // --------------------------------------------------------------------------
   // STEP 2: DESTINATION CONNECTOR STATE
@@ -334,7 +303,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       .catch(err => {
         if (cancelled) return;
         setRealStreams([]);
-        setStreamsError(err instanceof Error ? err.message : 'Falha ao descobrir as tabelas reais da origem. Exibindo dados de exemplo.');
+        setStreamsError(err instanceof Error ? err.message : 'Falha ao descobrir as tabelas reais da origem.');
       })
       .finally(() => {
         if (cancelled) return;
@@ -2222,8 +2191,21 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   </div>
                 )}
 
+                {/* Sem descoberta real e sem tabelas adicionadas manualmente:
+                    nada a exibir — o usuário precisa concluir os Passos 1 e 2. */}
+                {!isLoadingStreams && !usingRealStreams && discoveredTables.length === 0 && (
+                  <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
+                    <span>
+                      Nenhuma tabela para exibir. Conclua o <strong>Passo 1 (Origem)</strong> e o{' '}
+                      <strong>Passo 2 (Destino)</strong> — as tabelas são descobertas na origem real via
+                      Airbyte. Você também pode adicionar tabelas manualmente abaixo.
+                    </span>
+                  </div>
+                )}
+
                 {/* Table Checkbox Cards */}
-                {!isLoadingStreams && (
+                {!isLoadingStreams && (usingRealStreams || discoveredTables.length > 0) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {usingRealStreams
                       ? realStreams.map(stream => {
