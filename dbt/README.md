@@ -1,86 +1,70 @@
 # DataCore — Projeto dbt (camada Bronze)
 
-Projeto dbt real (dbt-core + `dbt-bigquery`). A camada **Bronze é 100% dbt**:
-ao criar uma integração no Studio, o gateway **gera um modelo dbt por tabela**
-em `models/generated/<slug>/` e depois roda `dbt build --select tag:<slug>`.
-Não existe mais construção de Bronze fora do dbt (o antigo
-`CREATE OR REPLACE TABLE … AS SELECT *` foi removido).
+Projeto dbt real (dbt-core + `dbt-bigquery`). A camada **Bronze é 100% dbt**.
+Ao criar uma integração no Studio, o gateway **gera um modelo dbt por tabela**
+em `models/medallion/bronze/bronze_<tabela>.sql` (sobrescrevendo se já existir)
+e depois roda `dbt build --select bronze_<t1> bronze_<t2> ...`. Não existe mais
+construção de Bronze fora do dbt (o antigo `CREATE OR REPLACE TABLE … AS
+SELECT *` foi removido).
 
 ```
 dbt/
-├── dbt_project.yml            # config + convenção de datasets
-├── packages.yml               # dbt_utils
-├── profiles.yml               # perfis dev/prod, 100% via env var (usado pelo gateway)
-├── profiles.example.yml       # cópia comentada para uso local manual
-├── requirements.txt           # dbt-core + dbt-bigquery
+├── dbt_project.yml
+├── packages.yml / package-lock.yml   # dbt_utils
+├── profiles.yml                      # dev/prod, 100% via env var (usado pelo gateway)
+├── requirements.txt                  # dbt-bigquery ~1.12
+├── _generated_sources.json           # manifesto: tabelas conhecidas (usado p/ montar a source)
 ├── macros/
-│   ├── generate_schema_name.sql   # dataset verbatim (= valor da env var)
-│   ├── lgpd.sql                    # mascarar_cpf / tokenizar_email / hash_sha256
+│   ├── generate_schema_name.sql      # dataset = valor da env var (sem prefixo)
+│   ├── lgpd.sql                       # mascarar_cpf / tokenizar_email / hash_sha256
 │   └── cast_seguro.sql
-├── models/
-│   ├── generated/             # << PRODUÇÃO — escrito pelo gateway, um dir por integração
-│   │   └── <slug>/
-│   │       ├── _<slug>__sources.yml     # source do dataset raw_ (uma entrada por tabela)
-│   │       ├── _<slug>__models.yml      # testes (unique/not_null nas PKs)
-│   │       ├── stg_<slug>__<t>.sql      # ephemeral: renome + marca d'água de ingestão
-│   │       └── bronze_<slug>__<t>.sql   # alias bronze_<t>: LGPD + dedup CDC + incremental
-│   ├── staging/  + medallion/ # EXEMPLO (transacoes) — referência + fixture de teste local
-│   └── ...
-├── seeds/raw_transacoes.csv   # 12 linhas de demonstração (roda o exemplo sem Airbyte)
-└── tests/assert_bronze_pii_anonimizada.sql
+└── models/
+    ├── sources/
+    │   └── _datacore_raw__sources.yml  # GERADO — source "datacore_raw", tabelas acumuladas
+    ├── medallion/
+    │   ├── bronze/
+    │   │   ├── bronze_<tabela>.sql     # GERADO — 1 por tabela, sobrescrito na regeração
+    │   │   ├── bronze_<tabela>.yml     # GERADO — testes (unique/not_null na PK)
+    │   │   ├── bronze_transacoes.sql   # EXEMPLO (enabled via DBT_DEMO_ENABLED)
+    │   │   └── _bronze__models.yml     # EXEMPLO
+    │   ├── silver/  gold/              # EXEMPLO (transacoes) — sem codegen ainda
+    └── staging/                        # EXEMPLO
 ```
 
-`<slug>` = `conn_<airbyteConnectionId sanitizado>` — estável e conhecido pelo
-frontend (após criar a conexão), pelo `buildPipelineFromIntegration` e pelo
-`bronzeAutoSync`.
+## Como funciona
 
-## Fluxo (produção)
+- **Um modelo por tabela, compartilhado entre integrações.** `bronze_usuarios.sql`
+  serve qualquer integração cuja raw tenha `raw_usuarios` — a `source` resolve o
+  dataset via `env_var('DBT_RAW_DATASET')` e a saída via `env_var('DBT_SCHEMA_BRONZE')`,
+  ambos setados pelo gateway **por requisição**. Regenerar sobrescreve o arquivo.
+- **`_datacore_raw__sources.yml`** é gerado a partir de `_generated_sources.json`,
+  que acumula as tabelas conforme integrações são criadas (merge, não substitui).
+- **`bronze_<tabela>.sql`**: renome das colunas selecionadas +
+  `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake` +
+  `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de
+  nome (`cpf|cnpj` → `mascarar_cpf`, `email` → `tokenizar_email`,
+  `cartao|telefone|rg|senha` → `hash_sha256`); **dedup CDC**
+  (`qualify row_number() over (partition by <PK> order by dt_ingestao_lake desc)`)
+  quando há PK; **incremental `merge`** quando `loadType=incremental` + PK, senão `table`.
+- **Sem staging** para os gerados (a lógica está no próprio `bronze_<t>.sql`).
+- Silver/Gold: só os modelos de exemplo. Sem codegen.
+
+### Fluxo
 
 ```
-Criar integração (wizard passos 1→2→3)
-  1. Source Airbyte           2. Destino BigQuery (dataset raw_<base>)
-  3. Seleciona tabelas + agenda → cria a conexão Airbyte (prefix raw_)
-        │
-        ├─(a) POST /api/dbt/models    (AutoPipelineView → server/dbtCodegen.ts)
-        │      escreve models/generated/<slug>/{sources,models,stg_*,bronze_*}
-        │      metadado: colunas, primaryKey (Airbyte), loadType, cursor, applyLgpd
-        │      DBT_CODEGEN_GIT=commit|push → também versiona no repo
-        │
-        └─ persiste integração/pipeline no Supabase
+Criar integração (wizard 1→2→3) → cria a conexão Airbyte
+   └─ POST /api/dbt/models   (AutoPipelineView → dbtCodegen.writeIntegrationModels)
+        escreve/atualiza models/medallion/bronze/bronze_<t>.sql (+ .yml) e a source
+        DBT_CODEGEN_GIT=commit|push → também versiona
 
-Airbyte sincroniza  →  raw_<t> aparece em raw_<base>
+Airbyte sincroniza → raw_<t> aparece
 
-Construção da Bronze (não roda na criação — a raw ainda não existe):
-  • Automática: Cloud Scheduler → POST /api/bigquery/bronze/auto-sync
-                após o 1º job Airbyte "succeeded"
-  • Manual:     botão "Construir Camada Bronze" no nó do canvas
-  ambas → buildBronzeViaDbt() → runDbt(select: "tag:<slug>")
-       → dbt build --select tag:<slug> --target prod
-       → bronze_<slug>__<t> materializa <bronzeDataset>.bronze_<t>
-       → resultado mapeado por tabela; modelo ausente = erro (sem fallback)
+Construir Bronze (botão do canvas ou bronzeAutoSync)
+   → buildBronzeViaDbt(tables) → runDbt(select: "bronze_<t1> bronze_<t2> ...")
+   → dbt build --select bronze_<t1> ... --target prod
+   → materializa <DBT_SCHEMA_BRONZE>.bronze_<t>
+   → resultado mapeado por tabela; modelo ausente = erro (sem fallback)
 ```
-
-## O que o modelo Bronze gerado faz
-
-- **staging (ephemeral)** — `select` das colunas selecionadas de
-  `source('<slug>','<t>')` + `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake`.
-- **bronze** — `{{ config(alias='bronze_<t>', schema=env_var('DBT_SCHEMA_BRONZE'),
-  tags=['generated','<slug>','bronze'], partition_by=dt_ingestao_lake/dia) }}`
-  - **LGPD Art. 46** (quando `applyLgpd`) — heurística por nome de coluna:
-    `cpf|cnpj|documento` → `mascarar_cpf` · `email` → `tokenizar_email` ·
-    `cartao|card|pan|telefone|rg|cnh` → `hash_sha256` (macros em `macros/lgpd.sql`).
-  - **Dedup CDC** — `qualify row_number() over (partition by <PK> order by dt_ingestao_lake desc) = 1`
-    quando a tabela tem PK.
-  - **Incremental** (`merge` por PK) quando `loadType = incremental` + PK; senão `table`.
-- **testes** — `unique`+`not_null` na PK simples; `dbt_utils.unique_combination_of_columns` na composta.
-
-Limitações atuais do template: sem cast de tipos por coluna (o Airbyte discovery
-não é propagado com tipos); PII por **heurística de nome**, não por marcação
-explícita do canvas. Ambos são incrementos futuros do codegen.
-
-## Pré-requisitos
-
-- Python 3.9+ ; acesso ao BigQuery (dev: `gcloud auth application-default login`; prod: service account).
 
 ## Rodar o exemplo (sem Airbyte)
 
@@ -89,83 +73,72 @@ cd dbt
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 export DBT_PROFILES_DIR="$PWD"
-cp profiles.example.yml profiles.yml
 
 export DBT_GCP_PROJECT="seu-projeto"
 export DBT_RAW_DATASET="raw"          # dataset do seed
 export DBT_TARGET="dev"               # ou prod + DBT_GCP_KEYFILE=<sa.json>
-export DBT_GENERATED_ENABLED="false"  # ignora models/generated (dependem de raw real)
+export DBT_DEMO_ENABLED="true"        # habilita os modelos *_transacoes
 
 dbt deps
 dbt seed
-dbt build --select staging medallion
-dbt docs generate && dbt docs serve
+dbt build --select stg_transacoes bronze_transacoes silver_transacoes gold_kpis_transacoes
 ```
 
-O gateway faz o inverso: `DBT_DEMO_ENABLED=false` + `DBT_GENERATED_ENABLED=true`
-(forçados em `server/dbtRunner.ts`) e `--select tag:<slug>`. As duas metades
-nunca são parseadas juntas — o `alias = bronze_<t>` dos gerados colidiria com o
-modelo de exemplo `bronze_transacoes`.
+O gateway roda com `DBT_DEMO_ENABLED=false` (só os modelos gerados) e
+`DBT_PACKAGES_INSTALL_PATH` fora da pasta do projeto (o symlink `integration_tests`
+do `dbt_utils` trava `dbt deps` em diretório sincronizado por OneDrive).
 
 Validado ponta a ponta em BigQuery real (dbt-core 1.12.4 / dbt-bigquery 1.12.0):
-exemplo `PASS=22`; modelo gerado `PASS=3` (CDC 12→10, CPF/cartão/e-mail
-anonimizados); `POST /api/bigquery/bronze/build` → `dbt.ok=true`,
-`results[0].model = bronze_<slug>__<t>`.
+o mesmo `bronze_usuarios.sql` materializou `bronze_datacore.bronze_usuarios` e
+`bronze_analytics_curated.bronze_usuarios` (datasets diferentes, mesma requisição-modelo).
 
 ## Endpoints do codegen (gateway)
 
 | Método | Rota | Uso |
 |--------|------|-----|
 | `POST` | `/api/dbt/models` | spec completo no corpo — chamado na criação da integração |
-| `POST` | `/api/dbt/models/from-integration` | `{ connectionId }` — reconstrói o spec do estado persistido (Supabase + PKs do Airbyte) e regenera. **Idempotente**: retry manual, e o hook que a orquestração (Airflow) vai chamar |
-| `GET`  | `/api/dbt/models` | lista os slugs gerados |
-| `DELETE` | `/api/dbt/models/:slug` | remove o diretório da integração |
+| `POST` | `/api/dbt/models/from-integration` | `{ connectionId }` — reconstrói o spec do estado persistido (Supabase + PKs do Airbyte) e regera. Idempotente: retry manual, hook do Airflow |
+| `GET`  | `/api/dbt/models` | lista os modelos Bronze gerados |
 
-Na criação da integração (`AutoPipelineView`): 3 tentativas do `POST /api/dbt/models`
-→ fallback para `POST /api/dbt/models/from-integration` → se tudo falhar, erro
-visível no wizard. A escrita de arquivos no gateway já tem retry para EPERM
-transitório de FS (Windows/OneDrive).
+Na criação (`AutoPipelineView`): 3 tentativas do `POST /api/dbt/models` →
+fallback para `/from-integration` → erro visível no wizard se tudo falhar.
 
 ```bash
 curl -X POST http://localhost:8080/api/dbt/models \
   -H "Authorization: Bearer $GATEWAY_API_KEY" -H 'Content-Type: application/json' \
-  -d '{"slug":"conn_smoke","projectId":"data-plataform-dev",
-       "rawDataset":"raw_smoke","bronzeDataset":"bronze_smoke","applyLgpd":true,
-       "tables":[{"name":"clientes","columns":["id_cliente","cpf","email"],
-                  "primaryKey":["id_cliente"],"loadType":"incremental"}]}'
-# -> escreve dbt/models/generated/conn_smoke/*  (git: skipped|committed|pushed)
+  -d '{"projectId":"data-plataform-dev","rawDataset":"raw_x","bronzeDataset":"bronze_x",
+       "applyLgpd":true,
+       "tables":[{"name":"usuarios","columns":["id","nome","email"],
+                  "primaryKey":["id"],"loadType":"incremental"}]}'
+# -> escreve dbt/models/medallion/bronze/bronze_usuarios.sql (+ .yml) e atualiza a source
 ```
 
-## Integração com o gateway — variáveis (ver `../.env.example`)
+## Variáveis (ver `../.env.example`)
 
 | Var | Efeito |
 |-----|--------|
-| `DBT_CODEGEN_GIT` | `off` (só escreve) · `commit` · `push` (versiona os modelos gerados) |
-| `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | autor do commit do codegen |
-| `DBT_GENERATED_ENABLED` | `false` só para o `dbt build` local do exemplo; o gateway força `true` |
 | `DBT_DEMO_ENABLED` | `false` desliga os modelos de exemplo; o gateway força `false` |
+| `DBT_CODEGEN_GIT` | `off` / `commit` / `push` — versiona os modelos gerados |
+| `DBT_PACKAGES_INSTALL_PATH` | pasta dos pacotes dbt (fora do projeto no gateway/container) |
 | `DBT_PROJECT_DIR` | pasta do projeto (container: `/app/dbt`) |
 | `DBT_RUN_TIMEOUT_MS` | timeout por `dbt build` (default 900000) |
-| `DBT_DISABLED` | `true` = parada de emergência: toda Bronze falha (503), sem fallback |
+| `DBT_DISABLED` | `true` = toda Bronze falha (503), sem fallback |
 
 Contexto por requisição: `projectId → DBT_GCP_PROJECT`,
 `rawDataset → DBT_RAW_DATASET`, `bronzeDataset → DBT_SCHEMA_BRONZE`,
-`location → DBT_GCP_LOCATION`. Credenciais: reusa `BIGQUERY_CREDENTIALS_JSON`
-(o gateway grava um keyfile temporário). Execuções serializadas no processo.
+`location → DBT_GCP_LOCATION`. Credenciais: reusa `BIGQUERY_CREDENTIALS_JSON`.
 
 ## Deploy — como os modelos gerados chegam ao gateway
 
-A imagem do gateway "assa" `dbt/` no build (`COPY dbt ./dbt`). Então:
+A imagem do gateway "assa" `dbt/` no build. Uma tabela nova só constrói via dbt
+**depois** que `bronze_<tabela>.sql` está na imagem: `DBT_CODEGEN_GIT=push` +
+trigger de deploy no push, ou redeploy manual, ou (futuro) `git pull` do `dbt/`
+no start do container.
 
-- **Local** — `DBT_PROJECT_DIR` = `<repo>/dbt`; os arquivos gerados aparecem na hora.
-- **Cloud Run** — uma integração nova só constrói a Bronze via dbt **após um
-  redeploy** que inclua `models/generated/<slug>/` na imagem — ou seja:
-  `DBT_CODEGEN_GIT=push` + pipeline de deploy no push, **ou** um passo de
-  `git pull` do `dbt/` no start do container (não implementado).
+## Limitações conhecidas
 
-## Limitação conhecida
-
-Falha de **teste** dbt (ex.: `unique` violado) marca `dbt.ok = false` na
-resposta HTTP (207) mas **não** vira `status: 'error'` por tabela — o
-`bronze_status` do `pipeline_runs` (auto-sync) continua `built`. Falha de
-**build** de modelo, sim, propaga como erro da tabela.
+- **Uma definição por nome de tabela.** Se duas integrações têm um `usuarios` com
+  schema diferente, o último a regenerar vence (é o comportamento pedido).
+- Sem cast de tipos por coluna (o discovery do Airbyte não é propagado com tipos).
+- Falha de **teste** dbt marca `dbt.ok=false` (HTTP 207) mas não vira erro por
+  tabela — o `bronze_status` do `pipeline_runs` continua `built`.

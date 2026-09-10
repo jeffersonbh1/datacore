@@ -1,5 +1,6 @@
 {{
   config(
+    enabled = env_var('DBT_DEMO_ENABLED', 'true') == 'true',
     materialized = "table",
     partition_by = {
       "field": "data_referencia",

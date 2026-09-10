@@ -235,20 +235,20 @@ export interface DbtModelTableSpec {
   loadType?: 'full_refresh' | 'incremental';
 }
 
-/**
- * Gera/regenera os modelos dbt da Bronze de uma integração (um por tabela) em
- * dbt/models/generated/<slug>/. Chamado logo após criar a conexão no Airbyte.
- */
 export interface DbtModelsResult {
-  slug: string;
   files: string[];
   models: string[];
+  sources: string[];
   git: string;
   gitDetail?: string;
 }
 
+/**
+ * Gera/regenera os modelos dbt da Bronze (um bronze_<tabela>.sql por tabela em
+ * dbt/models/medallion/bronze/, sobrescrevendo). Chamado logo após criar a
+ * conexão no Airbyte.
+ */
 export async function generateDbtModels(payload: {
-  slug: string;
   projectId: string;
   rawDataset: string;
   bronzeDataset: string;
@@ -274,10 +274,10 @@ export async function regenerateDbtModelsFromIntegration(connectionId: string): 
 }
 
 /**
- * Camada Bronze (Fase 8): 100% dbt. O gateway roda `dbt build --select tag:<slug>`
- * sobre os modelos gerados da integração — um por tabela, com tipagem leve,
- * deduplicação CDC e anonimização LGPD. Sem fallback: tabela sem modelo => erro.
- * Disparada pelo nó Bronze do canvas do Studio. `dbt` traz o resumo dos nós.
+ * Camada Bronze: 100% dbt. O gateway roda `dbt build --select bronze_<t1> ...`
+ * sobre os modelos em models/medallion/bronze/ — um por tabela, com tipagem
+ * leve, deduplicação CDC e anonimização LGPD. Sem fallback: tabela sem modelo
+ * => erro. Disparada pelo nó Bronze do canvas do Studio.
  */
 export async function buildBronzeLayer(payload: {
   projectId: string;
@@ -285,7 +285,6 @@ export async function buildBronzeLayer(payload: {
   bronzeDataset: string;
   tables: string[];
   location?: string;
-  slug?: string;
   /** `--full-refresh`: reconstrói modelos incrementais do zero. Necessário na 1ª
    *  construção quando `bronze_<t>` já existe com schema incompatível. */
   fullRefresh?: boolean;

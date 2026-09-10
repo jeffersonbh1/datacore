@@ -1,0 +1,35 @@
+{
+  "dbt_execucoes": {
+    "identifier": "raw_dbt_execucoes"
+  },
+  "dbt_modelos": {
+    "identifier": "raw_dbt_modelos"
+  },
+  "dbt_ultima_execucao": {
+    "identifier": "raw_dbt_ultima_execucao"
+  },
+  "destinos": {
+    "identifier": "raw_destinos"
+  },
+  "empresas": {
+    "identifier": "raw_empresas"
+  },
+  "integracoes": {
+    "identifier": "raw_integracoes"
+  },
+  "origens": {
+    "identifier": "raw_origens"
+  },
+  "tabelas_carregadas": {
+    "identifier": "raw_tabelas_carregadas"
+  },
+  "usuarios": {
+    "identifier": "raw_usuarios"
+  },
+  "pipeline_runs": {
+    "identifier": "raw_pipeline_runs"
+  },
+  "pipelines": {
+    "identifier": "raw_pipelines"
+  }
+}

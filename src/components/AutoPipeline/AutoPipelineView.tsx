@@ -1080,13 +1080,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
 
     // Garante que a integração tem um modelo dbt Bronze por tabela em
-    // dbt/models/generated/<slug>/ — é o que o gateway roda depois
-    // (dbt build --select tag:<slug>). A Bronze não é mais construída fora do dbt.
+    // dbt/models/medallion/bronze/bronze_<tabela>.sql — é o que o gateway roda
+    // depois (dbt build). A Bronze não é mais construída fora do dbt.
     if (activeDest.type === 'bigquery' && airbyteConnectionId && activeDest.accountOrProject) {
       const rawDs = activeDest.databaseOrDataset;
-      const slug = `conn_${airbyteConnectionId.replace(/[^A-Za-z0-9_]/g, '_')}`;
       const buildModels = () => generateDbtModels({
-        slug,
         projectId: activeDest.accountOrProject!,
         rawDataset: rawDs,
         bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),

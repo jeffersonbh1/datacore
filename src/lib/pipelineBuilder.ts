@@ -114,12 +114,6 @@ export function buildPipelineFromIntegration(
   const rawDataset = destination.databaseOrDataset;
   const bronzeDataset = isBigQueryDestination ? rawDataset.replace(/^raw_/, 'bronze_') : undefined;
 
-  // Slug estável da integração — casa com os modelos dbt gerados em
-  // dbt/models/generated/<slug>/ (server/dbtCodegen.ts + AutoPipelineView).
-  const dbtSlug = integration.airbyteConnectionId
-    ? `conn_${integration.airbyteConnectionId.replace(/[^A-Za-z0-9_]/g, '_')}`
-    : undefined;
-
   // One Bronze node per table (not one combined node) — each fans out from Raw
   // and fans back into Silver, so every table Airbyte replicated into raw_ gets
   // its own place to define/build its bronze_ table independently. Laid out as a
@@ -163,7 +157,6 @@ export function buildPipelineFromIntegration(
           bronzeDataset,
           tables: [table],
           location: destination.warehouseOrCluster || undefined,
-          slug: dbtSlug,
         } : undefined,
       }
       // dbt bronze/silver execution isn't wired to real runs yet (Fase 3) — no metrics.

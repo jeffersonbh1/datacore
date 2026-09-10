@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { airbyteFetch } from '../airbyteClient';
 import { getSupabaseAdmin } from '../supabaseAdmin';
-import { buildBronzeForTables, slugFromConnectionId } from './bronze';
+import { buildBronzeForTables } from './bronze';
 
 export const bronzeAutoSyncRouter = Router();
 
@@ -157,7 +157,6 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         bronzeDataset,
         tables,
         location: cfg.warehouseOrCluster || undefined,
-        slug: slugFromConnectionId(integ.airbyte_connection_id),
       });
       const hasFailure = tableResults.some(r => r.status === 'error');
 

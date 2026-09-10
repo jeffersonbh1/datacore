@@ -1,0 +1,56 @@
+version: 2
+
+# GERADO por server/dbtCodegen.ts a partir de dbt/_generated_sources.json.
+# Não editar à mão — a lista de tabelas cresce conforme integrações são criadas.
+# database/schema resolvem via env var (o gateway seta DBT_GCP_PROJECT / DBT_RAW_DATASET
+# por requisição); os defaults só existem para o `dbt parse`/`dbt docs` local.
+sources:
+  - name: datacore_raw
+    database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"
+    schema: "{{ env_var('DBT_RAW_DATASET', 'raw') }}"
+    loader: airbyte
+    tables:
+      - name: dbt_execucoes
+        identifier: raw_dbt_execucoes
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: dbt_modelos
+        identifier: raw_dbt_modelos
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: dbt_ultima_execucao
+        identifier: raw_dbt_ultima_execucao
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: destinos
+        identifier: raw_destinos
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: empresas
+        identifier: raw_empresas
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: integracoes
+        identifier: raw_integracoes
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: origens
+        identifier: raw_origens
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: pipeline_runs
+        identifier: raw_pipeline_runs
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: pipelines
+        identifier: raw_pipelines
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: tabelas_carregadas
+        identifier: raw_tabelas_carregadas
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: usuarios
+        identifier: raw_usuarios
+        config:
+          loaded_at_field: _airbyte_extracted_at

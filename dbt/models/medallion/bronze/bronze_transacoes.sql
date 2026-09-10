@@ -1,5 +1,6 @@
 {{
   config(
+    enabled = env_var('DBT_DEMO_ENABLED', 'true') == 'true',
     materialized = "incremental",
     unique_key = "id_transacao",
     incremental_strategy = "merge",

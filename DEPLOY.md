@@ -33,7 +33,7 @@ Gateway são deployados aqui.
 | 7 | Migrações SQL | `sql/001..007` | aplicar no Supabase (passo 4) |
 | 8 | Cloud Scheduler (auto-sync Bronze) | não configurado | criar job (passo 5) |
 | 9 | dbt no gateway | imagem/CPU/timeout maiores | `--memory=1Gi --timeout=900 --max-instances=1` (já no cloudbuild) |
-| 11 | Modelos dbt gerados por integração | escritos em `dbt/models/generated/<slug>/` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
+| 11 | Modelos dbt gerados | escritos em `dbt/models/medallion/bronze/bronze_<t>.sql` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
 | 10 | Chave da SA BigQuery | exposta em conversas/arquivo local | **rotacionar** e guardar só no Secret Manager |
 
 ---
@@ -175,7 +175,7 @@ _DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false,_DBT_CODEGEN_GIT=off
 
 **Como os modelos gerados chegam ao gateway** — a imagem "assa" `dbt/` no build.
 Uma integração nova só constrói a Bronze via dbt **depois** que
-`dbt/models/generated/<slug>/` está na imagem. Opções:
+`bronze_<tabela>.sql` está na imagem. Opções:
 - `_DBT_CODEGEN_GIT=push` + um remote git com credencial no container + trigger
   de deploy no push do repo (rebuild da imagem); **ou**
 - redeploy manual após criar integrações; **ou**

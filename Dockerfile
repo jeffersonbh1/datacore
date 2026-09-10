@@ -25,7 +25,6 @@ RUN pip3 install --no-cache-dir --break-system-packages -r dbt/requirements.txt 
 ENV DBT_PROJECT_DIR=/app/dbt \
     DBT_PROFILES_DIR=/app/dbt \
     DBT_TARGET=prod \
-    DBT_GENERATED_ENABLED=true \
     DBT_DEMO_ENABLED=false
 # -----------------------------------------------------------------------------
 

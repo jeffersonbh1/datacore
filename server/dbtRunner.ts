@@ -212,10 +212,6 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
   const projectDir = resolveDbtProjectDir();
   const target = input.target || process.env.DBT_TARGET || 'prod';
   const select = input.select || process.env.DBT_BRONZE_SELECT || DEFAULT_SELECT;
-  // select "tag:<slug>" => só os modelos dessa integração participam do parse
-  // (DBT_ACTIVE_SLUG). Evita colisão de alias entre integrações que dividem o
-  // mesmo bronze dataset.
-  const activeSlugMatch = /(?:^|\s)tag:(conn_[A-Za-z0-9_]+)(?:\s|$)/.exec(select);
 
   const keyfile = ensureKeyfile();
   if (target !== 'dev' && !keyfile) {
@@ -235,17 +231,14 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
     DBT_SCHEMA_BRONZE: input.bronzeDataset,
     DBT_SCHEMA_SILVER: input.silverDataset || deriveDataset(input.bronzeDataset, 'silver_'),
     DBT_SCHEMA_GOLD: input.goldDataset || deriveDataset(input.bronzeDataset, 'gold_'),
-    // O gateway só constrói modelos gerados por integração. Os modelos de
-    // exemplo (transacoes) ficam desligados — se ativos, colidiriam no parse
-    // com o alias `bronze_<t>` dos gerados.
-    DBT_GENERATED_ENABLED: 'true',
+    // O gateway só constrói modelos gerados. Os modelos de EXEMPLO (transacoes)
+    // ficam desligados via `enabled` no próprio arquivo (DBT_DEMO_ENABLED).
     DBT_DEMO_ENABLED: 'false',
     // Instala os pacotes dbt (dbt_utils) FORA da pasta do projeto. Quando o
     // projeto está num diretório sincronizado (OneDrive), o symlink
     // `integration_tests` do dbt_utils vira um reparse point que trava rm/deps.
     DBT_PACKAGES_INSTALL_PATH: process.env.DBT_PACKAGES_INSTALL_PATH || join(homedir(), '.datacore-dbt-packages'),
   };
-  if (activeSlugMatch) childEnv.DBT_ACTIVE_SLUG = activeSlugMatch[1];
   if (keyfile) childEnv.DBT_GCP_KEYFILE = keyfile;
 
   return withLock(async () => {

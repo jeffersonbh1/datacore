@@ -1,7 +1,10 @@
+{{ config(enabled = env_var('DBT_DEMO_ENABLED', 'true') == 'true') }}
+
 /*
   Staging: normaliza a tabela raw_transacoes do Airbyte antes das camadas do
   medalhão. Sem regra de negócio aqui — só renome, tipagem de datas e a marca
   d'água de ingestão. Materializado como view.
+  EXEMPLO — desligado no gateway (DBT_DEMO_ENABLED=false).
 */
 
 with fonte as (

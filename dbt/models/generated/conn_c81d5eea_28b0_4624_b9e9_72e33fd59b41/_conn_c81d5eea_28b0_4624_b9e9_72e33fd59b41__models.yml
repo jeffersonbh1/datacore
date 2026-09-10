@@ -1,6 +1,0 @@
-version: 2
-
-# GERADO por server/dbtCodegen.ts — integração conn_c81d5eea_28b0_4624_b9e9_72e33fd59b41.
-models:
-  - name: bronze_conn_c81d5eea_28b0_4624_b9e9_72e33fd59b41__usuarios
-    description: "Bronze gerado — integração conn_c81d5eea_28b0_4624_b9e9_72e33fd59b41, tabela usuarios (sem PK; sem deduplicação)."
