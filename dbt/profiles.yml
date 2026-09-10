@@ -1,0 +1,33 @@
+# Perfil 100% dirigido por variáveis de ambiente — sem segredos, seguro versionar.
+# É este arquivo que o gateway usa (server/dbtRunner.ts define DBT_PROFILES_DIR=<dir do projeto>).
+# Para uso local manual, veja profiles.example.yml.
+datacore:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+
+    # Desenvolvimento: credenciais do gcloud CLI (gcloud auth application-default login).
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DBT_GCP_PROJECT') }}"
+      dataset: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
+      location: "{{ env_var('DBT_GCP_LOCATION', 'southamerica-east1') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+
+    # Produção / gateway: service account em arquivo (DBT_GCP_KEYFILE).
+    # server/dbtRunner.ts materializa BIGQUERY_CREDENTIALS_JSON num arquivo temporário
+    # e exporta DBT_GCP_KEYFILE automaticamente quando ele não está definido.
+    prod:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('DBT_GCP_KEYFILE') }}"
+      project: "{{ env_var('DBT_GCP_PROJECT') }}"
+      dataset: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
+      location: "{{ env_var('DBT_GCP_LOCATION', 'southamerica-east1') }}"
+      threads: 8
+      priority: interactive
+      job_execution_timeout_seconds: 900
+      job_retries: 1

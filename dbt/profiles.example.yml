@@ -1,0 +1,39 @@
+# Copie para ~/.dbt/profiles.yml (ou aponte DBT_PROFILES_DIR para esta pasta e
+# renomeie para profiles.yml — já está no .gitignore).
+#
+# Variáveis de ambiente esperadas:
+#   DBT_GCP_PROJECT     ID do projeto GCP (o mesmo de BIGQUERY_CREDENTIALS_JSON)
+#   DBT_GCP_LOCATION    Região dos datasets (default southamerica-east1)
+#   DBT_GCP_KEYFILE     (target prod) caminho para o JSON da service account
+#   DBT_RAW_DATASET     Dataset da zona RAW do Airbyte (ex.: raw_vendas)
+#   DBT_SCHEMA_STAGING / DBT_SCHEMA_BRONZE / DBT_SCHEMA_SILVER / DBT_SCHEMA_GOLD
+
+datacore:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+
+    # Desenvolvimento: usa as credenciais do gcloud CLI (gcloud auth application-default login).
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DBT_GCP_PROJECT') }}"
+      dataset: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
+      location: "{{ env_var('DBT_GCP_LOCATION', 'southamerica-east1') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+
+    # Produção / CI: service account em arquivo. Para reaproveitar o
+    # BIGQUERY_CREDENTIALS_JSON do app, grave-o num arquivo e aponte DBT_GCP_KEYFILE.
+    prod:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('DBT_GCP_KEYFILE') }}"
+      project: "{{ env_var('DBT_GCP_PROJECT') }}"
+      dataset: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
+      location: "{{ env_var('DBT_GCP_LOCATION', 'southamerica-east1') }}"
+      threads: 8
+      priority: interactive
+      job_execution_timeout_seconds: 900
+      job_retries: 1

@@ -1,0 +1,50 @@
+# Build + deploy do gateway (server/) no Cloud Run.
+#   gcloud builds submit --config cloudbuild.gateway.yaml \
+#     --substitutions=_IMAGE=REGIAO-docker.pkg.dev/PROJ/datacore/gateway:TAG,_REGION=southamerica-east1,_SERVICE=datacore-gateway,_RUNTIME_SA=datacore-gateway-run@PROJ.iam.gserviceaccount.com
+#
+# Segredos (SUPABASE_SERVICE_ROLE_KEY, AIRBYTE_CLIENT_SECRET, GATEWAY_API_KEY,
+# BIGQUERY_CREDENTIALS_JSON) vêm do Secret Manager via --set-secrets — nunca
+# como env var em texto. Config não sensível vai em --set-env-vars.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_IMAGE}', '-f', 'Dockerfile', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - '${_SERVICE}'
+      - '--image=${_IMAGE}'
+      - '--region=${_REGION}'
+      - '--service-account=${_RUNTIME_SA}'
+      - '--platform=managed'
+      - '--no-allow-unauthenticated'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--timeout=900'
+      - '--max-instances=1'
+      - '--cpu-boost'
+      - '--set-env-vars=SUPABASE_URL=${_SUPABASE_URL},AIRBYTE_BASE_URL=${_AIRBYTE_BASE_URL},AIRBYTE_CLIENT_ID=${_AIRBYTE_CLIENT_ID},AIRBYTE_WORKSPACE_ID=${_AIRBYTE_WORKSPACE_ID},DBT_TARGET=prod,DBT_GCP_PROJECT=${_DBT_GCP_PROJECT},DBT_GCP_LOCATION=${_REGION},DBT_PROJECT_DIR=/app/dbt,DBT_PROFILES_DIR=/app/dbt,DBT_BRONZE_SELECT=staging medallion.bronze,DBT_BRONZE_FALLBACK_CTAS=true,DBT_DISABLED=${_DBT_DISABLED}'
+      - '--set-secrets=SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,AIRBYTE_CLIENT_SECRET=AIRBYTE_CLIENT_SECRET:latest,GATEWAY_API_KEY=GATEWAY_API_KEY:latest,BIGQUERY_CREDENTIALS_JSON=BIGQUERY_CREDENTIALS_JSON:latest'
+
+images:
+  - '${_IMAGE}'
+
+substitutions:
+  _REGION: southamerica-east1
+  _SERVICE: datacore-gateway
+  _IMAGE: ''            # obrigatório
+  _RUNTIME_SA: ''       # obrigatório — SA de runtime do Cloud Run
+  _SUPABASE_URL: ''
+  _AIRBYTE_BASE_URL: 'http://34.39.184.77:8000'
+  _AIRBYTE_CLIENT_ID: ''
+  _AIRBYTE_WORKSPACE_ID: ''
+  _DBT_GCP_PROJECT: data-plataform-dev
+  _DBT_DISABLED: 'false'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

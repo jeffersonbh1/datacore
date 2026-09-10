@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: silver_transacoes
+    description: "Camada Silver: dimensões conformadas, faixa de ticket e flag de sucesso. Uma linha por transação válida."
+    columns:
+      - name: id_transacao
+        data_tests:
+          - unique
+          - not_null
+      - name: data_referencia
+        data_tests: [not_null]
+      - name: faixa_ticket
+        data_tests:
+          - accepted_values:
+              values: ["TICKET_ALTO", "TICKET_MEDIO", "TICKET_VAREJO"]
+      - name: ind_transacao_sucesso
+        data_tests: [not_null]
+      - name: valor_transacao
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true

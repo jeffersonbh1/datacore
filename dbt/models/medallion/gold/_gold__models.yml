@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: gold_kpis_transacoes
+    description: "Data mart executivo: KPIs de volume, receita e taxa de aprovação por dia / status / faixa de ticket."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - data_referencia
+            - status_transacao
+            - faixa_ticket
+      - dbt_utils.expression_is_true:
+          expression: "taxa_aprovacao_percentual between 0 and 100"
+    columns:
+      - name: receita_liquida_total
+        data_tests: [not_null]
+      - name: total_transacoes
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: taxa_aprovacao_percentual
+        description: "0–100. Aprovadas sobre o total do grupo."

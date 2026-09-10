@@ -4,3 +4,11 @@ server/dist
 .git
 .env
 .env.local
+
+# dbt: só o código do projeto deve ir no contexto de build; artefatos são
+# regenerados pelo `dbt deps` do Dockerfile.
+dbt/target
+dbt/dbt_packages
+dbt/logs
+dbt/.venv
+**/__pycache__

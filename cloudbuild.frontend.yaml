@@ -1,3 +1,12 @@
+# Build + deploy do frontend (dist/ estático servido por `serve`) no Cloud Run.
+#   gcloud builds submit --config cloudbuild.frontend.yaml --substitutions=\
+#     _IMAGE=REGIAO-docker.pkg.dev/PROJ/datacore/frontend:TAG,_REGION=southamerica-east1,_SERVICE=datacore-frontend,\
+#     _VITE_SUPABASE_URL=https://xxxx.supabase.co,_VITE_SUPABASE_ANON_KEY=...,\
+#     _VITE_AIRBYTE_GATEWAY_URL=https://datacore-gateway-xxxx.run.app,_VITE_AIRBYTE_GATEWAY_API_KEY=...
+#
+# As VITE_* são embutidas no bundle em BUILD TIME (não são lidas de arquivo —
+# ver .dockerignore). Trocar qualquer uma exige rebuild. A GATEWAY_API_KEY fica
+# visível no bundle: é chave de aplicação, não segredo forte.
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
@@ -15,7 +24,36 @@ steps:
       - --build-arg
       - 'VITE_AIRBYTE_GATEWAY_API_KEY=${_VITE_AIRBYTE_GATEWAY_API_KEY}'
       - .
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - '${_SERVICE}'
+      - '--image=${_IMAGE}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=256Mi'
+      - '--cpu=1'
+      - '--max-instances=2'
+
 images:
   - '${_IMAGE}'
+
+substitutions:
+  _REGION: southamerica-east1
+  _SERVICE: datacore-frontend
+  _IMAGE: ''                       # obrigatório
+  _VITE_SUPABASE_URL: ''
+  _VITE_SUPABASE_ANON_KEY: ''
+  _VITE_AIRBYTE_GATEWAY_URL: ''
+  _VITE_AIRBYTE_GATEWAY_API_KEY: ''
+
 options:
   logging: CLOUD_LOGGING_ONLY

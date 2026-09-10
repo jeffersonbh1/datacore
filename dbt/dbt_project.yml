@@ -1,0 +1,69 @@
+name: "datacore_dbt"
+version: "1.0.0"
+config-version: 2
+
+# Perfil declarado em profiles.yml (~/.dbt/profiles.yml ou DBT_PROFILES_DIR).
+# Use dbt/profiles.example.yml como base.
+profile: "datacore"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+require-dbt-version: [">=1.8.0", "<2.0.0"]
+
+# ---------------------------------------------------------------------------
+# Convenção de datasets (BigQuery). Os nomes abaixo são usados VERBATIM pelo
+# macro generate_schema_name (macros/generate_schema_name.sql), então cada
+# camada cai no seu próprio dataset — espelhando o padrão raw_/bronze_ que o
+# gateway já usa em server/routes/bronze.ts e bronzeAutoSync.ts.
+# Ajuste por ambiente via variáveis de ambiente.
+# ---------------------------------------------------------------------------
+vars:
+  timezone: "America/Sao_Paulo"
+  # Statuses de transação considerados "sucesso" nas camadas Silver/Gold.
+  status_sucesso: ["APROVADO", "PAID", "SUCCESS", "CAPTURADO"]
+
+models:
+  datacore_dbt:
+    staging:
+      +materialized: view
+      +schema: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
+    medallion:
+      bronze:
+        +materialized: incremental
+        +schema: "{{ env_var('DBT_SCHEMA_BRONZE', 'bronze') }}"
+        +on_schema_change: append_new_columns
+        +tags: ["lakehouse", "bronze", "lgpd"]
+      silver:
+        +materialized: table
+        +schema: "{{ env_var('DBT_SCHEMA_SILVER', 'silver') }}"
+        +tags: ["lakehouse", "silver"]
+      gold:
+        +materialized: table
+        +schema: "{{ env_var('DBT_SCHEMA_GOLD', 'gold') }}"
+        +tags: ["lakehouse", "gold", "bi"]
+
+seeds:
+  datacore_dbt:
+    # O seed de demonstração simula a zona RAW do Airbyte, então ele cai no
+    # mesmo dataset apontado por DBT_RAW_DATASET — assim source() acha a tabela
+    # sem configuração extra em modo de teste local.
+    +schema: "{{ env_var('DBT_RAW_DATASET', 'raw') }}"
+    raw_transacoes:
+      +column_types:
+        _airbyte_raw_id: string
+        _airbyte_extracted_at: timestamp
+        id_transacao: string
+        valor: numeric
+        status: string
+        cpf_titular: string
+        numero_cartao: string
+        email_comprador: string
+        data_transacao: timestamp

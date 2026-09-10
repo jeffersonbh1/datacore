@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: datacore
+    description: >
+      Zona RAW: tabelas replicadas pelo Airbyte com o prefixo `raw_`
+      (ver server/routes/connections.ts -> prefix: 'raw_'). Uma linha por
+      evento de captura do Airbyte; metadados `_airbyte_*` presentes.
+    database: "{{ env_var('DBT_GCP_PROJECT') }}"
+    schema: "{{ env_var('DBT_RAW_DATASET', 'raw') }}"
+    loader: airbyte
+
+    tables:
+      - name: transacoes
+        identifier: raw_transacoes
+        description: "Transações financeiras brutas."
+        loaded_at_field: _airbyte_extracted_at
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 72, period: hour }
+        columns:
+          - name: id_transacao
+            description: "Identificador de negócio da transação (chave da deduplicação CDC)."
+          - name: _airbyte_extracted_at
+            description: "Timestamp de extração do Airbyte — marca d'água do incremental Bronze."

@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_transacoes
+    description: "Padroniza raw_transacoes: renome, tipagem de datas e marca d'água de ingestão."
+    columns:
+      - name: id_transacao
+        data_tests: [not_null]
+      - name: dt_ingestao_lake
+        data_tests: [not_null]

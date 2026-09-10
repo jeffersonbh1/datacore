@@ -212,13 +212,25 @@ export interface BronzeTableResult {
   table: string;
   status: 'ok' | 'error';
   error?: string;
+  /** 'dbt' quando construída pelo modelo bronze_<tabela>; 'ctas' no fallback 1:1. */
+  via?: 'dbt' | 'ctas';
+}
+
+export interface BronzeDbtSummary {
+  ok: boolean;
+  select: string;
+  target: string;
+  models: Array<{ name: string; uniqueId: string; status: string; message?: string; executionTime?: number }>;
+  error?: string;
+  stderrTail?: string;
 }
 
 /**
- * Camada Bronze (Fase 5): mirrors every table Airbyte already replicated into a
- * raw_ BigQuery dataset into the corresponding bronze_ dataset via
- * CREATE OR REPLACE TABLE ... AS SELECT. Triggered manually from the Studio
- * canvas's Bronze node.
+ * Camada Bronze (Fase 7): o gateway roda `dbt build` sobre o projeto em
+ * <repo>/dbt (tipagem, deduplicação CDC, anonimização LGPD e testes). Cada
+ * tabela é casada com o modelo `bronze_<tabela>`; tabelas sem modelo caem no
+ * mirror 1:1 (CREATE OR REPLACE TABLE ... AS SELECT). Disparada pelo nó Bronze
+ * do canvas do Studio. `dbt` traz o resumo de todos os nós executados.
  */
 export async function buildBronzeLayer(payload: {
   projectId: string;
@@ -226,7 +238,7 @@ export async function buildBronzeLayer(payload: {
   bronzeDataset: string;
   tables: string[];
   location?: string;
-}): Promise<{ dataset: string; results: BronzeTableResult[] }> {
+}): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/bronze/build', {
     method: 'POST',
     body: JSON.stringify(payload),
