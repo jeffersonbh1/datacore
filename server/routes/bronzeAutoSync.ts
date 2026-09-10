@@ -38,6 +38,7 @@ interface IntegracaoRow {
   airbyte_connection_id: string | null;
   tabelas_selecionadas: string[];
   destinos: { tipo: string; configuracao: Record<string, unknown> } | null;
+  origens: { nome: string | null } | { nome: string | null }[] | null;
   pipelines: { id: number } | { id: number }[] | null;
 }
 
@@ -65,7 +66,7 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
     const supabase = getSupabaseAdmin();
     const { data: integracoes, error } = await supabase
       .from('integracoes')
-      .select('id, id_empresa, airbyte_connection_id, tabelas_selecionadas, destinos(tipo, configuracao), pipelines(id)')
+      .select('id, id_empresa, airbyte_connection_id, tabelas_selecionadas, destinos(tipo, configuracao), origens(nome), pipelines(id)')
       .eq('status', 'active')
       .not('airbyte_connection_id', 'is', null);
 
@@ -151,11 +152,15 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         continue;
       }
 
+      const origem = Array.isArray(integ.origens) ? integ.origens[0] : integ.origens;
+      const sistema = origem?.nome || 'sistema';
+
       const tableResults = await buildBronzeForTables({
         projectId,
         rawDataset,
         bronzeDataset,
         tables,
+        sistema,
         location: cfg.warehouseOrCluster || undefined,
       });
       const hasFailure = tableResults.some(r => r.status === 'error');

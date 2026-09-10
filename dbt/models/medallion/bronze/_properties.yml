@@ -1,8 +1,8 @@
 version: 2
 
-# _properties.yml — CAMADA BRONZE (todos os modelos da camada num arquivo só).
-# bronze_transacoes é EXEMPLO (fixo). As demais entradas são GERADAS por
-# server/dbtCodegen.ts a partir de dbt/_generated_bronze.json — não editar à mão.
+# _properties.yml — modelos de EXEMPLO da camada Bronze (bronze_transacoes).
+# Só participam do build com DBT_DEMO_ENABLED=true.
+# Os modelos gerados ficam em models/medallion/bronze/<sistema>/_properties.yml.
 models:
   - name: bronze_transacoes
     description: "EXEMPLO — Bronze do seed transacoes (só com DBT_DEMO_ENABLED=true)."
@@ -18,55 +18,3 @@ models:
                 severity: warn
       - name: dt_ingestao_lake
         data_tests: [not_null]
-  - name: bronze_dbt_execucoes
-    description: "Bronze gerado — tabela dbt_execucoes."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_dbt_modelos
-    description: "Bronze gerado — tabela dbt_modelos."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_dbt_ultima_execucao
-    description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
-  - name: bronze_destinos
-    description: "Bronze gerado — tabela destinos."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_empresas
-    description: "Bronze gerado — tabela empresas."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_integracoes
-    description: "Bronze gerado — tabela integracoes."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_origens
-    description: "Bronze gerado — tabela origens."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_pipeline_runs
-    description: "Bronze gerado — tabela pipeline_runs."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_pipelines
-    description: "Bronze gerado — tabela pipelines."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_tabelas_carregadas
-    description: "Bronze gerado — tabela tabelas_carregadas."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]
-  - name: bronze_usuarios
-    description: "Bronze gerado — tabela usuarios."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]

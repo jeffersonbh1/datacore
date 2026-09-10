@@ -212,7 +212,7 @@ export interface BronzeTableResult {
   table: string;
   status: 'ok' | 'error';
   error?: string;
-  /** Modelo dbt que produziu a tabela (bronze_<slug>__<tabela>). */
+  /** Modelo dbt que produziu a tabela (bronze_<sistema>_<tabela>). */
   model?: string;
 }
 
@@ -249,6 +249,8 @@ export interface DbtModelsResult {
  * conexão no Airbyte.
  */
 export async function generateDbtModels(payload: {
+  /** Nome da origem — vira a subpasta e o prefixo do modelo Bronze. */
+  sistema: string;
   projectId: string;
   rawDataset: string;
   bronzeDataset: string;
@@ -284,9 +286,11 @@ export async function buildBronzeLayer(payload: {
   rawDataset: string;
   bronzeDataset: string;
   tables: string[];
+  /** Nome da origem — casa com os modelos gerados. */
+  sistema?: string;
   location?: string;
   /** `--full-refresh`: reconstrói modelos incrementais do zero. Necessário na 1ª
-   *  construção quando `bronze_<t>` já existe com schema incompatível. */
+   *  construção quando `bronze_<sistema>_<t>` já existe com schema incompatível. */
   fullRefresh?: boolean;
 }): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/bronze/build', {

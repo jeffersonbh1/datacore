@@ -1,25 +1,26 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_origens'
+    , alias = 'bronze_datacoredbt_destinos'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela origens.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
--- Origem: source('datacore_raw', 'origens')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_origens  (renome + LGPD Art. 46 + dedup CDC)
+-- GERADO por server/dbtCodegen.ts — sistema "DataCoreDBT", camada Bronze, tabela destinos.
+-- A regeração sobrescreve este arquivo.
+-- Origem: source('datacore_raw', 'destinos')  (dataset via DBT_RAW_DATASET)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacoredbt_destinos  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
-    select * from {{ source('datacore_raw', 'origens') }}
+    select * from {{ source('datacore_raw', 'destinos') }}
 ),
 
 tipado as (
     select
         tipo,
         criado_em,
+        modo_escrita,
         configuracao,
-        airbyte_source_id,
         nome,
         id_empresa,
+        airbyte_destination_id,
         id,
         status,
         cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,

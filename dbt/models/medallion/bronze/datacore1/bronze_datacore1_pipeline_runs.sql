@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_pipeline_runs'
+    , alias = 'bronze_datacore1_pipeline_runs'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela pipeline_runs.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
+-- GERADO por server/dbtCodegen.ts — sistema "DataCore1", camada Bronze, tabela pipeline_runs.
+-- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'pipeline_runs')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_pipeline_runs  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore1_pipeline_runs  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'pipeline_runs') }}
@@ -14,18 +14,15 @@ with fonte as (
 
 tipado as (
     select
-        records_synced,
-        bronze_built_em,
-        iniciado_em,
         duration_ms,
         airbyte_job_id,
         criado_em,
         finalizado_em,
+        records_synced,
         pipeline_id,
         id_empresa,
-        bronze_status,
         id,
-        bronze_error,
+        iniciado_em,
         status,
         bytes_synced,
         cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,

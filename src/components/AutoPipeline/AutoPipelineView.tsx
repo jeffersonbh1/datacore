@@ -1085,6 +1085,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     if (activeDest.type === 'bigquery' && airbyteConnectionId && activeDest.accountOrProject) {
       const rawDs = activeDest.databaseOrDataset;
       const buildModels = () => generateDbtModels({
+        sistema: activeSource.name,
         projectId: activeDest.accountOrProject!,
         rawDataset: rawDs,
         bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),

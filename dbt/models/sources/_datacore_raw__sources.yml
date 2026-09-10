@@ -1,9 +1,9 @@
 version: 2
 
 # GERADO por server/dbtCodegen.ts a partir de dbt/_generated_sources.json.
-# Não editar à mão — a lista de tabelas cresce conforme integrações são criadas.
-# database/schema resolvem via env var (o gateway seta DBT_GCP_PROJECT / DBT_RAW_DATASET
-# por requisição); os defaults só existem para o `dbt parse`/`dbt docs` local.
+# Não editar à mão. database/schema resolvem via env var (o gateway seta
+# DBT_GCP_PROJECT / DBT_RAW_DATASET por requisição); os defaults só existem para
+# o `dbt parse`/`dbt docs` local.
 sources:
   - name: datacore_raw
     database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"

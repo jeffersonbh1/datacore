@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_destinos'
+    , alias = 'bronze_datacore_destinos'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela destinos.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
+-- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela destinos.
+-- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'destinos')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_destinos  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_destinos  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'destinos') }}
@@ -28,13 +28,4 @@ tipado as (
     from fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id
-        order by dt_ingestao_lake desc
-    ) = 1
-)
-
-select * from deduplicado
+select * from tipado

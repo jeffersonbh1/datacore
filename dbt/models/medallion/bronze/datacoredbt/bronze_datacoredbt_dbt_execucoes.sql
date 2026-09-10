@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_dbt_execucoes'
+    , alias = 'bronze_datacoredbt_dbt_execucoes'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela dbt_execucoes.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
+-- GERADO por server/dbtCodegen.ts — sistema "DataCoreDBT", camada Bronze, tabela dbt_execucoes.
+-- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'dbt_execucoes')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_dbt_execucoes  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacoredbt_dbt_execucoes  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'dbt_execucoes') }}

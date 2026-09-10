@@ -1,0 +1,58 @@
+version: 2
+
+# _properties.yml — sistema "DataCoreDBT" (datacoredbt), camada Bronze.
+# TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
+# dbt/_generated_bronze.json — não editar à mão.
+models:
+  - name: bronze_datacoredbt_dbt_execucoes
+    description: "Bronze gerado — tabela dbt_execucoes."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_dbt_modelos
+    description: "Bronze gerado — tabela dbt_modelos."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_dbt_ultima_execucao
+    description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+  - name: bronze_datacoredbt_destinos
+    description: "Bronze gerado — tabela destinos."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_empresas
+    description: "Bronze gerado — tabela empresas."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_integracoes
+    description: "Bronze gerado — tabela integracoes."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_origens
+    description: "Bronze gerado — tabela origens."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_pipeline_runs
+    description: "Bronze gerado — tabela pipeline_runs."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_pipelines
+    description: "Bronze gerado — tabela pipelines."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_tabelas_carregadas
+    description: "Bronze gerado — tabela tabelas_carregadas."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: bronze_datacoredbt_usuarios
+    description: "Bronze gerado — tabela usuarios."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]

@@ -32,7 +32,7 @@ interface IntegracaoRow {
   tabelas_selecionadas: string[] | null;
   table_sync_configs: Record<string, { loadType?: string; cursorField?: string; selectedColumns?: string[] }> | null;
   aplicar_sanitizacao_lgpd: boolean | null;
-  origens: { airbyte_source_id: string | null } | { airbyte_source_id: string | null }[] | null;
+  origens: { airbyte_source_id: string | null; nome: string | null } | { airbyte_source_id: string | null; nome: string | null }[] | null;
   destinos: { tipo: string; configuracao: Record<string, unknown> } | { tipo: string; configuracao: Record<string, unknown> }[] | null;
 }
 
@@ -55,7 +55,7 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('integracoes')
-      .select('tabelas_selecionadas, table_sync_configs, aplicar_sanitizacao_lgpd, origens(airbyte_source_id), destinos(tipo, configuracao)')
+      .select('tabelas_selecionadas, table_sync_configs, aplicar_sanitizacao_lgpd, origens(airbyte_source_id, nome), destinos(tipo, configuracao)')
       .eq('airbyte_connection_id', connectionId)
       .maybeSingle();
 
@@ -78,6 +78,12 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
     const rawDataset = cfg.databaseOrDataset;
     if (!projectId || !rawDataset) {
       res.status(422).json({ error: 'Destino BigQuery sem accountOrProject/databaseOrDataset.' });
+      return;
+    }
+
+    const sistema = (origem?.nome || '').trim();
+    if (!sistema) {
+      res.status(422).json({ error: 'Integração sem nome da origem — necessário para organizar os modelos por sistema.' });
       return;
     }
 
@@ -113,6 +119,7 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
     });
 
     const spec: IntegrationModelsSpec = {
+      sistema,
       projectId,
       rawDataset,
       bronzeDataset: rawDataset.replace(/^raw_/, 'bronze_'),

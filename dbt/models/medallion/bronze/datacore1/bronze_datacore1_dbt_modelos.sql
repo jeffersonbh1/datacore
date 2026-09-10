@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_dbt_modelos'
+    , alias = 'bronze_datacore1_dbt_modelos'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela dbt_modelos.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
+-- GERADO por server/dbtCodegen.ts — sistema "DataCore1", camada Bronze, tabela dbt_modelos.
+-- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'dbt_modelos')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_dbt_modelos  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore1_dbt_modelos  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'dbt_modelos') }}

@@ -44,6 +44,8 @@ export interface CanvasNode {
       bronzeDataset: string;
       tables: string[];
       location?: string;
+      /** Nome da origem — casa com os modelos em models/medallion/bronze/<sistema>/. */
+      sistema?: string;
     };
   };
   metrics?: {

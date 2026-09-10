@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { resolveDbtProjectDir } from './dbtRunner';
@@ -7,13 +7,15 @@ import { resolveDbtProjectDir } from './dbtRunner';
 const execFileP = promisify(execFile);
 
 // -----------------------------------------------------------------------------
-// Codegen dos modelos dbt da camada Bronze — organizados POR CAMADA:
-//   dbt/models/medallion/bronze/bronze_<tabela>.sql   (+ .yml de testes)
-//   dbt/models/sources/_datacore_raw__sources.yml     (uma source, tabelas acumuladas)
-// Um arquivo por tabela; a regeração SOBRESCREVE o arquivo existente.
-// A source aponta o dataset via env_var (DBT_RAW_DATASET), e o schema de saída
-// vem de DBT_SCHEMA_BRONZE — ambos setados pelo gateway por requisição. Assim o
-// mesmo bronze_<tabela>.sql serve qualquer integração cuja raw tenha essa tabela.
+// Codegen dos modelos dbt da camada Bronze, organizados por CAMADA e por SISTEMA
+// DE ORIGEM:
+//   dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<tabela>.sql
+//   dbt/models/medallion/bronze/<sistema>/_properties.yml   (todos os modelos do sistema)
+//   dbt/models/sources/_datacore_raw__sources.yml           (source compartilhada)
+// A regeração SOBRESCREVE os arquivos daquele sistema. O nome do modelo carrega o
+// sistema (namespace global do dbt) e o alias => tabela bronze_<sistema>_<tabela>.
+// A source resolve o dataset via env_var(DBT_RAW_DATASET) e o schema de saída via
+// DBT_SCHEMA_BRONZE — ambos setados pelo gateway por requisição.
 // -----------------------------------------------------------------------------
 
 export interface IntegrationTableSpec {
@@ -28,7 +30,9 @@ export interface IntegrationTableSpec {
 }
 
 export interface IntegrationModelsSpec {
-  /** Só usado como dica; a source resolve o dataset via DBT_RAW_DATASET. */
+  /** Nome do sistema de origem (do cadastro da integração). Define a subpasta e
+   *  o prefixo do nome do modelo/tabela Bronze. */
+  sistema: string;
   projectId?: string;
   rawDataset?: string;
   bronzeDataset?: string;
@@ -38,6 +42,7 @@ export interface IntegrationModelsSpec {
 
 export interface WriteModelsResult {
   dir: string;
+  sistema: string;
   files: string[];
   models: string[];
   sources: string[];
@@ -48,7 +53,6 @@ export interface WriteModelsResult {
 const SOURCE_NAME = 'datacore_raw';
 const SOURCES_FILE = '_datacore_raw__sources.yml';
 const SOURCES_MANIFEST_FILE = '_generated_sources.json';
-// Um arquivo de propriedades por camada, com todos os modelos da camada.
 const PROPERTIES_FILE = '_properties.yml';
 const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
 
@@ -72,9 +76,20 @@ export function sanitizeIdent(raw: string): string {
   return /^[A-Za-z_]/.test(s) ? s : `t_${s}`;
 }
 
-/** Nome do modelo Bronze de uma tabela: bronze_<tabela sanitizada>. */
-export function bronzeModelName(table: string): string {
-  return `bronze_${sanitizeIdent(table)}`;
+/** Slug do nome do sistema — vira o nome da subpasta e o prefixo do modelo. */
+export function sistemaSlug(sistema: string): string {
+  const s = (sistema || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return s || 'sistema';
+}
+
+/** Nome do modelo Bronze: bronze_<sistema>_<tabela>. */
+export function bronzeModelName(sistema: string, table: string): string {
+  return `bronze_${sistemaSlug(sistema)}_${sanitizeIdent(table)}`;
 }
 
 type PiiMacro = 'mascarar_cpf' | 'tokenizar_email' | 'hash_sha256';
@@ -90,7 +105,7 @@ function piiMacroFor(column: string): PiiMacro | null {
   return null;
 }
 
-// --- manifestos (json fora de model-paths) -------------------------------------
+// --- manifestos (json fora de model-paths) -----------------------------------
 
 function readJsonManifest<T>(projectDir: string, file: string): T {
   const p = join(projectDir, file);
@@ -102,7 +117,7 @@ function readJsonManifest<T>(projectDir: string, file: string): T {
   }
 }
 
-// --- sources ---------------------------------------------------------------
+// --- source compartilhada ---------------------------------------------------
 
 type SourcesManifest = Record<string, { identifier: string }>;
 
@@ -119,9 +134,9 @@ function renderSourcesYml(manifest: SourcesManifest): string {
   return `version: 2
 
 # GERADO por server/dbtCodegen.ts a partir de dbt/${SOURCES_MANIFEST_FILE}.
-# Não editar à mão — a lista de tabelas cresce conforme integrações são criadas.
-# database/schema resolvem via env var (o gateway seta DBT_GCP_PROJECT / DBT_RAW_DATASET
-# por requisição); os defaults só existem para o \`dbt parse\`/\`dbt docs\` local.
+# Não editar à mão. database/schema resolvem via env var (o gateway seta
+# DBT_GCP_PROJECT / DBT_RAW_DATASET por requisição); os defaults só existem para
+# o \`dbt parse\`/\`dbt docs\` local.
 sources:
   - name: ${SOURCE_NAME}
     database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"
@@ -132,17 +147,19 @@ ${tables}
 `;
 }
 
-// --- bronze model --------------------------------------------------------------
+// --- modelo Bronze ---------------------------------------------------------
 
 function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
+  const sys = sistemaSlug(spec.sistema);
   const srcName = sanitizeIdent(t.name);
+  const modelAlias = `bronze_${sys}_${srcName}`;
   const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
   const incremental = t.loadType === 'incremental' && pk.length > 0;
   const cols = t.columns && t.columns.length > 0;
 
   const cfg: string[] = [
     `    materialized = '${incremental ? 'incremental' : 'table'}'`,
-    `    , alias = 'bronze_${t.name}'`,
+    `    , alias = '${modelAlias}'`,
   ];
   if (incremental) {
     cfg.push(
@@ -194,10 +211,10 @@ select * from tipado
 ${cfg.join('\n')}
 ) }}
 
--- GERADO por server/dbtCodegen.ts — camada Bronze, tabela ${t.name}.
--- Um arquivo por tabela; a regeração sobrescreve este arquivo.
+-- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Bronze, tabela ${t.name}.
+-- A regeração sobrescreve este arquivo.
 -- Origem: source('${SOURCE_NAME}', '${srcName}')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_${t.name}  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
@@ -213,12 +230,11 @@ ${projection}
 ${dedup}`;
 }
 
-// --- _properties.yml da camada Bronze ---------------------------------------
+// --- _properties.yml por sistema ------------------------------------------------
 
-/** Manifesto: modelo -> { tabela raw, PK }. Acumula entre integrações. */
-type BronzeManifest = Record<string, { table: string; pk: string[] }>;
+/** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK }. Acumula por sistema. */
+type BronzeManifest = Record<string, Record<string, { table: string; pk: string[] }>>;
 
-/** Bloco YAML (item de `models:`) de um modelo Bronze gerado. */
 function bronzeModelBlock(name: string, table: string, pk: string[]): string {
   if (pk.length === 1) {
     return `  - name: ${name}
@@ -241,44 +257,26 @@ ${pk.map((k) => `      - name: ${k}\n        data_tests: [not_null]`).join('\n')
     description: "Bronze gerado — tabela ${table} (sem PK; sem deduplicação)."`;
 }
 
-// Bloco fixo do modelo de EXEMPLO (bronze_transacoes). Fica no _properties.yml
-// para a camada ter "todos os dados" num arquivo só; só participa do build com
-// DBT_DEMO_ENABLED=true.
-const BRONZE_DEMO_BLOCK = `  - name: bronze_transacoes
-    description: "EXEMPLO — Bronze do seed transacoes (só com DBT_DEMO_ENABLED=true)."
-    columns:
-      - name: id_transacao
-        data_tests: [unique, not_null]
-      - name: status_transacao
-        data_tests:
-          - not_null
-          - accepted_values:
-              values: ["APROVADO", "PENDENTE", "CANCELADO", "RECUSADO", "PAID", "SUCCESS", "CAPTURADO", "FAILED"]
-              config:
-                severity: warn
-      - name: dt_ingestao_lake
-        data_tests: [not_null]`;
-
-function renderBronzePropertiesYml(manifest: BronzeManifest): string {
-  const generated = Object.keys(manifest)
+function renderSistemaPropertiesYml(sistema: string, sys: string, models: Record<string, { table: string; pk: string[] }>): string {
+  const blocks = Object.keys(models)
     .sort()
-    .map((name) => bronzeModelBlock(name, manifest[name].table, manifest[name].pk))
+    .map((name) => bronzeModelBlock(name, models[name].table, models[name].pk))
     .join('\n');
   return `version: 2
 
-# _properties.yml — CAMADA BRONZE (todos os modelos da camada num arquivo só).
-# bronze_transacoes é EXEMPLO (fixo). As demais entradas são GERADAS por
-# server/dbtCodegen.ts a partir de dbt/${BRONZE_MANIFEST_FILE} — não editar à mão.
+# _properties.yml — sistema "${sistema}" (${sys}), camada Bronze.
+# TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
+# dbt/${BRONZE_MANIFEST_FILE} — não editar à mão.
 models:
-${BRONZE_DEMO_BLOCK}
-${generated}
+${blocks}
 `;
 }
 
-// --- escrita -----------------------------------------------------------------
+// --- escrita ---------------------------------------------------------------
 
 function validateSpec(spec: IntegrationModelsSpec): string | null {
   if (!spec || typeof spec !== 'object') return 'corpo inválido';
+  if (!spec.sistema || !String(spec.sistema).trim()) return 'campo "sistema" (nome do sistema de origem) obrigatório';
   if (!Array.isArray(spec.tables) || spec.tables.length === 0) return 'tables (não vazio) obrigatório';
   for (const t of spec.tables) {
     if (!t.name || !/^[A-Za-z0-9_.\-]+$/.test(t.name)) return `nome de tabela inválido: ${t?.name}`;
@@ -306,18 +304,19 @@ async function gitCommit(repoHintDir: string, message: string, push: boolean): P
   }
 }
 
-/** Escreve (sobrescrevendo) os modelos Bronze das tabelas do spec + a source. */
+/** Escreve (sobrescrevendo) os modelos Bronze do sistema do spec + a source. */
 export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promise<WriteModelsResult> {
   const err = validateSpec(spec);
   if (err) throw new Error(err);
 
+  const sys = sistemaSlug(spec.sistema);
   const projectDir = resolveDbtProjectDir();
-  const bronzeDir = join(projectDir, 'models', 'medallion', 'bronze');
+  const sysDir = join(projectDir, 'models', 'medallion', 'bronze', sys);
   const sourcesDir = join(projectDir, 'models', 'sources');
-  retrySync(() => mkdirSync(bronzeDir, { recursive: true }));
+  retrySync(() => mkdirSync(sysDir, { recursive: true }));
   retrySync(() => mkdirSync(sourcesDir, { recursive: true }));
 
-  // 1) source: acumula as tabelas no manifesto e re-renderiza o yml
+  // 1) source compartilhada: acumula as tabelas e re-renderiza o yml
   const sourcesManifest = readJsonManifest<SourcesManifest>(projectDir, SOURCES_MANIFEST_FILE);
   for (const t of spec.tables) {
     sourcesManifest[sanitizeIdent(t.name)] = { identifier: `raw_${t.name}` };
@@ -325,40 +324,46 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   retrySync(() => writeFileSync(join(projectDir, SOURCES_MANIFEST_FILE), JSON.stringify(sourcesManifest, null, 2) + '\n', 'utf8'));
   retrySync(() => writeFileSync(join(sourcesDir, SOURCES_FILE), renderSourcesYml(sourcesManifest), 'utf8'));
 
-  // 2) um bronze_<tabela>.sql por tabela — sobrescreve
-  const files: string[] = [SOURCES_FILE, PROPERTIES_FILE];
+  // 2) um modelo por tabela em models/medallion/bronze/<sistema>/ — sobrescreve
+  const files: string[] = [SOURCES_FILE, `${sys}/${PROPERTIES_FILE}`];
   const models: string[] = [];
   for (const t of spec.tables) {
-    const base = bronzeModelName(t.name);
-    retrySync(() => writeFileSync(join(bronzeDir, `${base}.sql`), renderBronzeSql(spec, t), 'utf8'));
-    files.push(`${base}.sql`);
+    const base = bronzeModelName(spec.sistema, t.name);
+    retrySync(() => writeFileSync(join(sysDir, `${base}.sql`), renderBronzeSql(spec, t), 'utf8'));
+    files.push(`${sys}/${base}.sql`);
     models.push(base);
   }
 
-  // 3) _properties.yml da camada: acumula {modelo -> tabela, PK} e re-renderiza
+  // 3) _properties.yml do sistema: acumula {modelo -> tabela, PK} e re-renderiza
   const bronzeManifest = readJsonManifest<BronzeManifest>(projectDir, BRONZE_MANIFEST_FILE);
+  const sysModels = bronzeManifest[sys] || {};
   for (const t of spec.tables) {
     const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
-    bronzeManifest[bronzeModelName(t.name)] = { table: t.name, pk };
+    sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk };
   }
+  bronzeManifest[sys] = sysModels;
   retrySync(() => writeFileSync(join(projectDir, BRONZE_MANIFEST_FILE), JSON.stringify(bronzeManifest, null, 2) + '\n', 'utf8'));
-  retrySync(() => writeFileSync(join(bronzeDir, PROPERTIES_FILE), renderBronzePropertiesYml(bronzeManifest), 'utf8'));
+  retrySync(() => writeFileSync(join(sysDir, PROPERTIES_FILE), renderSistemaPropertiesYml(spec.sistema, sys, sysModels), 'utf8'));
 
   const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
   let git: Pick<WriteModelsResult, 'git' | 'gitDetail'> = { git: 'skipped' };
   if (mode === 'commit' || mode === 'push') {
-    git = await gitCommit(bronzeDir, `dbt: modelos Bronze (${models.join(', ')})`, mode === 'push');
+    git = await gitCommit(sysDir, `dbt: modelos Bronze do sistema ${sys} (${models.length})`, mode === 'push');
   }
 
-  return { dir: bronzeDir, files, models, sources: Object.keys(sourcesManifest), ...git };
+  return { dir: sysDir, sistema: sys, files, models, sources: Object.keys(sourcesManifest), ...git };
 }
 
-/** Lista os modelos Bronze gerados (bronze_*.sql em models/medallion/bronze/). */
+/** Lista os modelos Bronze gerados (bronze_*.sql em models/medallion/bronze/<sistema>/). */
 export function listGeneratedModels(): string[] {
-  const dir = join(resolveDbtProjectDir(), 'models', 'medallion', 'bronze');
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.startsWith('bronze_') && f.endsWith('.sql') && f !== 'bronze_transacoes.sql')
-    .map((f) => f.replace(/\.sql$/, ''))
-    .sort();
+  const base = join(resolveDbtProjectDir(), 'models', 'medallion', 'bronze');
+  if (!existsSync(base)) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    for (const f of readdirSync(join(base, entry.name))) {
+      if (f.startsWith('bronze_') && f.endsWith('.sql')) out.push(f.replace(/\.sql$/, ''));
+    }
+  }
+  return out.sort();
 }

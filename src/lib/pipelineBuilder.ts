@@ -157,6 +157,7 @@ export function buildPipelineFromIntegration(
           bronzeDataset,
           tables: [table],
           location: destination.warehouseOrCluster || undefined,
+          sistema: source.name,
         } : undefined,
       }
       // dbt bronze/silver execution isn't wired to real runs yet (Fase 3) — no metrics.

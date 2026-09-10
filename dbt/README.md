@@ -1,11 +1,11 @@
 # DataCore — Projeto dbt (camada Bronze)
 
 Projeto dbt real (dbt-core + `dbt-bigquery`). A camada **Bronze é 100% dbt**.
-Ao criar uma integração no Studio, o gateway **gera um modelo dbt por tabela**
-em `models/medallion/bronze/bronze_<tabela>.sql` (sobrescrevendo se já existir)
-e depois roda `dbt build --select bronze_<t1> bronze_<t2> ...`. Não existe mais
-construção de Bronze fora do dbt (o antigo `CREATE OR REPLACE TABLE … AS
-SELECT *` foi removido).
+Ao criar uma integração no Studio, o gateway **gera um modelo dbt por tabela**,
+organizado por **sistema de origem** (= o "Nome da origem" da integração):
+`models/medallion/bronze/<sistema>/bronze_<sistema>_<tabela>.sql`. Depois roda
+`dbt build --select bronze_<sistema>_<t1> ...`. Não existe mais construção de
+Bronze fora do dbt (o antigo `CREATE OR REPLACE TABLE … AS SELECT *` foi removido).
 
 ```
 dbt/
@@ -14,50 +14,44 @@ dbt/
 ├── profiles.yml                      # dev/prod, 100% via env var (usado pelo gateway)
 ├── requirements.txt                  # dbt-bigquery ~1.12
 ├── _generated_sources.json           # manifesto das tabelas da source (merge)
-├── _generated_bronze.json            # manifesto {modelo -> tabela, PK} p/ o _properties.yml
-├── macros/
-│   ├── generate_schema_name.sql      # dataset = valor da env var (sem prefixo)
-│   ├── lgpd.sql                       # mascarar_cpf / tokenizar_email / hash_sha256
-│   └── cast_seguro.sql
+├── _generated_bronze.json            # manifesto {sistema -> {modelo -> tabela, PK}}
+├── macros/  (generate_schema_name, lgpd, cast_seguro)
 └── models/
     ├── sources/
-    │   └── _datacore_raw__sources.yml  # GERADO — source "datacore_raw", tabelas acumuladas
+    │   └── _datacore_raw__sources.yml       # GERADO — source "datacore_raw"
     ├── medallion/
     │   ├── bronze/
-    │   │   ├── _properties.yml         # GERADO — TODOS os modelos da camada (descrição + testes)
-    │   │   ├── bronze_<tabela>.sql     # GERADO — 1 por tabela, sobrescrito na regeração
-    │   │   └── bronze_transacoes.sql   # EXEMPLO (enabled via DBT_DEMO_ENABLED)
-    │   ├── silver/
-    │   │   ├── _properties.yml         # (só o exemplo por enquanto — sem codegen)
-    │   │   └── silver_transacoes.sql
-    │   └── gold/
-    │       ├── _properties.yml
-    │       └── gold_kpis_transacoes.sql
-    └── staging/                        # EXEMPLO (_properties.yml + _datacore__sources.yml)
+    │   │   ├── _properties.yml              # EXEMPLO (bronze_transacoes)
+    │   │   ├── bronze_transacoes.sql        # EXEMPLO (enabled via DBT_DEMO_ENABLED)
+    │   │   └── <sistema>/                   # GERADO — uma pasta por sistema de origem
+    │   │       ├── _properties.yml          #   todos os modelos do sistema (descrição + testes)
+    │   │       └── bronze_<sistema>_<t>.sql  #   1 por tabela; alias = mesmo nome
+    │   ├── silver/  (só o exemplo — sem codegen; usará <sistema>/ quando tiver)
+    │   └── gold/    (idem)
+    └── staging/                             # EXEMPLO
 ```
-
-Cada pasta de camada tem **um** `_properties.yml` com todos os modelos daquela
-camada. Para a Bronze ele é gerado (bloco fixo do `bronze_transacoes` + uma
-entrada por modelo gerado, a partir de `_generated_bronze.json`).
 
 ## Como funciona
 
-- **Um modelo por tabela, compartilhado entre integrações.** `bronze_usuarios.sql`
-  serve qualquer integração cuja raw tenha `raw_usuarios` — a `source` resolve o
-  dataset via `env_var('DBT_RAW_DATASET')` e a saída via `env_var('DBT_SCHEMA_BRONZE')`,
-  ambos setados pelo gateway **por requisição**. Regenerar sobrescreve o arquivo.
-- **`_datacore_raw__sources.yml`** e **`medallion/bronze/_properties.yml`** são
-  gerados a partir de manifestos JSON (`_generated_sources.json` /
-  `_generated_bronze.json`) que **acumulam** entre integrações (merge, não
-  substituem) — criar a integração B não apaga os modelos da A.
-- **`bronze_<tabela>.sql`**: renome das colunas selecionadas +
+- **Um modelo por (sistema, tabela).** O nome do modelo e a tabela BigQuery de
+  saída são `bronze_<sistema>_<tabela>` (o `<sistema>` no nome é obrigatório: o
+  dbt tem namespace global e sistemas diferentes têm tabelas de mesmo nome). A
+  `source` resolve o dataset via `env_var('DBT_RAW_DATASET')` e o schema de saída
+  via `env_var('DBT_SCHEMA_BRONZE')`, ambos setados pelo gateway **por requisição**.
+  Regenerar sobrescreve os arquivos daquele sistema.
+- **`<sistema>` = slug do "Nome da origem"** da integração (`origens.nome`) —
+  minúsculas, sem acento, `[^a-z0-9]` → `_`. Não há campo novo no cadastro.
+- **`_datacore_raw__sources.yml`** e cada **`<sistema>/_properties.yml`** são
+  gerados a partir dos manifestos JSON, que **acumulam** (merge) — criar a
+  integração B não apaga os modelos da A.
+- **`bronze_<sistema>_<tabela>.sql`**: renome das colunas selecionadas +
   `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake` +
   `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de
   nome (`cpf|cnpj` → `mascarar_cpf`, `email` → `tokenizar_email`,
   `cartao|telefone|rg|senha` → `hash_sha256`); **dedup CDC**
   (`qualify row_number() over (partition by <PK> order by dt_ingestao_lake desc)`)
   quando há PK; **incremental `merge`** quando `loadType=incremental` + PK, senão `table`.
-- **Sem staging** para os gerados (a lógica está no próprio `bronze_<t>.sql`).
+- **Sem staging** para os gerados (a lógica está no próprio `bronze_<sistema>_<t>.sql`).
 - Silver/Gold: só os modelos de exemplo. Sem codegen.
 
 ### Fluxo
@@ -65,15 +59,16 @@ entrada por modelo gerado, a partir de `_generated_bronze.json`).
 ```
 Criar integração (wizard 1→2→3) → cria a conexão Airbyte
    └─ POST /api/dbt/models   (AutoPipelineView → dbtCodegen.writeIntegrationModels)
-        escreve/atualiza models/medallion/bronze/bronze_<t>.sql (+ .yml) e a source
+        escreve/atualiza models/medallion/bronze/<sistema>/bronze_<sistema>_<t>.sql
+        (+ o _properties.yml do sistema) e a source
         DBT_CODEGEN_GIT=commit|push → também versiona
 
 Airbyte sincroniza → raw_<t> aparece
 
 Construir Bronze (botão do canvas ou bronzeAutoSync)
-   → buildBronzeViaDbt(tables) → runDbt(select: "bronze_<t1> bronze_<t2> ...")
-   → dbt build --select bronze_<t1> ... --target prod
-   → materializa <DBT_SCHEMA_BRONZE>.bronze_<t>
+   → buildBronzeViaDbt(tables) → runDbt(select: "bronze_<sistema>_<t1> ...")
+   → dbt build --select bronze_<sistema>_<t1> ... --target prod
+   → materializa <DBT_SCHEMA_BRONZE>.bronze_<sistema>_<t>
    → resultado mapeado por tabela; modelo ausente = erro (sem fallback)
 ```
 
@@ -100,8 +95,8 @@ O gateway roda com `DBT_DEMO_ENABLED=false` (só os modelos gerados) e
 do `dbt_utils` trava `dbt deps` em diretório sincronizado por OneDrive).
 
 Validado ponta a ponta em BigQuery real (dbt-core 1.12.4 / dbt-bigquery 1.12.0):
-o mesmo `bronze_usuarios.sql` materializou `bronze_datacore.bronze_usuarios` e
-`bronze_analytics_curated.bronze_usuarios` (datasets diferentes, mesma requisição-modelo).
+`dbt parse` OK com 3 sistemas coexistindo (31 modelos, sem colisão); build via
+gateway materializou `bronze_datacore.bronze_datacoredbt_usuarios` etc.
 
 ## Endpoints do codegen (gateway)
 
@@ -121,7 +116,8 @@ curl -X POST http://localhost:8080/api/dbt/models \
        "applyLgpd":true,
        "tables":[{"name":"usuarios","columns":["id","nome","email"],
                   "primaryKey":["id"],"loadType":"incremental"}]}'
-# -> escreve dbt/models/medallion/bronze/bronze_usuarios.sql (+ .yml) e atualiza a source
+# body inclui "sistema": "<Nome da origem>"
+# -> escreve dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_usuarios.sql
 ```
 
 ## Variáveis (ver `../.env.example`)
@@ -141,15 +137,15 @@ Contexto por requisição: `projectId → DBT_GCP_PROJECT`,
 
 ## Deploy — como os modelos gerados chegam ao gateway
 
-A imagem do gateway "assa" `dbt/` no build. Uma tabela nova só constrói via dbt
-**depois** que `bronze_<tabela>.sql` está na imagem: `DBT_CODEGEN_GIT=push` +
+A imagem do gateway "assa" `dbt/` no build. Uma tabela/sistema novo só constrói via dbt
+**depois** que `bronze_<sistema>_<tabela>.sql` está na imagem: `DBT_CODEGEN_GIT=push` +
 trigger de deploy no push, ou redeploy manual, ou (futuro) `git pull` do `dbt/`
 no start do container.
 
 ## Limitações conhecidas
 
-- **Uma definição por nome de tabela.** Se duas integrações têm um `usuarios` com
-  schema diferente, o último a regenerar vence (é o comportamento pedido).
+- Dois `origens.nome` que geram o **mesmo slug** de sistema compartilham a pasta
+  e sobrescrevem os modelos um do outro — use nomes de origem distintos.
 - Sem cast de tipos por coluna (o discovery do Airbyte não é propagado com tipos).
 - Falha de **teste** dbt marca `dbt.ok=false` (HTTP 207) mas não vira erro por
   tabela — o `bronze_status` do `pipeline_runs` continua `built`.
