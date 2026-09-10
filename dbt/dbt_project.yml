@@ -41,11 +41,16 @@ models:
     generated:
       +enabled: "{{ env_var('DBT_GENERATED_ENABLED', 'true') == 'true' }}"
       +schema: "{{ env_var('DBT_SCHEMA_BRONZE', 'bronze') }}"
+      +on_schema_change: append_new_columns
       +tags: ["generated"]
+    # Exemplo (transacoes) — referência do template e fixture de teste local.
+    # DBT_DEMO_ENABLED=false desliga para o gateway não parsear junto dos gerados.
     staging:
+      +enabled: "{{ env_var('DBT_DEMO_ENABLED', 'true') == 'true' }}"
       +materialized: view
       +schema: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
     medallion:
+      +enabled: "{{ env_var('DBT_DEMO_ENABLED', 'true') == 'true' }}"
       bronze:
         +materialized: incremental
         +schema: "{{ env_var('DBT_SCHEMA_BRONZE', 'bronze') }}"

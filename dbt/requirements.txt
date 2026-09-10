@@ -1,5 +1,5 @@
 # Instale num virtualenv Python 3.9+ :
 #   python -m venv .venv && . .venv/bin/activate   (Windows: .venv\Scripts\activate)
 #   pip install -r requirements.txt
-dbt-core~=1.8.0
-dbt-bigquery~=1.8.0
+# Testado ponta a ponta com dbt-core 1.12.4 / dbt-bigquery 1.12.0 (Python 3.13).
+dbt-bigquery~=1.12.0

@@ -93,14 +93,24 @@ cp profiles.example.yml profiles.yml
 
 export DBT_GCP_PROJECT="seu-projeto"
 export DBT_RAW_DATASET="raw"          # dataset do seed
-export DBT_TARGET="dev"
+export DBT_TARGET="dev"               # ou prod + DBT_GCP_KEYFILE=<sa.json>
 export DBT_GENERATED_ENABLED="false"  # ignora models/generated (dependem de raw real)
 
 dbt deps
 dbt seed
-dbt build --select models/staging models/medallion
+dbt build --select staging medallion
 dbt docs generate && dbt docs serve
 ```
+
+O gateway faz o inverso: `DBT_DEMO_ENABLED=false` + `DBT_GENERATED_ENABLED=true`
+(forçados em `server/dbtRunner.ts`) e `--select tag:<slug>`. As duas metades
+nunca são parseadas juntas — o `alias = bronze_<t>` dos gerados colidiria com o
+modelo de exemplo `bronze_transacoes`.
+
+Validado ponta a ponta em BigQuery real (dbt-core 1.12.4 / dbt-bigquery 1.12.0):
+exemplo `PASS=22`; modelo gerado `PASS=3` (CDC 12→10, CPF/cartão/e-mail
+anonimizados); `POST /api/bigquery/bronze/build` → `dbt.ok=true`,
+`results[0].model = bronze_<slug>__<t>`.
 
 ## Endpoints do codegen (gateway)
 
@@ -132,7 +142,8 @@ curl -X POST http://localhost:8080/api/dbt/models \
 |-----|--------|
 | `DBT_CODEGEN_GIT` | `off` (só escreve) · `commit` · `push` (versiona os modelos gerados) |
 | `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | autor do commit do codegen |
-| `DBT_GENERATED_ENABLED` | `false` só para o `dbt build` local do exemplo; no gateway `true` |
+| `DBT_GENERATED_ENABLED` | `false` só para o `dbt build` local do exemplo; o gateway força `true` |
+| `DBT_DEMO_ENABLED` | `false` desliga os modelos de exemplo; o gateway força `false` |
 | `DBT_PROJECT_DIR` | pasta do projeto (container: `/app/dbt`) |
 | `DBT_RUN_TIMEOUT_MS` | timeout por `dbt build` (default 900000) |
 | `DBT_DISABLED` | `true` = parada de emergência: toda Bronze falha (503), sem fallback |

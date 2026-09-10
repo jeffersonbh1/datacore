@@ -98,7 +98,8 @@ function renderSourcesYml(spec: IntegrationModelsSpec): string {
     .map(
       (t) => `      - name: ${sanitizeIdent(t.name)}
         identifier: raw_${t.name}
-        loaded_at_field: _airbyte_extracted_at`,
+        config:
+          loaded_at_field: _airbyte_extracted_at`,
     )
     .join('\n');
   return `version: 2
@@ -149,7 +150,9 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   const cfg: string[] = [
     `    materialized = '${incremental ? 'incremental' : 'table'}'`,
     `    , alias = 'bronze_${t.name}'`,
-    `    , schema = "{{ env_var('DBT_SCHEMA_BRONZE', 'bronze') }}"`,
+    // schema vem do +schema em dbt_project.yml (models.generated) — não repetir
+    // aqui: dentro de {{ config(...) }} um "{{ env_var(...) }}" aninhado não é
+    // reavaliado, viraria string literal.
     `    , tags = ['generated', '${spec.slug}', 'bronze']`,
     `    , partition_by = {'field': 'dt_ingestao_lake', 'data_type': 'timestamp', 'granularity': 'day'}`,
   ];

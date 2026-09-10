@@ -231,6 +231,11 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
     DBT_SCHEMA_BRONZE: input.bronzeDataset,
     DBT_SCHEMA_SILVER: input.silverDataset || deriveDataset(input.bronzeDataset, 'silver_'),
     DBT_SCHEMA_GOLD: input.goldDataset || deriveDataset(input.bronzeDataset, 'gold_'),
+    // O gateway só constrói modelos gerados por integração. Os modelos de
+    // exemplo (transacoes) ficam desligados — se ativos, colidiriam no parse
+    // com o alias `bronze_<t>` dos gerados.
+    DBT_GENERATED_ENABLED: 'true',
+    DBT_DEMO_ENABLED: 'false',
   };
   if (keyfile) childEnv.DBT_GCP_KEYFILE = keyfile;
 
