@@ -16,7 +16,7 @@ import {
 import {
   AirbyteDestination, AirbyteSource, AirbyteConnectionStreamInput, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
-  fetchSourceCatalog, fetchStreams
+  fetchSourceCatalog, fetchStreams, generateDbtModels
 } from '../../lib/airbyteGateway';
 import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline } from '../../lib/supabase';
 import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
@@ -1064,6 +1064,37 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setCreatedPipelineId(newPipeId);
     setIsCreating(false);
     setShowSuccessModal(true);
+
+    // Gera os modelos dbt da camada Bronze — um por tabela da integração — em
+    // dbt/models/generated/<slug>/. É o que o gateway roda depois (dbt build
+    // --select tag:<slug>); a Bronze não é mais construída fora do dbt.
+    // Best-effort: a integração já foi criada; falha aqui só loga.
+    if (activeDest.type === 'bigquery' && airbyteConnectionId && activeDest.accountOrProject) {
+      const slug = `conn_${airbyteConnectionId.replace(/[^A-Za-z0-9_]/g, '_')}`;
+      const rawDs = activeDest.databaseOrDataset;
+      try {
+        await generateDbtModels({
+          slug,
+          projectId: activeDest.accountOrProject,
+          rawDataset: rawDs,
+          bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),
+          applyLgpd: applyLgpdSanitization,
+          tables: selectedTables.map(tableName => {
+            const cfg = tableSyncConfigsSnapshot[tableName];
+            const stream = getStreamSummary(tableName);
+            return {
+              name: tableName,
+              columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
+              primaryKey: (stream?.primaryKey || []).map(p => p.join('.')),
+              cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
+              loadType: cfg.loadType,
+            };
+          }),
+        });
+      } catch (err) {
+        console.error('Falha ao gerar os modelos dbt da camada Bronze:', err);
+      }
+    }
 
     // Best-effort persistence to Supabase, scoped to the logged-in user's empresa —
     // Airbyte remains the source of truth and the UI above already reflects success

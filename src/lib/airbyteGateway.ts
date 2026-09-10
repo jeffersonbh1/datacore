@@ -212,8 +212,8 @@ export interface BronzeTableResult {
   table: string;
   status: 'ok' | 'error';
   error?: string;
-  /** 'dbt' quando construída pelo modelo bronze_<tabela>; 'ctas' no fallback 1:1. */
-  via?: 'dbt' | 'ctas';
+  /** Modelo dbt que produziu a tabela (bronze_<slug>__<tabela>). */
+  model?: string;
 }
 
 export interface BronzeDbtSummary {
@@ -225,12 +225,39 @@ export interface BronzeDbtSummary {
   stderrTail?: string;
 }
 
+export interface DbtModelTableSpec {
+  /** Nome do stream / base da tabela (a tabela real é raw_<name>). */
+  name: string;
+  columns: string[];
+  /** Chave primária (do stream Airbyte) — habilita dedup CDC + unique_key. */
+  primaryKey?: string[];
+  cursorField?: string | null;
+  loadType?: 'full_refresh' | 'incremental';
+}
+
 /**
- * Camada Bronze (Fase 7): o gateway roda `dbt build` sobre o projeto em
- * <repo>/dbt (tipagem, deduplicação CDC, anonimização LGPD e testes). Cada
- * tabela é casada com o modelo `bronze_<tabela>`; tabelas sem modelo caem no
- * mirror 1:1 (CREATE OR REPLACE TABLE ... AS SELECT). Disparada pelo nó Bronze
- * do canvas do Studio. `dbt` traz o resumo de todos os nós executados.
+ * Gera/regenera os modelos dbt da Bronze de uma integração (um por tabela) em
+ * dbt/models/generated/<slug>/. Chamado logo após criar a conexão no Airbyte.
+ */
+export async function generateDbtModels(payload: {
+  slug: string;
+  projectId: string;
+  rawDataset: string;
+  bronzeDataset: string;
+  applyLgpd?: boolean;
+  tables: DbtModelTableSpec[];
+}): Promise<{ slug: string; files: string[]; models: string[]; git: string; gitDetail?: string }> {
+  return gatewayFetch('/api/dbt/models', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Camada Bronze (Fase 8): 100% dbt. O gateway roda `dbt build --select tag:<slug>`
+ * sobre os modelos gerados da integração — um por tabela, com tipagem leve,
+ * deduplicação CDC e anonimização LGPD. Sem fallback: tabela sem modelo => erro.
+ * Disparada pelo nó Bronze do canvas do Studio. `dbt` traz o resumo dos nós.
  */
 export async function buildBronzeLayer(payload: {
   projectId: string;
@@ -238,6 +265,7 @@ export async function buildBronzeLayer(payload: {
   bronzeDataset: string;
   tables: string[];
   location?: string;
+  slug?: string;
 }): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/bronze/build', {
     method: 'POST',

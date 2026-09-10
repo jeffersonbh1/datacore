@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getBigQueryClient } from '../bigqueryClient';
-import { DbtUnavailableError, isDbtDisabled, runDbt, type RunDbtResult } from '../dbtRunner';
+import { bronzeModelName, sanitizeIdent } from '../dbtCodegen';
+import { DbtUnavailableError, runDbt, type RunDbtResult } from '../dbtRunner';
 
 export const bronzeRouter = Router();
 
@@ -11,97 +11,60 @@ export interface BuildBronzeInput {
   tables: string[];
   /** BigQuery dataset location (e.g. "southamerica-east1"), matching the raw dataset's own. */
   location?: string;
+  /** Identificador da integração ("conn_<airbyteConnectionId>") — seleciona os modelos dbt gerados. */
+  slug?: string;
 }
 
 export interface TableResult {
   table: string;
   status: 'ok' | 'error';
   error?: string;
-  /** Como a tabela foi construída: 'dbt' (modelo do projeto dbt) ou 'ctas' (fallback 1:1). */
-  via?: 'dbt' | 'ctas';
+  /** Modelo dbt que produziu a tabela (sempre presente — não há mais caminho fora do dbt). */
+  model?: string;
 }
 
 export interface BuildBronzeOutput {
   results: TableResult[];
-  /** Presente quando a construção passou pelo dbt (resumo de todos os nós, incl. testes/staging). */
-  dbt?: Pick<RunDbtResult, 'ok' | 'select' | 'target' | 'models' | 'error'> & { stderrTail?: string };
-}
-
-// ---------------------------------------------------------------------------
-// Fallback 1:1 (comportamento legado). Mantido para tabelas que ainda não têm
-// um modelo dbt correspondente e para o caso de a infra dbt não estar
-// disponível (DBT_DISABLED=true ou "dbt" ausente no PATH). Controlável por
-// DBT_BRONZE_FALLBACK_CTAS ("false" desliga e força erro nesses casos).
-// ---------------------------------------------------------------------------
-function ctasFallbackEnabled(): boolean {
-  return String(process.env.DBT_BRONZE_FALLBACK_CTAS || 'true').toLowerCase() !== 'false';
-}
-
-async function mirrorTablesWithCtas(
-  { projectId, rawDataset, bronzeDataset, tables, location }: BuildBronzeInput,
-): Promise<TableResult[]> {
-  const bigquery = getBigQueryClient();
-  const datasetLocation = location || 'southamerica-east1';
-
-  const dataset = bigquery.dataset(bronzeDataset, { projectId });
-  const [datasetExists] = await dataset.exists();
-  if (!datasetExists) {
-    await bigquery.createDataset(bronzeDataset, { projectId, location: datasetLocation });
-  }
-
-  const results: TableResult[] = [];
-  for (const table of tables) {
-    try {
-      const query = `CREATE OR REPLACE TABLE \`${projectId}.${bronzeDataset}.bronze_${table}\` AS SELECT * FROM \`${projectId}.${rawDataset}.raw_${table}\``;
-      await bigquery.query({ query, location: datasetLocation });
-      results.push({ table, status: 'ok', via: 'ctas' });
-    } catch (err) {
-      results.push({ table, status: 'error', error: err instanceof Error ? err.message : 'Erro desconhecido.', via: 'ctas' });
-    }
-  }
-  return results;
+  dbt: Pick<RunDbtResult, 'ok' | 'select' | 'target' | 'models' | 'error'> & { stderrTail?: string };
 }
 
 function statusFromDbt(status: string): 'ok' | 'error' {
   return status === 'success' || status === 'pass' || status === 'warn' ? 'ok' : 'error';
 }
 
-// Camada Bronze (Fase 5 -> Fase 7): antes um CREATE OR REPLACE TABLE ... AS
-// SELECT * por tabela; agora uma execução real de `dbt build` sobre <repo>/dbt
-// (server/dbtRunner.ts), que aplica tipagem, deduplicação CDC, anonimização
-// LGPD e testes. Cada tabela pedida é casada com o modelo `bronze_<tabela>`;
-// tabelas sem modelo caem no fallback 1:1 (ver acima). Assinatura preservada
-// para os dois chamadores: a rota "/build" e bronzeAutoSync.ts.
+// Camada Bronze (Fase 8): 100% dbt. Cada tabela da integração tem um modelo
+// gerado (server/dbtCodegen.ts) em dbt/models/generated/<slug>/bronze_<slug>__<t>.sql,
+// materializado como <bronzeDataset>.bronze_<t>. Aqui roda-se `dbt build
+// --select tag:<slug>` e mapeia-se o resultado por tabela. Sem fallback:
+// tabela sem modelo => erro (rode a geração de modelos da integração).
+// Assinatura preservada para os dois chamadores: rota "/build" e bronzeAutoSync.ts.
 export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildBronzeOutput> {
-  const { tables } = input;
+  const { tables, slug } = input;
 
-  if (isDbtDisabled()) {
-    return { results: await mirrorTablesWithCtas(input) };
+  if (!slug) {
+    return {
+      results: tables.map((table) => ({
+        table,
+        status: 'error' as const,
+        error: 'Integração sem slug de modelos dbt — gere os modelos da integração (POST /api/dbt/models).',
+      })),
+      dbt: { ok: false, select: '', target: '', models: [], error: 'slug ausente' },
+    };
   }
 
-  let dbtRun: RunDbtResult;
-  try {
-    dbtRun = await runDbt({
-      projectId: input.projectId,
-      rawDataset: input.rawDataset,
-      bronzeDataset: input.bronzeDataset,
-      location: input.location,
-    });
-  } catch (err) {
-    if (err instanceof DbtUnavailableError && ctasFallbackEnabled()) {
-      console.warn(`[bronze] dbt indisponível (${err.message}) — usando fallback CTAS 1:1.`);
-      return { results: await mirrorTablesWithCtas(input) };
-    }
-    throw err;
-  }
+  const dbtRun = await runDbt({
+    projectId: input.projectId,
+    rawDataset: input.rawDataset,
+    bronzeDataset: input.bronzeDataset,
+    location: input.location,
+    select: `tag:${slug}`,
+  });
 
-  // dbt rodou mas não produziu nenhum resultado + saiu com erro => a execução
-  // inteira falhou (erro de compilação/parse/conexão). Não mascara com o mirror
-  // 1:1: reporta o erro do dbt em cada tabela.
+  // Falha total (compilação/parse/conexão): não mascara, reporta o erro por tabela.
   if (!dbtRun.ok && dbtRun.models.length === 0) {
     const detail = dbtRun.error || dbtRun.stderrTail || `dbt build saiu com código ${dbtRun.exitCode}`;
     return {
-      results: tables.map((table) => ({ table, status: 'error' as const, error: detail, via: 'dbt' as const })),
+      results: tables.map((table) => ({ table, status: 'error' as const, error: detail })),
       dbt: {
         ok: false, select: dbtRun.select, target: dbtRun.target,
         models: dbtRun.models, error: dbtRun.error, stderrTail: dbtRun.stderrTail,
@@ -109,39 +72,26 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
     };
   }
 
+  // run_results traz unique_id "model.datacore_dbt.bronze_<slug>__<tabela>".
   const byModel = new Map(dbtRun.models.map((m) => [m.name, m]));
-  const semModelo: string[] = [];
-  const results: TableResult[] = [];
-
-  for (const table of tables) {
-    const node = byModel.get(`bronze_${table}`);
-    if (node) {
-      results.push({
+  const results: TableResult[] = tables.map((table) => {
+    const modelName = bronzeModelName(slug, table);
+    const node = byModel.get(modelName);
+    if (!node) {
+      return {
         table,
-        status: statusFromDbt(node.status),
-        error: statusFromDbt(node.status) === 'ok' ? undefined : (node.message || `dbt status "${node.status}"`),
-        via: 'dbt',
-      });
-    } else {
-      semModelo.push(table);
+        status: 'error' as const,
+        error: `Modelo dbt "${modelName}" não encontrado — regere os modelos da integração (POST /api/dbt/models).`,
+        model: modelName,
+      };
     }
-  }
-
-  if (semModelo.length > 0) {
-    if (ctasFallbackEnabled()) {
-      const mirrored = await mirrorTablesWithCtas({ ...input, tables: semModelo });
-      results.push(...mirrored);
-    } else {
-      for (const table of semModelo) {
-        results.push({
-          table,
-          status: 'error',
-          error: `sem modelo dbt — crie models/medallion/bronze/bronze_${table}.sql`,
-          via: 'dbt',
-        });
-      }
-    }
-  }
+    return {
+      table,
+      status: statusFromDbt(node.status),
+      error: statusFromDbt(node.status) === 'ok' ? undefined : (node.message || `dbt status "${node.status}"`),
+      model: modelName,
+    };
+  });
 
   return {
     results,
@@ -164,7 +114,7 @@ export async function buildBronzeForTables(input: BuildBronzeInput): Promise<Tab
 
 bronzeRouter.post('/build', async (req, res) => {
   try {
-    const { projectId, rawDataset, bronzeDataset, tables, location } = req.body as BuildBronzeInput;
+    const { projectId, rawDataset, bronzeDataset, tables, location, slug } = req.body as BuildBronzeInput;
 
     if (!projectId || !rawDataset || !bronzeDataset || !Array.isArray(tables) || tables.length === 0) {
       res.status(400).json({
@@ -173,10 +123,16 @@ bronzeRouter.post('/build', async (req, res) => {
       return;
     }
 
-    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, location });
-    const hasFailure = results.some((r) => r.status === 'error') || (dbt !== undefined && !dbt.ok);
+    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, location, slug });
+    const hasFailure = results.some((r) => r.status === 'error') || !dbt.ok;
     res.status(hasFailure ? 207 : 200).json({ dataset: bronzeDataset, results, dbt });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Erro ao construir a camada Bronze.' });
+    const status = err instanceof DbtUnavailableError ? 503 : 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erro ao construir a camada Bronze.' });
   }
 });
+
+// Exportado para bronzeAutoSync.ts derivar o slug a partir do connectionId.
+export function slugFromConnectionId(connectionId: string): string {
+  return `conn_${sanitizeIdent(connectionId)}`;
+}

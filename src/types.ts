@@ -44,6 +44,8 @@ export interface CanvasNode {
       bronzeDataset: string;
       tables: string[];
       location?: string;
+      /** Identificador da integração ("conn_<airbyteConnectionId>") — casa com os modelos dbt gerados. */
+      slug?: string;
     };
   };
   metrics?: {

@@ -33,6 +33,7 @@ Gateway são deployados aqui.
 | 7 | Migrações SQL | `sql/001..007` | aplicar no Supabase (passo 4) |
 | 8 | Cloud Scheduler (auto-sync Bronze) | não configurado | criar job (passo 5) |
 | 9 | dbt no gateway | imagem/CPU/timeout maiores | `--memory=1Gi --timeout=900 --max-instances=1` (já no cloudbuild) |
+| 11 | Modelos dbt gerados por integração | escritos em `dbt/models/generated/<slug>/` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
 | 10 | Chave da SA BigQuery | exposta em conversas/arquivo local | **rotacionar** e guardar só no Secret Manager |
 
 ---
@@ -164,13 +165,21 @@ _IMAGE=$IMAGE,_REGION=$REGION,_SERVICE=datacore-gateway,_RUNTIME_SA=$GATEWAY_SA,
 _SUPABASE_URL=https://umpltpxoqtlbnpmjwclt.supabase.co,\
 _AIRBYTE_BASE_URL=http://34.39.184.77:8000,\
 _AIRBYTE_CLIENT_ID=<client id>,_AIRBYTE_WORKSPACE_ID=<workspace id>,\
-_DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false
+_DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false,_DBT_CODEGEN_GIT=off
 ```
 
 - Primeiro deploy pode levar ~5–8 min (a imagem instala `python3` + `dbt-bigquery`).
-- Quer subir sem risco do dbt no dia 1? passe `_DBT_DISABLED=true` — a Bronze volta
-  ao mirror 1:1 (`CREATE TABLE AS SELECT`). Ligue depois com um novo deploy.
+- `_DBT_DISABLED=true` = parada de emergência: **toda** construção de Bronze
+  passa a falhar (503) — não há mais fallback fora do dbt.
 - Pegue a URL: `gcloud run services describe datacore-gateway --region=$REGION --format='value(status.url)'`
+
+**Como os modelos gerados chegam ao gateway** — a imagem "assa" `dbt/` no build.
+Uma integração nova só constrói a Bronze via dbt **depois** que
+`dbt/models/generated/<slug>/` está na imagem. Opções:
+- `_DBT_CODEGEN_GIT=push` + um remote git com credencial no container + trigger
+  de deploy no push do repo (rebuild da imagem); **ou**
+- redeploy manual após criar integrações; **ou**
+- (futuro) `git pull` do `dbt/` no start do container.
 
 ### Acesso frontend → gateway
 
@@ -231,11 +240,17 @@ curl -s -X POST $G/api/bigquery/bronze/auto-sync \
   -H "Authorization: Bearer <GATEWAY_API_KEY>" -H 'Content-Type: application/json' -d '{}'
 # -> processed:N ; se der ECONNREFUSED/ETIMEDOUT no Airbyte => firewall/IP (passo 2)
 
-# Bronze via dbt (troque os datasets por um par de teste)
+# Codegen dos modelos de uma integração
+curl -s -X POST $G/api/dbt/models \
+  -H "Authorization: Bearer <GATEWAY_API_KEY>" -H 'Content-Type: application/json' \
+  -d '{"slug":"conn_smoke","projectId":"data-plataform-dev","rawDataset":"raw_smoke","bronzeDataset":"bronze_smoke","applyLgpd":true,"tables":[{"name":"clientes","columns":["id_cliente","cpf"],"primaryKey":["id_cliente"],"loadType":"incremental"}]}'
+# -> {"files":[...],"models":["bronze_conn_smoke__clientes"],"git":"skipped"}
+
+# Bronze via dbt (mesmo slug; a raw_clientes precisa existir no BigQuery)
 curl -s -X POST $G/api/bigquery/bronze/build \
   -H "Authorization: Bearer <GATEWAY_API_KEY>" -H 'Content-Type: application/json' \
-  -d '{"projectId":"data-plataform-dev","rawDataset":"raw_smoke","bronzeDataset":"bronze_smoke","tables":["transacoes"],"location":"southamerica-east1"}'
-# -> results[0].via == "dbt" e bloco "dbt": {ok:true}
+  -d '{"slug":"conn_smoke","projectId":"data-plataform-dev","rawDataset":"raw_smoke","bronzeDataset":"bronze_smoke","tables":["clientes"],"location":"southamerica-east1"}'
+# -> results[0].model == "bronze_conn_smoke__clientes" e bloco "dbt": {ok:true}
 ```
 
 Abra a URL do frontend, faça login, crie uma integração ponta a ponta.

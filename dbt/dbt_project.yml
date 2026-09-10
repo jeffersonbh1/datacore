@@ -32,6 +32,16 @@ vars:
 
 models:
   datacore_dbt:
+    # Modelos escritos por integração pelo gateway (server/dbtCodegen.ts), um por
+    # tabela. É o único caminho de produção da camada Bronze — o gateway roda
+    # `dbt build --select tag:<slug>`. Cada modelo já traz seu próprio config
+    # (materialized/alias/schema/tags); os defaults abaixo são só a rede de
+    # segurança. `enabled` via env var deixa o `dbt build` local do exemplo
+    # ignorar os gerados (que dependem de DBT_RAW_DATASET real).
+    generated:
+      +enabled: "{{ env_var('DBT_GENERATED_ENABLED', 'true') == 'true' }}"
+      +schema: "{{ env_var('DBT_SCHEMA_BRONZE', 'bronze') }}"
+      +tags: ["generated"]
     staging:
       +materialized: view
       +schema: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"

@@ -158,7 +158,7 @@ function spawnDbt(
       clearTimeout(timer);
       if (err.code === 'ENOENT') {
         rejectPromise(new DbtUnavailableError(
-          'Executável "dbt" não encontrado no PATH. Instale dbt-bigquery (ver dbt/requirements.txt) ou defina DBT_DISABLED=true.',
+          'Executável "dbt" não encontrado no PATH. Instale dbt-bigquery (ver dbt/requirements.txt) — a camada Bronze depende dele.',
         ));
         return;
       }
