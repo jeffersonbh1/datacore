@@ -1,10 +1,10 @@
 version: 2
 
-# GERADO por server/dbtCodegen.ts — integração conn_bf279448_f172_4f31_9d3c_b32295891dc8. Não editar à mão.
+# GERADO por server/dbtCodegen.ts — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7. Não editar à mão.
 sources:
-  - name: conn_bf279448_f172_4f31_9d3c_b32295891dc8
+  - name: conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7
     database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"
-    schema: "{{ env_var('DBT_RAW_DATASET', 'raw_datacore') }}"
+    schema: "{{ env_var('DBT_RAW_DATASET', 'raw_analytics_curated') }}"
     loader: airbyte
     tables:
       - name: dbt_execucoes
@@ -33,14 +33,6 @@ sources:
           loaded_at_field: _airbyte_extracted_at
       - name: origens
         identifier: raw_origens
-        config:
-          loaded_at_field: _airbyte_extracted_at
-      - name: pipeline_runs
-        identifier: raw_pipeline_runs
-        config:
-          loaded_at_field: _airbyte_extracted_at
-      - name: pipelines
-        identifier: raw_pipelines
         config:
           loaded_at_field: _airbyte_extracted_at
       - name: tabelas_carregadas

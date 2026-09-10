@@ -1,0 +1,9 @@
+version: 2
+
+# GERADO por server/dbtCodegen.ts — integração conn_4dedd1ac_2d37_4124_8d13_192ff6281dbf.
+models:
+  - name: bronze_conn_4dedd1ac_2d37_4124_8d13_192ff6281dbf__usuarios
+    description: "Bronze gerado — integração conn_4dedd1ac_2d37_4124_8d13_192ff6281dbf, tabela usuarios."
+    columns:
+      - name: id
+        data_tests: [unique, not_null]

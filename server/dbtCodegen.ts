@@ -118,8 +118,8 @@ function renderSourcesYml(spec: IntegrationModelsSpec): string {
 # GERADO por server/dbtCodegen.ts — integração ${spec.slug}. Não editar à mão.
 sources:
   - name: ${spec.slug}
-    database: "{{ env_var('DBT_GCP_PROJECT') }}"
-    schema: "{{ env_var('DBT_RAW_DATASET') }}"
+    database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"
+    schema: "{{ env_var('DBT_RAW_DATASET', '${spec.rawDataset}') }}"
     loader: airbyte
     tables:
 ${tables}

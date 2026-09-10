@@ -1,0 +1,13 @@
+version: 2
+
+# GERADO por server/dbtCodegen.ts — integração conn_c81d5eea_28b0_4624_b9e9_72e33fd59b41. Não editar à mão.
+sources:
+  - name: conn_c81d5eea_28b0_4624_b9e9_72e33fd59b41
+    database: "{{ env_var('DBT_GCP_PROJECT', 'data-plataform-dev') }}"
+    schema: "{{ env_var('DBT_RAW_DATASET', 'raw_analytics_curated') }}"
+    loader: airbyte
+    tables:
+      - name: usuarios
+        identifier: raw_usuarios
+        config:
+          loaded_at_field: _airbyte_extracted_at

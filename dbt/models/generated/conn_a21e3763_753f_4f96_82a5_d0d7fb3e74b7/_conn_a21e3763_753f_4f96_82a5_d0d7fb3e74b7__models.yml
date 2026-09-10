@@ -1,0 +1,22 @@
+version: 2
+
+# GERADO por server/dbtCodegen.ts — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7.
+models:
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__dbt_execucoes
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela dbt_execucoes (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__dbt_modelos
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela dbt_modelos (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__dbt_ultima_execucao
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__destinos
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela destinos (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__empresas
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela empresas (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__integracoes
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela integracoes (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__origens
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela origens (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__tabelas_carregadas
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela tabelas_carregadas (sem PK; sem deduplicação)."
+  - name: bronze_conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7__usuarios
+    description: "Bronze gerado — integração conn_a21e3763_753f_4f96_82a5_d0d7fb3e74b7, tabela usuarios (sem PK; sem deduplicação)."
