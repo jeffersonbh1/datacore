@@ -128,6 +128,9 @@ connectionsRouter.post('/', async (req, res) => {
       return stream;
     });
 
+    // "raw_" on every destination table name (not just the raw_ dataset itself) —
+    // so a table is identifiable as raw layer even outside its dataset's context.
+    // Airbyte prepends this to every stream's destination table on sync.
     const data = await airbyteFetch('/connections', {
       method: 'POST',
       body: JSON.stringify({
@@ -136,6 +139,7 @@ connectionsRouter.post('/', async (req, res) => {
         destinationId,
         configurations: { streams },
         schedule: buildAirbyteSchedule(schedule),
+        prefix: 'raw_',
       }),
     });
 

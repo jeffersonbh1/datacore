@@ -4,6 +4,8 @@ import cors from 'cors';
 import express from 'express';
 import { requireGatewayApiKey } from './authMiddleware';
 import { authAdminRouter } from './routes/authAdmin';
+import { bronzeRouter } from './routes/bronze';
+import { bronzeAutoSyncRouter } from './routes/bronzeAutoSync';
 import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { destinationsRouter } from './routes/destinations';
@@ -26,6 +28,8 @@ app.use('/api/airbyte/streams', requireGatewayApiKey, streamsRouter);
 app.use('/api/airbyte/connections', requireGatewayApiKey, connectionsRouter);
 app.use('/api/airbyte/workspaces', requireGatewayApiKey, workspacesRouter);
 app.use('/api/auth', requireGatewayApiKey, authAdminRouter);
+app.use('/api/bigquery/bronze', requireGatewayApiKey, bronzeRouter);
+app.use('/api/bigquery/bronze/auto-sync', requireGatewayApiKey, bronzeAutoSyncRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {

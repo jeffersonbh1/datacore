@@ -37,6 +37,14 @@ export interface CanvasNode {
     dbtSql?: string;
     dbtModelName?: string;
     dbtMaterialization?: 'view' | 'table' | 'incremental' | 'ephemeral';
+    /** Bronze node only, BigQuery destinations only — inputs for the real "Construir Camada Bronze" action. */
+    bigquery?: {
+      projectId: string;
+      rawDataset: string;
+      bronzeDataset: string;
+      tables: string[];
+      location?: string;
+    };
   };
   metrics?: {
     recordsIn: number;

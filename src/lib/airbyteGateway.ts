@@ -207,3 +207,28 @@ export async function fetchConnectionJobs(connectionId: string, limit = 30): Pro
   );
   return data.data;
 }
+
+export interface BronzeTableResult {
+  table: string;
+  status: 'ok' | 'error';
+  error?: string;
+}
+
+/**
+ * Camada Bronze (Fase 5): mirrors every table Airbyte already replicated into a
+ * raw_ BigQuery dataset into the corresponding bronze_ dataset via
+ * CREATE OR REPLACE TABLE ... AS SELECT. Triggered manually from the Studio
+ * canvas's Bronze node.
+ */
+export async function buildBronzeLayer(payload: {
+  projectId: string;
+  rawDataset: string;
+  bronzeDataset: string;
+  tables: string[];
+  location?: string;
+}): Promise<{ dataset: string; results: BronzeTableResult[] }> {
+  return gatewayFetch('/api/bigquery/bronze/build', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

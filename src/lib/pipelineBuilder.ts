@@ -107,29 +107,63 @@ export function buildPipelineFromIntegration(
   });
   edges.push({ id: `${pipelineId}-e-src-raw`, source: sourceNodeId, target: rawNodeId, animated: true });
 
-  const bronzeNodeId = `${pipelineId}-bronze`;
-  nodes.push({
-    id: bronzeNodeId,
-    type: 'bronze',
-    title: 'Camada Bronze (Validação & LGPD)',
-    subtitle: integration.applyLgpdSanitization ? 'Delta Lake • Cifragem PII Ativa' : 'Delta Lake • Validação & Dedup',
-    provider: 'generic',
-    iconName: 'ShieldCheck',
-    x: 600,
-    y: 190,
-    status: 'idle',
-    config: {
-      query: `VALIDATE SCHEMA & DEDUPLICATE (${selectedTables.join(', ')})`,
-      maskingRules: integration.applyLgpdSanitization ? [
-        { field: 'cpf', piiType: 'cpf', method: 'anonymize' },
-        { field: 'email', piiType: 'email', method: 'sha256_hash' },
-        { field: 'telefone', piiType: 'phone', method: 'partial_redact' },
-        { field: 'cartao_token', piiType: 'credit_card', method: 'tokenization' }
-      ] : undefined
-    }
-    // dbt bronze/silver execution isn't wired to real runs yet (Fase 3) — no metrics.
+  // BigQuery destinations only: destination.databaseOrDataset already carries the
+  // raw_ prefix (see getFullDatasetId() in AutoPipelineView.tsx) — the bronze
+  // dataset mirrors it with bronze_ instead, same base name.
+  const isBigQueryDestination = destination.type === 'bigquery';
+  const rawDataset = destination.databaseOrDataset;
+  const bronzeDataset = isBigQueryDestination ? rawDataset.replace(/^raw_/, 'bronze_') : undefined;
+
+  // One Bronze node per table (not one combined node) — each fans out from Raw
+  // and fans back into Silver, so every table Airbyte replicated into raw_ gets
+  // its own place to define/build its bronze_ table independently. Laid out as a
+  // grid (wrapping every ROWS_PER_COL) so integrations with many tables don't
+  // spill past the canvas's fixed 2000x1000 area.
+  const ROWS_PER_COL = 6;
+  const COL_SPACING = 260;
+  const ROW_SPACING = 130;
+  const BRONZE_BASE_X = 600;
+  const BRONZE_BASE_Y = 40;
+  const bronzeColumns = Math.max(1, Math.ceil(selectedTables.length / ROWS_PER_COL));
+
+  const bronzeNodeIds = selectedTables.map((table, i) => {
+    const bronzeNodeId = `${pipelineId}-bronze-${i}`;
+    const col = Math.floor(i / ROWS_PER_COL);
+    const row = i % ROWS_PER_COL;
+
+    nodes.push({
+      id: bronzeNodeId,
+      type: 'bronze',
+      title: table,
+      subtitle: isBigQueryDestination && bronzeDataset
+        ? `${bronzeDataset}.bronze_${table}`
+        : integration.applyLgpdSanitization ? 'Delta Lake • Cifragem PII Ativa' : 'Delta Lake • Validação & Dedup',
+      provider: 'generic',
+      iconName: 'ShieldCheck',
+      x: BRONZE_BASE_X + col * COL_SPACING,
+      y: BRONZE_BASE_Y + row * ROW_SPACING,
+      status: 'idle',
+      config: {
+        query: `VALIDATE SCHEMA & DEDUPLICATE (${table})`,
+        maskingRules: integration.applyLgpdSanitization ? [
+          { field: 'cpf', piiType: 'cpf', method: 'anonymize' },
+          { field: 'email', piiType: 'email', method: 'sha256_hash' },
+          { field: 'telefone', piiType: 'phone', method: 'partial_redact' },
+          { field: 'cartao_token', piiType: 'credit_card', method: 'tokenization' }
+        ] : undefined,
+        bigquery: isBigQueryDestination && bronzeDataset ? {
+          projectId: destination.accountOrProject,
+          rawDataset,
+          bronzeDataset,
+          tables: [table],
+          location: destination.warehouseOrCluster || undefined,
+        } : undefined,
+      }
+      // dbt bronze/silver execution isn't wired to real runs yet (Fase 3) — no metrics.
+    });
+    edges.push({ id: `${pipelineId}-e-raw-bronze-${i}`, source: rawNodeId, target: bronzeNodeId, animated: true });
+    return bronzeNodeId;
   });
-  edges.push({ id: `${pipelineId}-e-raw-bronze`, source: rawNodeId, target: bronzeNodeId, animated: true });
 
   const silverNodeId = `${pipelineId}-silver`;
   nodes.push({
@@ -139,7 +173,7 @@ export function buildPipelineFromIntegration(
     subtitle: `${destination.type.toUpperCase()} • ${destination.databaseOrDataset}`,
     provider: destination.provider,
     iconName: 'Boxes',
-    x: 870,
+    x: BRONZE_BASE_X + bronzeColumns * COL_SPACING + 40,
     y: 190,
     status: 'idle',
     config: {
@@ -147,7 +181,9 @@ export function buildPipelineFromIntegration(
       writeMode: destination.writeMode
     }
   });
-  edges.push({ id: `${pipelineId}-e-bronze-silver`, source: bronzeNodeId, target: silverNodeId, animated: true });
+  bronzeNodeIds.forEach((bronzeNodeId, i) => {
+    edges.push({ id: `${pipelineId}-e-bronze-silver-${i}`, source: bronzeNodeId, target: silverNodeId, animated: true });
+  });
 
   const cronExpr = buildCronExpression(integration);
   const nextRun = buildNextRunText(integration);

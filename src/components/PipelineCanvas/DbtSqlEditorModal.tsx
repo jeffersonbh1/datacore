@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Check, Copy, Download, RefreshCw, Play, FileCode, 
-  Layers, Database, Sparkles, CheckCircle2, AlertCircle, 
+import {
+  X, Check, Copy, Download, RefreshCw, Play, FileCode,
+  Layers, Database, Sparkles, CheckCircle2, AlertCircle,
   Terminal, ShieldCheck, Cpu, Code2, Sliders, ExternalLink,
   HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 import { CanvasNode, Pipeline, CanvasEdge } from '../../types';
+import { BronzeTableResult } from '../../lib/airbyteGateway';
 
 interface DbtSqlEditorModalProps {
   node: CanvasNode;
@@ -13,6 +14,10 @@ interface DbtSqlEditorModalProps {
   onSave: (nodeId: string, updatedSql: string, modelName: string, materialization: string) => void;
   onClose: () => void;
   canEdit: boolean;
+  /** Real "Construir Camada Bronze" action — only rendered for bronze nodes with a BigQuery destination. */
+  canBuildBronze: boolean;
+  bronzeBuild: { status: 'idle' | 'running' | 'done' | 'error'; results?: BronzeTableResult[]; error?: string };
+  onBuildBronze: () => void;
 }
 
 export type DbtLayer = 'bronze' | 'silver' | 'gold';
@@ -257,7 +262,10 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   pipeline,
   onSave,
   onClose,
-  canEdit
+  canEdit,
+  canBuildBronze,
+  bronzeBuild,
+  onBuildBronze
 }) => {
   const layer = getDbtLayer(node);
 
@@ -579,6 +587,69 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Real "Construir Camada Bronze" action — mirrors every table Airbyte
+            already replicated into raw_ into bronze_, via the gateway's BigQuery
+            route. Only shown for bronze nodes on a BigQuery destination. */}
+        {layer === 'bronze' && node.config.bigquery && (
+          <div className="px-5 py-3 bg-orange-950/40 border-b border-orange-900/60 text-xs shrink-0 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-orange-200 font-mono">
+                <Database className="w-4 h-4 text-orange-400 shrink-0" />
+                <span className="font-semibold">{node.config.bigquery.rawDataset}</span>
+                <span className="text-orange-500">→</span>
+                <span className="font-semibold">{node.config.bigquery.bronzeDataset}</span>
+                <span className="text-orange-400/80">
+                  ({node.config.bigquery.tables.length} {node.config.bigquery.tables.length === 1 ? 'tabela' : 'tabelas'})
+                </span>
+              </div>
+              <button
+                type="button"
+                id="btn-build-bronze"
+                disabled={!canBuildBronze || bronzeBuild.status === 'running'}
+                onClick={onBuildBronze}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  !canBuildBronze || bronzeBuild.status === 'running'
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-orange-600 hover:bg-orange-500 text-white'
+                }`}
+              >
+                {bronzeBuild.status === 'running' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                <span>{bronzeBuild.status === 'running' ? 'Construindo...' : 'Construir Camada Bronze (BigQuery real)'}</span>
+              </button>
+            </div>
+
+            {bronzeBuild.error && (
+              <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{bronzeBuild.error}</span>
+              </div>
+            )}
+
+            {bronzeBuild.results && (
+              <div className="flex flex-wrap gap-1.5">
+                {bronzeBuild.results.map(r => (
+                  <span
+                    key={r.table}
+                    title={r.error}
+                    className={`flex items-center gap-1 px-2 py-1 rounded font-mono text-[11px] border ${
+                      r.status === 'ok'
+                        ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
+                        : 'bg-rose-950/50 border-rose-800 text-rose-300'
+                    }`}
+                  >
+                    {r.status === 'ok' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                    {r.table}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Compile Banner Feedback if exists */}
         {compileStatus && (

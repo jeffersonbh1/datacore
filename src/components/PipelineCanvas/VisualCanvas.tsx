@@ -8,6 +8,7 @@ import {
 import { CanvasNode, CanvasEdge, Pipeline, NodeType, PIIType, MaskingMethod } from '../../types';
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
 import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
+import { buildBronzeLayer, BronzeTableResult } from '../../lib/airbyteGateway';
 
 interface VisualCanvasProps {
   pipeline: Pipeline;
@@ -59,6 +60,16 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragDistance, setDragDistance] = useState(0);
+  const [bronzeBuild, setBronzeBuild] = useState<{
+    status: 'idle' | 'running' | 'done' | 'error';
+    results?: BronzeTableResult[];
+    error?: string;
+  }>({ status: 'idle' });
+  // Table filter (one Bronze node per table — see pipelineBuilder.ts) — null means
+  // "show every table" so pipelines aren't filtered until the user opens the
+  // dropdown and unchecks something.
+  const [visibleTables, setVisibleTables] = useState<Set<string> | null>(null);
+  const [showTableFilter, setShowTableFilter] = useState(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +78,22 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     setNodes(pipeline.nodes);
     setEdges(pipeline.edges);
     setSelectedNode(null);
+    setVisibleTables(null);
+    setShowTableFilter(false);
   }, [pipeline.id]);
+
+  const bronzeTableTitles: string[] = nodes.filter(n => n.type === 'bronze').map((n): string => n.title);
+  const bronzeTableNames: string[] = Array.from(new Set<string>(bronzeTableTitles)).sort();
+  const isTableVisible = (table: string) => visibleTables === null || visibleTables.has(table);
+  const isNodeVisible = (node: CanvasNode) => node.type !== 'bronze' || isTableVisible(node.title);
+
+  const toggleTableVisible = (table: string) => {
+    setVisibleTables(prev => {
+      const base = new Set(prev ?? bronzeTableNames);
+      if (base.has(table)) base.delete(table); else base.add(table);
+      return base;
+    });
+  };
 
   const getNodeIcon = (iconName: string, type: NodeType) => {
     switch (iconName) {
@@ -129,6 +155,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     setSelectedNode(node);
     // When clicking a bronze, silver, or gold node, open the dbt SQL editor!
     if (dragDistance < 6 && isMedallionDbtNode(node)) {
+      setBronzeBuild({ status: 'idle' });
       setDbtEditingNode(node);
     }
   };
@@ -208,6 +235,31 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       ...pipeline,
       nodes: updatedNodes
     });
+  };
+
+  // Camada Bronze real (Fase 5): mirrors every table Airbyte replicated into
+  // raw_ into the matching bronze_ dataset via the gateway's BigQuery route.
+  // Manual trigger for now — not wired to run automatically after each sync.
+  const handleBuildBronze = async (node: CanvasNode) => {
+    const bq = node.config.bigquery;
+    if (!bq || bronzeBuild.status === 'running') return;
+
+    setBronzeBuild({ status: 'running' });
+    try {
+      const { results } = await buildBronzeLayer(bq);
+      const hasFailure = results.some(r => r.status === 'error');
+      setBronzeBuild({ status: hasFailure ? 'error' : 'done', results });
+
+      const newStatus = hasFailure ? 'error' : 'success';
+      const updatedNodes = nodes.map(n => n.id === node.id ? { ...n, status: newStatus } : n);
+      setNodes(updatedNodes);
+      if (selectedNode && selectedNode.id === node.id) {
+        setSelectedNode({ ...selectedNode, status: newStatus });
+      }
+      onUpdatePipeline({ ...pipeline, nodes: updatedNodes });
+    } catch (err) {
+      setBronzeBuild({ status: 'error', error: err instanceof Error ? err.message : 'Falha ao construir a camada Bronze.' });
+    }
   };
 
   // Run visual simulation
@@ -407,14 +459,85 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     <div id="visual-canvas-container" className="flex flex-col h-[calc(100vh-140px)] bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs relative">
       {/* Top Toolbar */}
       <div id="canvas-toolbar" className="min-h-[52px] bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 z-20">
-        {/* Left: Mode badge */}
-        <div id="canvas-mode-card" className="flex items-center gap-2 shrink-0">
+        {/* Left: Mode badge + table filter */}
+        <div id="canvas-mode-card" className="flex items-center gap-2 shrink-0 relative">
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
             <span className="text-slate-700 font-medium whitespace-nowrap">
               Modo: <strong className="text-slate-900 font-semibold">{pipeline.mode === 'streaming' ? 'Streaming Contínuo' : 'Batch Agendado'}</strong>
             </span>
           </div>
+
+          {/* Filtro de tabelas — cada tabela vira seu próprio nó Bronze (ver
+              pipelineBuilder.ts); com muitas tabelas o canvas fica poluído, então
+              isso deixa marcar só as que devem aparecer. */}
+          {bronzeTableNames.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                id="btn-table-filter"
+                onClick={() => setShowTableFilter(v => !v)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer shadow-2xs border whitespace-nowrap ${
+                  showTableFilter || visibleTables !== null
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>
+                  Tabelas ({visibleTables === null ? bronzeTableNames.length : visibleTables.size}/{bronzeTableNames.length})
+                </span>
+                <ChevronRight className={`w-3 h-3 transition-transform ${showTableFilter ? 'rotate-90' : ''}`} />
+              </button>
+
+              {showTableFilter && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowTableFilter(false)} />
+                  <div
+                    id="table-filter-dropdown"
+                    className="absolute left-0 top-full mt-1.5 w-64 max-h-80 bg-white border border-slate-200 rounded-xl shadow-2xl z-40 flex flex-col overflow-hidden"
+                  >
+                    <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between shrink-0">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Tabelas no canvas</span>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleTables(new Set())}
+                          className="text-slate-500 hover:text-slate-800 cursor-pointer"
+                        >
+                          Nenhuma
+                        </button>
+                        <span className="text-slate-300">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setVisibleTables(null)}
+                          className="text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+                        >
+                          Todas
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-y-auto py-1">
+                      {bronzeTableNames.map(table => (
+                        <label
+                          key={table}
+                          className="flex items-center gap-2.5 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isTableVisible(table)}
+                            onChange={() => toggleTableVisible(table)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="font-mono truncate">{table}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right: Toolbar Controls (Zoom + DAG + Run) */}
@@ -521,6 +644,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
               const srcNode = nodes.find(n => n.id === edge.source);
               const tgtNode = nodes.find(n => n.id === edge.target);
               if (!srcNode || !tgtNode) return null;
+              if (!isNodeVisible(srcNode) || !isNodeVisible(tgtNode)) return null;
 
               // Compute port coordinates (Right center of source -> Left center of target)
               const x1 = srcNode.x + 220;
@@ -558,6 +682,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
 
           {/* Interactive Pipeline Nodes */}
           {nodes.map((node, index) => {
+            if (!isNodeVisible(node)) return null;
             const isSelected = selectedNode?.id === node.id;
             const isRunningNow = isSimulating && activeStepIndex === index;
 
@@ -1484,6 +1609,9 @@ with DAG(
           canEdit={canEdit}
           onSave={handleSaveDbtModel}
           onClose={() => setDbtEditingNode(null)}
+          canBuildBronze={canExecute}
+          bronzeBuild={bronzeBuild}
+          onBuildBronze={() => handleBuildBronze(dbtEditingNode)}
         />
       )}
     </div>
