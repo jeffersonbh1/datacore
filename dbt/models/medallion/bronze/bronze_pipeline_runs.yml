@@ -1,9 +1,0 @@
-version: 2
-
-# GERADO por server/dbtCodegen.ts
-models:
-  - name: bronze_pipeline_runs
-    description: "Bronze gerado — tabela pipeline_runs."
-    columns:
-      - name: id
-        data_tests: [unique, not_null]

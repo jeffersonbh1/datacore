@@ -13,7 +13,8 @@ dbt/
 ├── packages.yml / package-lock.yml   # dbt_utils
 ├── profiles.yml                      # dev/prod, 100% via env var (usado pelo gateway)
 ├── requirements.txt                  # dbt-bigquery ~1.12
-├── _generated_sources.json           # manifesto: tabelas conhecidas (usado p/ montar a source)
+├── _generated_sources.json           # manifesto das tabelas da source (merge)
+├── _generated_bronze.json            # manifesto {modelo -> tabela, PK} p/ o _properties.yml
 ├── macros/
 │   ├── generate_schema_name.sql      # dataset = valor da env var (sem prefixo)
 │   ├── lgpd.sql                       # mascarar_cpf / tokenizar_email / hash_sha256
@@ -23,13 +24,21 @@ dbt/
     │   └── _datacore_raw__sources.yml  # GERADO — source "datacore_raw", tabelas acumuladas
     ├── medallion/
     │   ├── bronze/
+    │   │   ├── _properties.yml         # GERADO — TODOS os modelos da camada (descrição + testes)
     │   │   ├── bronze_<tabela>.sql     # GERADO — 1 por tabela, sobrescrito na regeração
-    │   │   ├── bronze_<tabela>.yml     # GERADO — testes (unique/not_null na PK)
-    │   │   ├── bronze_transacoes.sql   # EXEMPLO (enabled via DBT_DEMO_ENABLED)
-    │   │   └── _bronze__models.yml     # EXEMPLO
-    │   ├── silver/  gold/              # EXEMPLO (transacoes) — sem codegen ainda
-    └── staging/                        # EXEMPLO
+    │   │   └── bronze_transacoes.sql   # EXEMPLO (enabled via DBT_DEMO_ENABLED)
+    │   ├── silver/
+    │   │   ├── _properties.yml         # (só o exemplo por enquanto — sem codegen)
+    │   │   └── silver_transacoes.sql
+    │   └── gold/
+    │       ├── _properties.yml
+    │       └── gold_kpis_transacoes.sql
+    └── staging/                        # EXEMPLO (_properties.yml + _datacore__sources.yml)
 ```
+
+Cada pasta de camada tem **um** `_properties.yml` com todos os modelos daquela
+camada. Para a Bronze ele é gerado (bloco fixo do `bronze_transacoes` + uma
+entrada por modelo gerado, a partir de `_generated_bronze.json`).
 
 ## Como funciona
 
@@ -37,8 +46,10 @@ dbt/
   serve qualquer integração cuja raw tenha `raw_usuarios` — a `source` resolve o
   dataset via `env_var('DBT_RAW_DATASET')` e a saída via `env_var('DBT_SCHEMA_BRONZE')`,
   ambos setados pelo gateway **por requisição**. Regenerar sobrescreve o arquivo.
-- **`_datacore_raw__sources.yml`** é gerado a partir de `_generated_sources.json`,
-  que acumula as tabelas conforme integrações são criadas (merge, não substitui).
+- **`_datacore_raw__sources.yml`** e **`medallion/bronze/_properties.yml`** são
+  gerados a partir de manifestos JSON (`_generated_sources.json` /
+  `_generated_bronze.json`) que **acumulam** entre integrações (merge, não
+  substituem) — criar a integração B não apaga os modelos da A.
 - **`bronze_<tabela>.sql`**: renome das colunas selecionadas +
   `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake` +
   `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de

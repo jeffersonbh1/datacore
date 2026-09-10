@@ -47,7 +47,10 @@ export interface WriteModelsResult {
 
 const SOURCE_NAME = 'datacore_raw';
 const SOURCES_FILE = '_datacore_raw__sources.yml';
-const MANIFEST_FILE = '_generated_sources.json';
+const SOURCES_MANIFEST_FILE = '_generated_sources.json';
+// Um arquivo de propriedades por camada, com todos os modelos da camada.
+const PROPERTIES_FILE = '_properties.yml';
+const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
 
 // Windows + OneDrive às vezes seguram um handle e devolvem EPERM/EBUSY momentâneo.
 function retrySync<T>(fn: () => T, tries = 5, delayMs = 120): T {
@@ -87,19 +90,21 @@ function piiMacroFor(column: string): PiiMacro | null {
   return null;
 }
 
+// --- manifestos (json fora de model-paths) -------------------------------------
+
+function readJsonManifest<T>(projectDir: string, file: string): T {
+  const p = join(projectDir, file);
+  if (!existsSync(p)) return {} as T;
+  try {
+    return JSON.parse(readFileSync(p, 'utf8')) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
 // --- sources ---------------------------------------------------------------
 
 type SourcesManifest = Record<string, { identifier: string }>;
-
-function readManifest(projectDir: string): SourcesManifest {
-  const p = join(projectDir, MANIFEST_FILE);
-  if (!existsSync(p)) return {};
-  try {
-    return JSON.parse(readFileSync(p, 'utf8')) as SourcesManifest;
-  } catch {
-    return {};
-  }
-}
 
 function renderSourcesYml(manifest: SourcesManifest): string {
   const tables = Object.keys(manifest)
@@ -113,7 +118,7 @@ function renderSourcesYml(manifest: SourcesManifest): string {
     .join('\n');
   return `version: 2
 
-# GERADO por server/dbtCodegen.ts a partir de dbt/${MANIFEST_FILE}.
+# GERADO por server/dbtCodegen.ts a partir de dbt/${SOURCES_MANIFEST_FILE}.
 # Não editar à mão — a lista de tabelas cresce conforme integrações são criadas.
 # database/schema resolvem via env var (o gateway seta DBT_GCP_PROJECT / DBT_RAW_DATASET
 # por requisição); os defaults só existem para o \`dbt parse\`/\`dbt docs\` local.
@@ -208,42 +213,65 @@ ${projection}
 ${dedup}`;
 }
 
-function renderBronzeYml(t: IntegrationTableSpec): string | null {
-  const name = bronzeModelName(t.name);
-  const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
-  if (pk.length === 1) {
-    return `version: 2
+// --- _properties.yml da camada Bronze ---------------------------------------
 
-# GERADO por server/dbtCodegen.ts
-models:
-  - name: ${name}
-    description: "Bronze gerado — tabela ${t.name}."
+/** Manifesto: modelo -> { tabela raw, PK }. Acumula entre integrações. */
+type BronzeManifest = Record<string, { table: string; pk: string[] }>;
+
+/** Bloco YAML (item de `models:`) de um modelo Bronze gerado. */
+function bronzeModelBlock(name: string, table: string, pk: string[]): string {
+  if (pk.length === 1) {
+    return `  - name: ${name}
+    description: "Bronze gerado — tabela ${table}."
     columns:
       - name: ${pk[0]}
-        data_tests: [unique, not_null]
-`;
+        data_tests: [unique, not_null]`;
   }
   if (pk.length > 1) {
-    return `version: 2
-
-# GERADO por server/dbtCodegen.ts
-models:
-  - name: ${name}
-    description: "Bronze gerado — tabela ${t.name}."
+    return `  - name: ${name}
+    description: "Bronze gerado — tabela ${table}."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
 ${pk.map((k) => `            - ${k}`).join('\n')}
     columns:
-${pk.map((k) => `      - name: ${k}\n        data_tests: [not_null]`).join('\n')}
-`;
+${pk.map((k) => `      - name: ${k}\n        data_tests: [not_null]`).join('\n')}`;
   }
+  return `  - name: ${name}
+    description: "Bronze gerado — tabela ${table} (sem PK; sem deduplicação)."`;
+}
+
+// Bloco fixo do modelo de EXEMPLO (bronze_transacoes). Fica no _properties.yml
+// para a camada ter "todos os dados" num arquivo só; só participa do build com
+// DBT_DEMO_ENABLED=true.
+const BRONZE_DEMO_BLOCK = `  - name: bronze_transacoes
+    description: "EXEMPLO — Bronze do seed transacoes (só com DBT_DEMO_ENABLED=true)."
+    columns:
+      - name: id_transacao
+        data_tests: [unique, not_null]
+      - name: status_transacao
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ["APROVADO", "PENDENTE", "CANCELADO", "RECUSADO", "PAID", "SUCCESS", "CAPTURADO", "FAILED"]
+              config:
+                severity: warn
+      - name: dt_ingestao_lake
+        data_tests: [not_null]`;
+
+function renderBronzePropertiesYml(manifest: BronzeManifest): string {
+  const generated = Object.keys(manifest)
+    .sort()
+    .map((name) => bronzeModelBlock(name, manifest[name].table, manifest[name].pk))
+    .join('\n');
   return `version: 2
 
-# GERADO por server/dbtCodegen.ts
+# _properties.yml — CAMADA BRONZE (todos os modelos da camada num arquivo só).
+# bronze_transacoes é EXEMPLO (fixo). As demais entradas são GERADAS por
+# server/dbtCodegen.ts a partir de dbt/${BRONZE_MANIFEST_FILE} — não editar à mão.
 models:
-  - name: ${name}
-    description: "Bronze gerado — tabela ${t.name} (sem PK; sem deduplicação)."
+${BRONZE_DEMO_BLOCK}
+${generated}
 `;
 }
 
@@ -290,27 +318,31 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   retrySync(() => mkdirSync(sourcesDir, { recursive: true }));
 
   // 1) source: acumula as tabelas no manifesto e re-renderiza o yml
-  const manifest = readManifest(projectDir);
+  const sourcesManifest = readJsonManifest<SourcesManifest>(projectDir, SOURCES_MANIFEST_FILE);
   for (const t of spec.tables) {
-    manifest[sanitizeIdent(t.name)] = { identifier: `raw_${t.name}` };
+    sourcesManifest[sanitizeIdent(t.name)] = { identifier: `raw_${t.name}` };
   }
-  retrySync(() => writeFileSync(join(projectDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n', 'utf8'));
-  retrySync(() => writeFileSync(join(sourcesDir, SOURCES_FILE), renderSourcesYml(manifest), 'utf8'));
+  retrySync(() => writeFileSync(join(projectDir, SOURCES_MANIFEST_FILE), JSON.stringify(sourcesManifest, null, 2) + '\n', 'utf8'));
+  retrySync(() => writeFileSync(join(sourcesDir, SOURCES_FILE), renderSourcesYml(sourcesManifest), 'utf8'));
 
-  // 2) um bronze_<tabela>.sql (+ .yml) por tabela — sobrescreve
-  const files: string[] = [SOURCES_FILE];
+  // 2) um bronze_<tabela>.sql por tabela — sobrescreve
+  const files: string[] = [SOURCES_FILE, PROPERTIES_FILE];
   const models: string[] = [];
   for (const t of spec.tables) {
     const base = bronzeModelName(t.name);
     retrySync(() => writeFileSync(join(bronzeDir, `${base}.sql`), renderBronzeSql(spec, t), 'utf8'));
     files.push(`${base}.sql`);
-    const yml = renderBronzeYml(t);
-    if (yml) {
-      retrySync(() => writeFileSync(join(bronzeDir, `${base}.yml`), yml, 'utf8'));
-      files.push(`${base}.yml`);
-    }
     models.push(base);
   }
+
+  // 3) _properties.yml da camada: acumula {modelo -> tabela, PK} e re-renderiza
+  const bronzeManifest = readJsonManifest<BronzeManifest>(projectDir, BRONZE_MANIFEST_FILE);
+  for (const t of spec.tables) {
+    const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
+    bronzeManifest[bronzeModelName(t.name)] = { table: t.name, pk };
+  }
+  retrySync(() => writeFileSync(join(projectDir, BRONZE_MANIFEST_FILE), JSON.stringify(bronzeManifest, null, 2) + '\n', 'utf8'));
+  retrySync(() => writeFileSync(join(bronzeDir, PROPERTIES_FILE), renderBronzePropertiesYml(bronzeManifest), 'utf8'));
 
   const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
   let git: Pick<WriteModelsResult, 'git' | 'gitDetail'> = { git: 'skipped' };
@@ -318,7 +350,7 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     git = await gitCommit(bronzeDir, `dbt: modelos Bronze (${models.join(', ')})`, mode === 'push');
   }
 
-  return { dir: bronzeDir, files, models, sources: Object.keys(manifest), ...git };
+  return { dir: bronzeDir, files, models, sources: Object.keys(sourcesManifest), ...git };
 }
 
 /** Lista os modelos Bronze gerados (bronze_*.sql em models/medallion/bronze/). */

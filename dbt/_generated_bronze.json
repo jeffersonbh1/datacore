@@ -1,0 +1,66 @@
+{
+  "bronze_dbt_execucoes": {
+    "table": "dbt_execucoes",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_dbt_modelos": {
+    "table": "dbt_modelos",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_dbt_ultima_execucao": {
+    "table": "dbt_ultima_execucao",
+    "pk": []
+  },
+  "bronze_destinos": {
+    "table": "destinos",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_empresas": {
+    "table": "empresas",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_integracoes": {
+    "table": "integracoes",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_origens": {
+    "table": "origens",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_tabelas_carregadas": {
+    "table": "tabelas_carregadas",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_usuarios": {
+    "table": "usuarios",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_pipeline_runs": {
+    "table": "pipeline_runs",
+    "pk": [
+      "id"
+    ]
+  },
+  "bronze_pipelines": {
+    "table": "pipelines",
+    "pk": [
+      "id"
+    ]
+  }
+}
