@@ -179,7 +179,16 @@ export function buildPipelineFromIntegration(
     status: 'idle',
     config: {
       destinationTable: `${destination.databaseOrDataset}.[${selectedTables.join(', ')}]`,
-      writeMode: destination.writeMode
+      writeMode: destination.writeMode,
+      bigquery: isBigQueryDestination && bronzeDataset ? {
+        projectId: destination.accountOrProject,
+        rawDataset,
+        bronzeDataset,
+        silverDataset: bronzeDataset.replace(/^bronze_/, 'silver_'),
+        tables: selectedTables,
+        location: destination.warehouseOrCluster || undefined,
+        sistema: source.name,
+      } : undefined,
     }
   });
   bronzeNodeIds.forEach((bronzeNodeId, i) => {

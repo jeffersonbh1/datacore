@@ -4,6 +4,7 @@ import {
   bronzeModelName,
   listGeneratedModels,
   readGeneratedModelSql,
+  silverModelName,
   writeGeneratedModelSql,
   writeIntegrationModels,
   type IntegrationModelsSpec,
@@ -141,18 +142,24 @@ dbtModelsRouter.get('/', (_req, res) => {
   res.json({ models: listGeneratedModels() });
 });
 
-// Resolve (sistema, tabela) -> nome do modelo, com o mesmo slug usado no codegen
-// (server/dbtCodegen.ts::bronzeModelName). Usado pelo editor visual, que só
-// conhece o nome do sistema/tabela do node — não o nome do modelo já fatiado.
+// Resolve (sistema, tabela, camada) -> nome do modelo, com o mesmo slug usado no
+// codegen (server/dbtCodegen.ts::bronzeModelName/silverModelName). Usado pelo
+// editor visual, que só conhece o nome do sistema/tabela do node — não o nome
+// do modelo já fatiado. "layer" default "bronze" mantém compat com chamadas antigas.
+function resolveModelName(sistema: string, table: string, layer: string): string {
+  return layer === 'silver' ? silverModelName(sistema, table) : bronzeModelName(sistema, table);
+}
+
 dbtModelsRouter.get('/by-table/sql', (req, res) => {
   try {
     const sistema = String(req.query.sistema || '');
     const table = String(req.query.table || '');
+    const layer = String(req.query.layer || 'bronze');
     if (!sistema || !table) {
       res.status(400).json({ error: 'Query params "sistema" e "table" são obrigatórios.' });
       return;
     }
-    const name = bronzeModelName(sistema, table);
+    const name = resolveModelName(sistema, table, layer);
     const sql = readGeneratedModelSql(name);
     res.json({ name, sql });
   } catch (err) {
@@ -164,6 +171,7 @@ dbtModelsRouter.put('/by-table/sql', (req, res) => {
   try {
     const sistema = String(req.query.sistema || '');
     const table = String(req.query.table || '');
+    const layer = String(req.query.layer || 'bronze');
     const { sql } = req.body as { sql?: string };
     if (!sistema || !table) {
       res.status(400).json({ error: 'Query params "sistema" e "table" são obrigatórios.' });
@@ -173,7 +181,7 @@ dbtModelsRouter.put('/by-table/sql', (req, res) => {
       res.status(400).json({ error: 'Campo "sql" (string não vazia) é obrigatório.' });
       return;
     }
-    const name = bronzeModelName(sistema, table);
+    const name = resolveModelName(sistema, table, layer);
     writeGeneratedModelSql(name, sql);
     res.json({ ok: true, name });
   } catch (err) {

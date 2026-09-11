@@ -312,22 +312,44 @@ export async function buildBronzeLayer(payload: {
 }
 
 /**
- * Lê o .sql real de um modelo Bronze gerado (o mesmo arquivo que `dbt build`
- * executa) — usado pelo editor visual do Studio ao abrir um nó Bronze, em vez
- * do template genérico de demonstração.
+ * Camada Silver: mesmo mecanismo real da Bronze — `dbt build --select
+ * silver_<sistema>_<t1> ...` sobre os modelos em models/medallion/silver/,
+ * gerados a partir do Bronze correspondente (ver server/dbtCodegen.ts).
+ * Reaproveita os tipos de resultado da Bronze (mesmo formato).
  */
-export async function getBronzeModelSql(sistema: string, table: string): Promise<{ name: string; sql: string }> {
-  const qs = new URLSearchParams({ sistema, table });
+export async function buildSilverLayer(payload: {
+  projectId: string;
+  rawDataset: string;
+  bronzeDataset: string;
+  silverDataset?: string;
+  tables: string[];
+  sistema?: string;
+  location?: string;
+  fullRefresh?: boolean;
+}): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
+  return gatewayFetch('/api/bigquery/silver/build', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Lê o .sql real de um modelo Bronze/Silver gerado (o mesmo arquivo que `dbt
+ * build` executa) — usado pelo editor visual do Studio ao abrir um nó Bronze
+ * ou Silver, em vez do template genérico de demonstração.
+ */
+export async function getBronzeModelSql(sistema: string, table: string, layer: 'bronze' | 'silver' = 'bronze'): Promise<{ name: string; sql: string }> {
+  const qs = new URLSearchParams({ sistema, table, layer });
   return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`);
 }
 
 /**
- * Sobrescreve o .sql de um modelo Bronze já gerado. Edição manual: a próxima
- * regeração da integração (criação/re-sync) sobrescreve de novo, como
+ * Sobrescreve o .sql de um modelo Bronze/Silver já gerado. Edição manual: a
+ * próxima regeração da integração (criação/re-sync) sobrescreve de novo, como
  * qualquer outro arquivo gerado por server/dbtCodegen.ts.
  */
-export async function saveBronzeModelSql(sistema: string, table: string, sql: string): Promise<{ ok: boolean; name: string }> {
-  const qs = new URLSearchParams({ sistema, table });
+export async function saveBronzeModelSql(sistema: string, table: string, sql: string, layer: 'bronze' | 'silver' = 'bronze'): Promise<{ ok: boolean; name: string }> {
+  const qs = new URLSearchParams({ sistema, table, layer });
   return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`, {
     method: 'PUT',
     body: JSON.stringify({ sql }),

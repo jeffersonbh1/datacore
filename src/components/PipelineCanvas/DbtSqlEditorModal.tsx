@@ -16,12 +16,16 @@ interface DbtSqlEditorModalProps {
   canEdit: boolean;
   /** Real "Construir Camada Bronze" action — only rendered for bronze nodes with a BigQuery destination. */
   canBuildBronze: boolean;
+  /** Real "Construir Camada Silver" action — only rendered for the silver node with a BigQuery destination. */
+  canBuildSilver: boolean;
   /** true quando a carga da Raw (Passo 1, nó "source") ainda não rodou ou está rodando —
-   *  já refletido em `canBuildBronze`, mas exposto à parte para mostrar o motivo certo. */
+   *  já refletido em `canBuildBronze`/`canBuildSilver`, mas exposto à parte para mostrar o motivo certo. */
   rawSyncBlocked: boolean;
   rawSyncStatus: NodeStatus;
   bronzeBuild: { status: 'idle' | 'running' | 'done' | 'error'; results?: BronzeTableResult[]; error?: string };
+  silverBuild: { status: 'idle' | 'running' | 'done' | 'error'; results?: BronzeTableResult[]; error?: string };
   onBuildBronze: (fullRefresh?: boolean) => void;
+  onBuildSilver: (fullRefresh?: boolean) => void;
 }
 
 export type DbtLayer = 'bronze' | 'silver' | 'gold';
@@ -268,10 +272,13 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   onClose,
   canEdit,
   canBuildBronze,
+  canBuildSilver,
   rawSyncBlocked,
   rawSyncStatus,
   bronzeBuild,
-  onBuildBronze
+  silverBuild,
+  onBuildBronze,
+  onBuildSilver
 }) => {
   const layer = getDbtLayer(node);
 
@@ -301,14 +308,14 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   const [compileStatus, setCompileStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  // Bronze + BigQuery nodes are backed by a real file at
-  // dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<tabela>.sql — o mesmo
-  // que `dbt build` executa. Para as outras camadas (Silver/Gold) e Bronze sem
-  // destino BigQuery ainda não existe codegen real: o editor mostra um rascunho
-  // de demonstração, guardado só na config do node (node.config.dbtSql).
+  // Bronze/Silver + BigQuery nodes são apoiados por um arquivo real em
+  // dbt/models/medallion/<camada>/<sistema>/<camada>_<sistema>_<tabela>.sql —
+  // o mesmo que `dbt build` executa. Para a camada Gold e nós sem destino
+  // BigQuery ainda não existe codegen real: o editor mostra um rascunho de
+  // demonstração, guardado só na config do node (node.config.dbtSql).
   const bqTables = node.config.bigquery?.tables || [];
   const sistema = node.config.bigquery?.sistema || '';
-  const isRealBronzeModel = layer === 'bronze' && bqTables.length > 0 && !!sistema;
+  const isRealDbtModel = (layer === 'bronze' || layer === 'silver') && bqTables.length > 0 && !!sistema;
   const [selectedTable, setSelectedTable] = useState<string>(bqTables[0] || '');
   const [isLoadingSql, setIsLoadingSql] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -317,11 +324,11 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
-    if (!isRealBronzeModel || !selectedTable) return;
+    if (!isRealDbtModel || !selectedTable) return;
     let cancelled = false;
     setIsLoadingSql(true);
     setLoadError(null);
-    getBronzeModelSql(sistema, selectedTable)
+    getBronzeModelSql(sistema, selectedTable, layer === 'silver' ? 'silver' : 'bronze')
       .then(({ name, sql }) => {
         if (cancelled) return;
         setModelName(name);
@@ -337,7 +344,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable, sistema, isRealBronzeModel]);
+  }, [selectedTable, sistema, isRealDbtModel, layer]);
 
   // Auto-compilation simulation
   const getCompiledSql = (sourceCode: string): string => {
@@ -396,11 +403,11 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   };
 
   const handleSave = async () => {
-    if (isRealBronzeModel) {
+    if (isRealDbtModel) {
       setIsSavingSql(true);
       setSaveError(null);
       try {
-        await saveBronzeModelSql(sistema, selectedTable, sqlCode);
+        await saveBronzeModelSql(sistema, selectedTable, sqlCode, layer === 'silver' ? 'silver' : 'bronze');
         onSave(node.id, sqlCode, modelName, materialization);
         setIsDirty(false);
         setSaveSuccess(true);
@@ -521,7 +528,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
 
             {/* Reset to Automatic — escondido nos modelos reais: sobrescreveria o
                 arquivo .sql do projeto com o template de demonstração. */}
-            {canEdit && !isRealBronzeModel && (
+            {canEdit && !isRealDbtModel && (
               <button
                 type="button"
                 id="btn-dbt-reset-auto"
@@ -649,130 +656,172 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
           </div>
         </div>
 
-        {/* Real "Construir Camada Bronze" action — mirrors every table Airbyte
-            already replicated into raw_ into bronze_, via the gateway's BigQuery
-            route. Only shown for bronze nodes on a BigQuery destination. */}
-        {layer === 'bronze' && node.config.bigquery && (
-          <div className="px-5 py-3 bg-orange-950/40 border-b border-orange-900/60 text-xs shrink-0 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-orange-200 font-mono">
-                <Database className="w-4 h-4 text-orange-400 shrink-0" />
-                <span className="font-semibold">{node.config.bigquery.rawDataset}</span>
-                <span className="text-orange-500">→</span>
-                <span className="font-semibold">{node.config.bigquery.bronzeDataset}</span>
-                <span className="text-orange-400/80">
-                  ({node.config.bigquery.tables.length} {node.config.bigquery.tables.length === 1 ? 'tabela' : 'tabelas'})
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  id="btn-build-bronze"
-                  disabled={!canBuildBronze || bronzeBuild.status === 'running'}
-                  onClick={() => onBuildBronze(false)}
-                  title={rawSyncBlocked ? 'Bloqueado: a carga da Raw (Passo 1) ainda não terminou' : undefined}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    !canBuildBronze || bronzeBuild.status === 'running'
-                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                      : 'bg-orange-600 hover:bg-orange-500 text-white'
-                  }`}
-                >
-                  {bronzeBuild.status === 'running' ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : rawSyncBlocked ? (
-                    <Lock className="w-3.5 h-3.5" />
-                  ) : (
-                    <Play className="w-3.5 h-3.5" />
-                  )}
-                  <span>{bronzeBuild.status === 'running' ? 'Construindo...' : 'Construir Camada Bronze (BigQuery real)'}</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-build-bronze-full"
-                  disabled={!canBuildBronze || bronzeBuild.status === 'running'}
-                  onClick={() => onBuildBronze(true)}
-                  title={rawSyncBlocked ? 'Bloqueado: a carga da Raw (Passo 1) ainda não terminou' : 'Reconstrói do zero (--full-refresh). Use na 1ª vez, ou quando o schema mudou / a tabela veio do modo antigo.'}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer border ${
-                    !canBuildBronze || bronzeBuild.status === 'running'
-                      ? 'bg-slate-800 text-slate-600 border-slate-800 cursor-not-allowed'
-                      : 'bg-slate-800 hover:bg-slate-700 text-orange-300 border-orange-900/60'
-                  }`}
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Do zero</span>
-                </button>
-              </div>
-            </div>
+        {/* Real "Construir Camada Bronze/Silver" action — mirrors every table
+            Airbyte already replicated into raw_ into bronze_/silver_, via the
+            gateway's BigQuery route. Only shown for bronze/silver nodes on a
+            BigQuery destination. */}
+        {(layer === 'bronze' || layer === 'silver') && node.config.bigquery && (() => {
+          const isSilver = layer === 'silver';
+          const layerLabel = isSilver ? 'Silver' : 'Bronze';
+          const activeBuild = isSilver ? silverBuild : bronzeBuild;
+          const canBuild = isSilver ? canBuildSilver : canBuildBronze;
+          const onBuild = isSilver ? onBuildSilver : onBuildBronze;
+          const outputDataset = isSilver ? node.config.bigquery.silverDataset : node.config.bigquery.bronzeDataset;
+          const blockedTitle = 'Bloqueado: a carga da Raw (Passo 1) ainda não terminou';
 
-            {rawSyncBlocked && (
-              <div className="flex items-center gap-1.5 text-slate-300 bg-slate-900/60 border border-slate-700 rounded-lg px-2.5 py-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>
-                  {rawSyncStatus === 'running'
-                    ? 'A sincronização da Raw (Passo 1) está em execução — aguarde terminar para construir a Bronze.'
-                    : 'A carga da Raw (Passo 1) ainda não foi executada nenhuma vez — sincronize a origem antes de construir a Bronze.'}
-                </span>
-              </div>
-            )}
+          // Tailwind precisa das classes por extenso no código-fonte (não gera
+          // CSS pra `bg-${accent}-950/40` interpolado) — daí este mapa em vez
+          // de montar as classes dinamicamente por cor.
+          const theme = isSilver ? {
+            section: 'px-5 py-3 bg-teal-950/40 border-b border-teal-900/60 text-xs shrink-0 space-y-2',
+            headerText: 'flex items-center gap-2 text-teal-200 font-mono',
+            headerIcon: 'w-4 h-4 text-teal-400 shrink-0',
+            arrow: 'text-teal-500',
+            count: 'text-teal-400/80',
+            buildBtnActive: 'bg-teal-600 hover:bg-teal-500 text-white',
+            fullBtnActive: 'bg-slate-800 hover:bg-slate-700 text-teal-300 border-teal-900/60',
+            tableRow: 'flex items-center gap-2 text-teal-200',
+            tableIcon: 'w-3.5 h-3.5 text-teal-400 shrink-0',
+            tableLabel: 'text-teal-400/80',
+            select: 'bg-slate-900 border border-teal-900/60 rounded px-2 py-1 text-teal-200 font-mono text-xs',
+            fileRow: 'flex items-center gap-1.5 text-teal-400/80 font-mono text-[11px]',
+          } : {
+            section: 'px-5 py-3 bg-orange-950/40 border-b border-orange-900/60 text-xs shrink-0 space-y-2',
+            headerText: 'flex items-center gap-2 text-orange-200 font-mono',
+            headerIcon: 'w-4 h-4 text-orange-400 shrink-0',
+            arrow: 'text-orange-500',
+            count: 'text-orange-400/80',
+            buildBtnActive: 'bg-orange-600 hover:bg-orange-500 text-white',
+            fullBtnActive: 'bg-slate-800 hover:bg-slate-700 text-orange-300 border-orange-900/60',
+            tableRow: 'flex items-center gap-2 text-orange-200',
+            tableIcon: 'w-3.5 h-3.5 text-orange-400 shrink-0',
+            tableLabel: 'text-orange-400/80',
+            select: 'bg-slate-900 border border-orange-900/60 rounded px-2 py-1 text-orange-200 font-mono text-xs',
+            fileRow: 'flex items-center gap-1.5 text-orange-400/80 font-mono text-[11px]',
+          };
 
-            {bqTables.length > 1 && (
-              <div className="flex items-center gap-2 text-orange-200">
-                <FileCode className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-                <span className="text-orange-400/80">Editando o modelo de:</span>
-                <select
-                  id="select-bronze-table"
-                  value={selectedTable}
-                  onChange={(e) => {
-                    if (isDirty && !window.confirm('Trocar de tabela descarta as edições não salvas deste modelo. Continuar?')) return;
-                    setSelectedTable(e.target.value);
-                  }}
-                  className="bg-slate-900 border border-orange-900/60 rounded px-2 py-1 text-orange-200 font-mono text-xs"
-                >
-                  {bqTables.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center gap-1.5 text-orange-400/80 font-mono text-[11px]">
-              <FileCode className="w-3.5 h-3.5 shrink-0" />
-              <span>Arquivo real: dbt/models/medallion/bronze/.../{modelName}.sql</span>
-              {isLoadingSql && <RefreshCw className="w-3 h-3 animate-spin ml-1" />}
-            </div>
-
-            {loadError && (
-              <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{loadError}</span>
-              </div>
-            )}
-
-            {bronzeBuild.error && (
-              <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{bronzeBuild.error}</span>
-              </div>
-            )}
-
-            {bronzeBuild.results && (
-              <div className="flex flex-wrap gap-1.5">
-                {bronzeBuild.results.map(r => (
-                  <span
-                    key={r.table}
-                    title={r.error}
-                    className={`flex items-center gap-1 px-2 py-1 rounded font-mono text-[11px] border ${
-                      r.status === 'ok'
-                        ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
-                        : 'bg-rose-950/50 border-rose-800 text-rose-300'
+          return (
+            <div className={theme.section}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className={theme.headerText}>
+                  <Database className={theme.headerIcon} />
+                  <span className="font-semibold">{node.config.bigquery.rawDataset}</span>
+                  <span className={theme.arrow}>→</span>
+                  <span className="font-semibold">{outputDataset}</span>
+                  <span className={theme.count}>
+                    ({node.config.bigquery.tables.length} {node.config.bigquery.tables.length === 1 ? 'tabela' : 'tabelas'})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    id={`btn-build-${layer}`}
+                    disabled={!canBuild || activeBuild.status === 'running'}
+                    onClick={() => onBuild(false)}
+                    title={rawSyncBlocked ? blockedTitle : undefined}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      !canBuild || activeBuild.status === 'running'
+                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        : theme.buildBtnActive
                     }`}
                   >
-                    {r.status === 'ok' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                    {r.table}
-                  </span>
-                ))}
+                    {activeBuild.status === 'running' ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : rawSyncBlocked ? (
+                      <Lock className="w-3.5 h-3.5" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5" />
+                    )}
+                    <span>{activeBuild.status === 'running' ? 'Construindo...' : `Construir Camada ${layerLabel} (BigQuery real)`}</span>
+                  </button>
+                  <button
+                    type="button"
+                    id={`btn-build-${layer}-full`}
+                    disabled={!canBuild || activeBuild.status === 'running'}
+                    onClick={() => onBuild(true)}
+                    title={rawSyncBlocked ? blockedTitle : 'Reconstrói do zero (--full-refresh). Use na 1ª vez, ou quando o schema mudou / a tabela veio do modo antigo.'}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer border ${
+                      !canBuild || activeBuild.status === 'running'
+                        ? 'bg-slate-800 text-slate-600 border-slate-800 cursor-not-allowed'
+                        : theme.fullBtnActive
+                    }`}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Do zero</span>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        )}
+
+              {rawSyncBlocked && (
+                <div className="flex items-center gap-1.5 text-slate-300 bg-slate-900/60 border border-slate-700 rounded-lg px-2.5 py-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    {rawSyncStatus === 'running'
+                      ? `A sincronização da Raw (Passo 1) está em execução — aguarde terminar para construir a ${layerLabel}.`
+                      : `A carga da Raw (Passo 1) ainda não foi executada nenhuma vez — sincronize a origem antes de construir a ${layerLabel}.`}
+                  </span>
+                </div>
+              )}
+
+              {bqTables.length > 1 && (
+                <div className={theme.tableRow}>
+                  <FileCode className={theme.tableIcon} />
+                  <span className={theme.tableLabel}>Editando o modelo de:</span>
+                  <select
+                    id={`select-${layer}-table`}
+                    value={selectedTable}
+                    onChange={(e) => {
+                      if (isDirty && !window.confirm('Trocar de tabela descarta as edições não salvas deste modelo. Continuar?')) return;
+                      setSelectedTable(e.target.value);
+                    }}
+                    className={theme.select}
+                  >
+                    {bqTables.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className={theme.fileRow}>
+                <FileCode className="w-3.5 h-3.5 shrink-0" />
+                <span>Arquivo real: dbt/models/medallion/{layer}/.../{modelName}.sql</span>
+                {isLoadingSql && <RefreshCw className="w-3 h-3 animate-spin ml-1" />}
+              </div>
+
+              {loadError && (
+                <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{loadError}</span>
+                </div>
+              )}
+
+              {activeBuild.error && (
+                <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{activeBuild.error}</span>
+                </div>
+              )}
+
+              {activeBuild.results && (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeBuild.results.map(r => (
+                    <span
+                      key={r.table}
+                      title={r.error}
+                      className={`flex items-center gap-1 px-2 py-1 rounded font-mono text-[11px] border ${
+                        r.status === 'ok'
+                          ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
+                          : 'bg-rose-950/50 border-rose-800 text-rose-300'
+                      }`}
+                    >
+                      {r.status === 'ok' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                      {r.table}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Compile Banner Feedback if exists */}
         {compileStatus && (
@@ -877,8 +926,8 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
             <span className="hidden sm:inline">
-              {isRealBronzeModel
-                ? `Salvar grava direto no arquivo .sql do projeto dbt — a próxima construção da Bronze (ou "Do zero") usa este conteúdo.`
+              {isRealDbtModel
+                ? `Salvar grava direto no arquivo .sql do projeto dbt — a próxima construção da ${layer === 'silver' ? 'Silver' : 'Bronze'} (ou "Do zero") usa este conteúdo.`
                 : 'O código editado é salvo na configuração do nó da pipeline (ainda não gera um arquivo dbt real nesta camada).'}
             </span>
             {saveError && <span className="text-rose-400">{saveError}</span>}
@@ -892,7 +941,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
             >
-              {isRealBronzeModel ? 'Fechar' : 'Cancelar'}
+              {isRealDbtModel ? 'Fechar' : 'Cancelar'}
             </button>
 
             <button

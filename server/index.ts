@@ -10,6 +10,7 @@ import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { dbtModelsRouter } from './routes/dbtModels';
 import { destinationsRouter } from './routes/destinations';
+import { silverRouter } from './routes/silver';
 import { sourcesRouter } from './routes/sources';
 import { streamsRouter } from './routes/streams';
 import { workspacesRouter } from './routes/workspaces';
@@ -31,6 +32,7 @@ app.use('/api/airbyte/workspaces', requireGatewayApiKey, workspacesRouter);
 app.use('/api/auth', requireGatewayApiKey, authAdminRouter);
 app.use('/api/bigquery/bronze', requireGatewayApiKey, bronzeRouter);
 app.use('/api/bigquery/bronze/auto-sync', requireGatewayApiKey, bronzeAutoSyncRouter);
+app.use('/api/bigquery/silver', requireGatewayApiKey, silverRouter);
 app.use('/api/dbt/models', requireGatewayApiKey, dbtModelsRouter);
 
 const port = Number(process.env.PORT) || 8080;

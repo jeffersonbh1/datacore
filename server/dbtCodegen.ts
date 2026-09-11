@@ -45,6 +45,8 @@ export interface WriteModelsResult {
   sistema: string;
   files: string[];
   models: string[];
+  /** Modelos Silver gerados (1 por tabela, passthrough do Bronze — ver renderSilverSql). */
+  silverModels: string[];
   sources: string[];
   git: 'skipped' | 'committed' | 'pushed' | 'failed';
   gitDetail?: string;
@@ -55,6 +57,7 @@ const SOURCES_FILE = '_datacore_raw__sources.yml';
 const SOURCES_MANIFEST_FILE = '_generated_sources.json';
 const PROPERTIES_FILE = '_properties.yml';
 const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
+const SILVER_MANIFEST_FILE = '_generated_silver.json';
 
 // Windows + OneDrive às vezes seguram um handle e devolvem EPERM/EBUSY momentâneo.
 function retrySync<T>(fn: () => T, tries = 5, delayMs = 120): T {
@@ -90,6 +93,11 @@ export function sistemaSlug(sistema: string): string {
 /** Nome do modelo Bronze: bronze_<sistema>_<tabela>. */
 export function bronzeModelName(sistema: string, table: string): string {
   return `bronze_${sistemaSlug(sistema)}_${sanitizeIdent(table)}`;
+}
+
+/** Nome do modelo Silver: silver_<sistema>_<tabela>. */
+export function silverModelName(sistema: string, table: string): string {
+  return `silver_${sistemaSlug(sistema)}_${sanitizeIdent(table)}`;
 }
 
 type PiiMacro = 'mascarar_cpf' | 'tokenizar_email' | 'hash_sha256';
@@ -230,22 +238,53 @@ ${projection}
 ${dedup}`;
 }
 
+// --- modelo Silver ----------------------------------------------------------
+// Curadoria mínima real: um modelo por tabela, materializado como table, lendo
+// do Bronze já tipado/deduplicado/sanitizado (LGPD). Sem regra de negócio
+// específica — isso não dá pra gerar automaticamente —, mas é dbt de verdade,
+// executa contra o BigQuery real e fica em models/medallion/silver/<sistema>/
+// pronto para o usuário estender (o editor visual do Studio edita este mesmo
+// arquivo). Regenerar sobrescreve, igual à Bronze.
+function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
+  const sys = sistemaSlug(spec.sistema);
+  const srcName = sanitizeIdent(t.name);
+  const bronzeRef = bronzeModelName(spec.sistema, t.name);
+  const modelAlias = `silver_${sys}_${srcName}`;
+
+  return `{{ config(
+    materialized = 'table'
+    , alias = '${modelAlias}'
+) }}
+
+-- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Silver, tabela ${t.name}.
+-- A regeração sobrescreve este arquivo. Ponto de partida: passthrough do Bronze
+-- já tipado/deduplicado/sanitizado — adicione aqui as regras de curadoria do
+-- negócio (joins, métricas, renomes analíticos) conforme necessário.
+-- Origem: ref('${bronzeRef}')
+-- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
+
+select * from {{ ref('${bronzeRef}') }}
+`;
+}
+
 // --- _properties.yml por sistema ------------------------------------------------
 
 /** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK }. Acumula por sistema. */
 type BronzeManifest = Record<string, Record<string, { table: string; pk: string[] }>>;
 
-function bronzeModelBlock(name: string, table: string, pk: string[]): string {
+type Layer = 'Bronze' | 'Silver';
+
+function layerModelBlock(layer: Layer, name: string, table: string, pk: string[]): string {
   if (pk.length === 1) {
     return `  - name: ${name}
-    description: "Bronze gerado — tabela ${table}."
+    description: "${layer} gerado — tabela ${table}."
     columns:
       - name: ${pk[0]}
         data_tests: [unique, not_null]`;
   }
   if (pk.length > 1) {
     return `  - name: ${name}
-    description: "Bronze gerado — tabela ${table}."
+    description: "${layer} gerado — tabela ${table}."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
@@ -254,19 +293,25 @@ ${pk.map((k) => `            - ${k}`).join('\n')}
 ${pk.map((k) => `      - name: ${k}\n        data_tests: [not_null]`).join('\n')}`;
   }
   return `  - name: ${name}
-    description: "Bronze gerado — tabela ${table} (sem PK; sem deduplicação)."`;
+    description: "${layer} gerado — tabela ${table} (sem PK; sem deduplicação)."`;
 }
 
-function renderSistemaPropertiesYml(sistema: string, sys: string, models: Record<string, { table: string; pk: string[] }>): string {
+function renderSistemaPropertiesYml(
+  layer: Layer,
+  manifestFile: string,
+  sistema: string,
+  sys: string,
+  models: Record<string, { table: string; pk: string[] }>,
+): string {
   const blocks = Object.keys(models)
     .sort()
-    .map((name) => bronzeModelBlock(name, models[name].table, models[name].pk))
+    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk))
     .join('\n');
   return `version: 2
 
-# _properties.yml — sistema "${sistema}" (${sys}), camada Bronze.
+# _properties.yml — sistema "${sistema}" (${sys}), camada ${layer}.
 # TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
-# dbt/${BRONZE_MANIFEST_FILE} — não editar à mão.
+# dbt/${manifestFile} — não editar à mão.
 models:
 ${blocks}
 `;
@@ -312,8 +357,10 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   const sys = sistemaSlug(spec.sistema);
   const projectDir = resolveDbtProjectDir();
   const sysDir = join(projectDir, 'models', 'medallion', 'bronze', sys);
+  const silverSysDir = join(projectDir, 'models', 'medallion', 'silver', sys);
   const sourcesDir = join(projectDir, 'models', 'sources');
   retrySync(() => mkdirSync(sysDir, { recursive: true }));
+  retrySync(() => mkdirSync(silverSysDir, { recursive: true }));
   retrySync(() => mkdirSync(sourcesDir, { recursive: true }));
 
   // 1) source compartilhada: acumula as tabelas e re-renderiza o yml
@@ -343,49 +390,76 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   }
   bronzeManifest[sys] = sysModels;
   retrySync(() => writeFileSync(join(projectDir, BRONZE_MANIFEST_FILE), JSON.stringify(bronzeManifest, null, 2) + '\n', 'utf8'));
-  retrySync(() => writeFileSync(join(sysDir, PROPERTIES_FILE), renderSistemaPropertiesYml(spec.sistema, sys, sysModels), 'utf8'));
+  retrySync(() => writeFileSync(join(sysDir, PROPERTIES_FILE), renderSistemaPropertiesYml('Bronze', BRONZE_MANIFEST_FILE, spec.sistema, sys, sysModels), 'utf8'));
+
+  // 4) um modelo Silver por tabela em models/medallion/silver/<sistema>/ — mesmo
+  // padrão da Bronze: passthrough do Bronze correspondente, pronto para o
+  // usuário adicionar as regras de curadoria pelo editor visual do Studio.
+  const silverModels: string[] = [];
+  for (const t of spec.tables) {
+    const base = silverModelName(spec.sistema, t.name);
+    retrySync(() => writeFileSync(join(silverSysDir, `${base}.sql`), renderSilverSql(spec, t), 'utf8'));
+    files.push(`${sys}/${base}.sql`);
+    silverModels.push(base);
+  }
+  const silverManifest = readJsonManifest<BronzeManifest>(projectDir, SILVER_MANIFEST_FILE);
+  const silverSysModels = silverManifest[sys] || {};
+  for (const t of spec.tables) {
+    const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
+    silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk };
+  }
+  silverManifest[sys] = silverSysModels;
+  retrySync(() => writeFileSync(join(projectDir, SILVER_MANIFEST_FILE), JSON.stringify(silverManifest, null, 2) + '\n', 'utf8'));
+  retrySync(() => writeFileSync(join(silverSysDir, PROPERTIES_FILE), renderSistemaPropertiesYml('Silver', SILVER_MANIFEST_FILE, spec.sistema, sys, silverSysModels), 'utf8'));
+  files.push(`${sys}/${PROPERTIES_FILE} (silver)`);
 
   const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
   let git: Pick<WriteModelsResult, 'git' | 'gitDetail'> = { git: 'skipped' };
   if (mode === 'commit' || mode === 'push') {
-    git = await gitCommit(sysDir, `dbt: modelos Bronze do sistema ${sys} (${models.length})`, mode === 'push');
+    git = await gitCommit(sysDir, `dbt: modelos Bronze+Silver do sistema ${sys} (${models.length}+${silverModels.length})`, mode === 'push');
   }
 
-  return { dir: sysDir, sistema: sys, files, models, sources: Object.keys(sourcesManifest), ...git };
+  return { dir: sysDir, sistema: sys, files, models, silverModels, sources: Object.keys(sourcesManifest), ...git };
 }
 
-/** Lista os modelos Bronze gerados (bronze_*.sql em models/medallion/bronze/<sistema>/). */
+/** Lista os modelos Bronze/Silver gerados ({bronze,silver}_*.sql em models/medallion/<camada>/<sistema>/). */
 export function listGeneratedModels(): string[] {
-  const base = join(resolveDbtProjectDir(), 'models', 'medallion', 'bronze');
-  if (!existsSync(base)) return [];
+  const medallionDir = join(resolveDbtProjectDir(), 'models', 'medallion');
   const out: string[] = [];
-  for (const entry of readdirSync(base, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    for (const f of readdirSync(join(base, entry.name))) {
-      if (f.startsWith('bronze_') && f.endsWith('.sql')) out.push(f.replace(/\.sql$/, ''));
+  for (const layerDir of ['bronze', 'silver']) {
+    const base = join(medallionDir, layerDir);
+    if (!existsSync(base)) continue;
+    for (const entry of readdirSync(base, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      for (const f of readdirSync(join(base, entry.name))) {
+        if (f.startsWith(`${layerDir}_`) && f.endsWith('.sql')) out.push(f.replace(/\.sql$/, ''));
+      }
     }
   }
   return out.sort();
 }
 
-/** Localiza o .sql de um modelo Bronze gerado por nome, em qualquer subpasta de sistema. */
+/** Localiza o .sql de um modelo Bronze ou Silver gerado por nome, em qualquer sistema/camada. */
 function findGeneratedModelPath(name: string): string | null {
   // Mesmo charset de sanitizeIdent/sistemaSlug — barra path traversal.
   if (!/^[A-Za-z0-9_]+$/.test(name)) return null;
-  const base = join(resolveDbtProjectDir(), 'models', 'medallion', 'bronze');
-  if (!existsSync(base)) return null;
-  for (const entry of readdirSync(base, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const candidate = join(base, entry.name, `${name}.sql`);
-    if (existsSync(candidate)) return candidate;
+  const medallionDir = join(resolveDbtProjectDir(), 'models', 'medallion');
+  for (const layerDir of ['bronze', 'silver']) {
+    const base = join(medallionDir, layerDir);
+    if (!existsSync(base)) continue;
+    for (const entry of readdirSync(base, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const candidate = join(base, entry.name, `${name}.sql`);
+      if (existsSync(candidate)) return candidate;
+    }
   }
   return null;
 }
 
-/** Lê o .sql de um modelo Bronze gerado (o mesmo arquivo que o `dbt build` executa). */
+/** Lê o .sql de um modelo Bronze/Silver gerado (o mesmo arquivo que o `dbt build` executa). */
 export function readGeneratedModelSql(name: string): string {
   const path = findGeneratedModelPath(name);
-  if (!path) throw new Error(`Modelo dbt "${name}" não encontrado em models/medallion/bronze/.`);
+  if (!path) throw new Error(`Modelo dbt "${name}" não encontrado em models/medallion/{bronze,silver}/.`);
   return readFileSync(path, 'utf8');
 }
 

@@ -5,10 +5,10 @@ import {
   Lock, Eye, Code2, CheckCircle, AlertCircle, RefreshCw, ZoomIn, 
   ZoomOut, Maximize2, X, Download, Sliders, ChevronRight
 } from 'lucide-react';
-import { CanvasNode, CanvasEdge, Pipeline, NodeType, PIIType, MaskingMethod } from '../../types';
+import { CanvasNode, CanvasEdge, Pipeline, NodeType, NodeStatus, PIIType, MaskingMethod } from '../../types';
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
 import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
-import { buildBronzeLayer, BronzeTableResult, fetchConnectionJobs } from '../../lib/airbyteGateway';
+import { buildBronzeLayer, buildSilverLayer, BronzeTableResult, fetchConnectionJobs, triggerAirbyteSync } from '../../lib/airbyteGateway';
 import { mapSyncStatusToNodeStatus } from '../../lib/pipelineBuilder';
 
 interface VisualCanvasProps {
@@ -51,8 +51,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [edges, setEdges] = useState<CanvasEdge[]>(pipeline.edges);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
   const [dbtEditingNode, setDbtEditingNode] = useState<CanvasNode | null>(null);
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [activeStepIndex, setActiveStepIndex] = useState<number>(-1);
+  const [isExecutingPipeline, setIsExecutingPipeline] = useState(false);
+  const [pipelineExecError, setPipelineExecError] = useState<string | null>(null);
   const [showDataPreview, setShowDataPreview] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
@@ -62,6 +62,11 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragDistance, setDragDistance] = useState(0);
   const [bronzeBuild, setBronzeBuild] = useState<{
+    status: 'idle' | 'running' | 'done' | 'error';
+    results?: BronzeTableResult[];
+    error?: string;
+  }>({ status: 'idle' });
+  const [silverBuild, setSilverBuild] = useState<{
     status: 'idle' | 'running' | 'done' | 'error';
     results?: BronzeTableResult[];
     error?: string;
@@ -313,32 +318,172 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     }
   };
 
-  // Run visual simulation
-  const runSimulation = () => {
-    if (isSimulating || !canExecute) return;
-    setIsSimulating(true);
-    setActiveStepIndex(0);
+  // Camada Silver real: mesmo mecanismo da Bronze, um único nó cobrindo todas as
+  // tabelas selecionadas (ver bigquery.tables no nó silver em pipelineBuilder.ts).
+  const handleBuildSilver = async (node: CanvasNode, fullRefresh = false) => {
+    const bq = node.config.bigquery;
+    if (!bq || silverBuild.status === 'running' || rawSyncBlocked) return;
 
-    // Sequence through nodes
-    nodes.forEach((node, index) => {
-      setTimeout(() => {
-        setActiveStepIndex(index);
-        setNodes(current =>
-          current.map((n, i) => ({
-            ...n,
-            status: i < index ? 'success' : i === index ? 'running' : 'idle'
-          }))
-        );
+    setSilverBuild({ status: 'running' });
+    try {
+      const { results } = await buildSilverLayer({ ...bq, fullRefresh });
+      const failed = results.filter(r => r.status === 'error');
+      const hasFailure = failed.length > 0;
+      setSilverBuild({
+        status: hasFailure ? 'error' : 'done',
+        results,
+        error: hasFailure ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+      });
 
-        if (index === nodes.length - 1) {
-          setTimeout(() => {
-            setNodes(current => current.map(n => ({ ...n, status: 'success' })));
-            setIsSimulating(false);
-            setActiveStepIndex(-1);
-          }, 1200);
-        }
-      }, index * 900);
+      const newStatus = hasFailure ? 'error' : 'success';
+      const updatedNodes = nodes.map(n => n.id === node.id ? { ...n, status: newStatus } : n);
+      setNodes(updatedNodes);
+      if (selectedNode && selectedNode.id === node.id) {
+        setSelectedNode({ ...selectedNode, status: newStatus });
+      }
+      onUpdatePipeline({ ...pipeline, nodes: updatedNodes });
+    } catch (err) {
+      setSilverBuild({ status: 'error', error: err instanceof Error ? err.message : 'Falha ao construir a camada Silver.' });
+    }
+  };
+
+  // Aguarda o job de sync mais recente da conexão sair de 'running'/'pending',
+  // consultando o Airbyte real a cada poucos segundos (mesmo endpoint do botão
+  // "Atualizar Status"). Usado só dentro de handleExecutePipeline — não é o
+  // polling de fundo (esse já existe em refreshSourceSyncStatus/useEffect acima).
+  const waitForSyncToFinish = async (connectionId: string, timeoutMs = 10 * 60 * 1000): Promise<NodeStatus> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const jobs = await fetchConnectionJobs(connectionId, 1);
+      if (jobs.length) {
+        const mapped = mapSyncStatusToNodeStatus(jobs[0].status);
+        if (mapped !== 'running') return mapped;
+      }
+      await new Promise(r => setTimeout(r, 5000));
+    }
+    return 'warning'; // timeout — nem sucesso nem falha confirmados
+  };
+
+  const setNodeStatusById = (nodeId: string, status: NodeStatus) => {
+    setNodes(prev => {
+      const updated = prev.map(n => n.id === nodeId ? { ...n, status } : n);
+      onUpdatePipeline({ ...pipeline, nodes: updated });
+      return updated;
     });
+  };
+
+  const setNodesStatusByType = (type: CanvasNode['type'], status: NodeStatus) => {
+    setNodes(prev => {
+      const updated = prev.map(n => n.type === type ? { ...n, status } : n);
+      onUpdatePipeline({ ...pipeline, nodes: updated });
+      return updated;
+    });
+  };
+
+  // Executa o pipeline de verdade, de ponta a ponta: dispara a sincronização real
+  // no Airbyte (carga da Raw), espera terminar, constrói a Bronze (todas as
+  // tabelas) e, se der certo, constrói a Silver. Cada etapa só começa se a
+  // anterior tiver sucesso — mesma regra de "camada bloqueada até a anterior
+  // terminar" já aplicada aos botões manuais de build.
+  const handleExecutePipeline = async () => {
+    if (isExecutingPipeline || !canExecute) return;
+    if (!pipeline.airbyteConnectionId) {
+      setPipelineExecError('Este pipeline não tem uma conexão real no Airbyte — não é possível executar de verdade.');
+      return;
+    }
+
+    setIsExecutingPipeline(true);
+    setPipelineExecError(null);
+
+    try {
+      // 1) RAW — dispara o sync real e espera terminar
+      setNodesStatusByType('source', 'running');
+      await triggerAirbyteSync(pipeline.airbyteConnectionId);
+      const rawResult = await waitForSyncToFinish(pipeline.airbyteConnectionId);
+      setNodesStatusByType('source', rawResult);
+
+      if (rawResult !== 'success') {
+        setPipelineExecError(
+          rawResult === 'warning'
+            ? 'A sincronização da Raw não terminou a tempo (timeout) — execução interrompida.'
+            : 'A sincronização da Raw falhou — execução interrompida.'
+        );
+        return;
+      }
+
+      // 2) BRONZE — constrói todas as tabelas de uma vez (um dbt build só)
+      const bronzeNodes = nodes.filter(n => n.type === 'bronze' && n.config.bigquery);
+      if (bronzeNodes.length > 0) {
+        const bq = bronzeNodes[0].config.bigquery!;
+        const allTables = bronzeNodes.flatMap(n => n.config.bigquery!.tables);
+        setNodesStatusByType('bronze', 'running');
+        setBronzeBuild({ status: 'running' });
+        try {
+          const { results } = await buildBronzeLayer({
+            projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset,
+            tables: allTables, sistema: bq.sistema, location: bq.location,
+          });
+          const byTable = new Map(results.map(r => [r.table, r]));
+          const failed = results.filter(r => r.status === 'error');
+          setBronzeBuild({
+            status: failed.length ? 'error' : 'done',
+            results,
+            error: failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+          });
+          setNodes(prev => {
+            const updated = prev.map(n => {
+              if (n.type !== 'bronze' || !n.config.bigquery) return n;
+              const table = n.config.bigquery.tables[0];
+              const r = byTable.get(table);
+              return { ...n, status: (r?.status === 'ok' ? 'success' : 'error') as NodeStatus };
+            });
+            onUpdatePipeline({ ...pipeline, nodes: updated });
+            return updated;
+          });
+          if (failed.length) {
+            setPipelineExecError(`Falha ao construir a Bronze: ${failed.map(r => r.table).join(', ')} — execução interrompida.`);
+            return;
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Falha ao construir a camada Bronze.';
+          setBronzeBuild({ status: 'error', error: msg });
+          setNodesStatusByType('bronze', 'error');
+          setPipelineExecError(msg);
+          return;
+        }
+      }
+
+      // 3) SILVER — um único nó cobre todas as tabelas
+      const silverNode = nodes.find(n => n.type === 'silver' && n.config.bigquery);
+      if (silverNode) {
+        const bq = silverNode.config.bigquery!;
+        setNodeStatusById(silverNode.id, 'running');
+        setSilverBuild({ status: 'running' });
+        try {
+          const { results } = await buildSilverLayer({
+            projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset,
+            silverDataset: bq.silverDataset, tables: bq.tables, sistema: bq.sistema, location: bq.location,
+          });
+          const failed = results.filter(r => r.status === 'error');
+          setSilverBuild({
+            status: failed.length ? 'error' : 'done',
+            results,
+            error: failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+          });
+          setNodeStatusById(silverNode.id, failed.length ? 'error' : 'success');
+          if (failed.length) {
+            setPipelineExecError(`Falha ao construir a Silver: ${failed.map(r => r.table).join(', ')}.`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Falha ao construir a camada Silver.';
+          setSilverBuild({ status: 'error', error: msg });
+          setNodeStatusById(silverNode.id, 'error');
+          setPipelineExecError(msg);
+        }
+      }
+    } finally {
+      setIsExecutingPipeline(false);
+    }
   };
 
   const handleAddOperator = (op: typeof AVAILABLE_OPERATORS[0]) => {
@@ -648,20 +793,21 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             <span className="md:hidden">DAG</span>
           </button>
 
-          {/* Execute Pipeline */}
+          {/* Execute Pipeline — dispara o fluxo real: sync Airbyte (Raw) -> Bronze -> Silver */}
           <button
-            id="btn-run-simulation"
-            onClick={runSimulation}
-            disabled={isSimulating || !canExecute}
+            id="btn-run-pipeline"
+            onClick={handleExecutePipeline}
+            disabled={isExecutingPipeline || !canExecute}
+            title="Executa de verdade: sincroniza a Raw no Airbyte, depois constrói a Bronze e a Silver via dbt"
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs shrink-0 whitespace-nowrap ${
-              isSimulating
+              isExecutingPipeline
                 ? 'bg-amber-100 text-amber-800 border border-amber-300 cursor-wait'
                 : canExecute
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
                 : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
             }`}
           >
-            {isSimulating ? (
+            {isExecutingPipeline ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
                 <span>Executando...</span>
@@ -675,6 +821,20 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           </button>
         </div>
       </div>
+
+      {pipelineExecError && (
+        <div className="mx-4 mb-2 flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span className="flex-1">{pipelineExecError}</span>
+          <button
+            type="button"
+            onClick={() => setPipelineExecError(null)}
+            className="text-rose-500 hover:text-rose-700 cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Main Studio Area */}
       <div 
@@ -720,7 +880,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
               const dx = Math.abs(x2 - x1) * 0.5;
               const pathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
-              const isEdgeActive = isSimulating && nodes.findIndex(n => n.id === srcNode.id) === activeStepIndex;
+              const isEdgeActive = srcNode.status === 'running';
 
               return (
                 <g key={edge.id}>
@@ -746,10 +906,10 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           </svg>
 
           {/* Interactive Pipeline Nodes */}
-          {nodes.map((node, index) => {
+          {nodes.map((node) => {
             if (!isNodeVisible(node)) return null;
             const isSelected = selectedNode?.id === node.id;
-            const isRunningNow = isSimulating && activeStepIndex === index;
+            const isRunningNow = node.status === 'running';
 
             return (
               <div
@@ -1657,10 +1817,13 @@ with DAG(
           onSave={handleSaveDbtModel}
           onClose={() => setDbtEditingNode(null)}
           canBuildBronze={canExecute && !rawSyncBlocked}
+          canBuildSilver={canExecute && !rawSyncBlocked}
           rawSyncBlocked={rawSyncBlocked}
           rawSyncStatus={rawSyncStatus}
           bronzeBuild={bronzeBuild}
+          silverBuild={silverBuild}
           onBuildBronze={(fullRefresh) => handleBuildBronze(dbtEditingNode, fullRefresh)}
+          onBuildSilver={(fullRefresh) => handleBuildSilver(dbtEditingNode, fullRefresh)}
         />
       )}
     </div>

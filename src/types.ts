@@ -37,14 +37,18 @@ export interface CanvasNode {
     dbtSql?: string;
     dbtModelName?: string;
     dbtMaterialization?: 'view' | 'table' | 'incremental' | 'ephemeral';
-    /** Bronze node only, BigQuery destinations only — inputs for the real "Construir Camada Bronze" action. */
+    /** Bronze/Silver nodes only, BigQuery destinations only — inputs for the real
+     *  "Construir Camada Bronze/Silver" actions. Bronze nodes carry one table each;
+     *  the single Silver node carries every table selected in the integration. */
     bigquery?: {
       projectId: string;
       rawDataset: string;
       bronzeDataset: string;
+      /** Silver node only. Default (server-side): bronzeDataset com bronze_ trocado por silver_. */
+      silverDataset?: string;
       tables: string[];
       location?: string;
-      /** Nome da origem — casa com os modelos em models/medallion/bronze/<sistema>/. */
+      /** Nome da origem — casa com os modelos em models/medallion/<camada>/<sistema>/. */
       sistema?: string;
     };
   };
