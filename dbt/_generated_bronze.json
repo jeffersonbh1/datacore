@@ -168,5 +168,19 @@
         "id"
       ]
     }
+  },
+  "crm": {
+    "bronze_crm_usuarios": {
+      "table": "usuarios",
+      "pk": [
+        "id"
+      ]
+    },
+    "bronze_crm_pipelines": {
+      "table": "pipelines",
+      "pk": [
+        "id"
+      ]
+    }
   }
 }
