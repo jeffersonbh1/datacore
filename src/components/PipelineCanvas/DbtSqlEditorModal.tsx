@@ -6,7 +6,7 @@ import {
   HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 import { CanvasNode, Pipeline, CanvasEdge } from '../../types';
-import { BronzeTableResult } from '../../lib/airbyteGateway';
+import { BronzeTableResult, getBronzeModelSql, saveBronzeModelSql } from '../../lib/airbyteGateway';
 
 interface DbtSqlEditorModalProps {
   node: CanvasNode;
@@ -295,6 +295,44 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   const [compileStatus, setCompileStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Bronze + BigQuery nodes are backed by a real file at
+  // dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<tabela>.sql — o mesmo
+  // que `dbt build` executa. Para as outras camadas (Silver/Gold) e Bronze sem
+  // destino BigQuery ainda não existe codegen real: o editor mostra um rascunho
+  // de demonstração, guardado só na config do node (node.config.dbtSql).
+  const bqTables = node.config.bigquery?.tables || [];
+  const sistema = node.config.bigquery?.sistema || '';
+  const isRealBronzeModel = layer === 'bronze' && bqTables.length > 0 && !!sistema;
+  const [selectedTable, setSelectedTable] = useState<string>(bqTables[0] || '');
+  const [isLoadingSql, setIsLoadingSql] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isSavingSql, setIsSavingSql] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isRealBronzeModel || !selectedTable) return;
+    let cancelled = false;
+    setIsLoadingSql(true);
+    setLoadError(null);
+    getBronzeModelSql(sistema, selectedTable)
+      .then(({ name, sql }) => {
+        if (cancelled) return;
+        setModelName(name);
+        setSqlCode(sql);
+        setIsDirty(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : 'Falha ao carregar o modelo dbt.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSql(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTable, sistema, isRealBronzeModel]);
+
   // Auto-compilation simulation
   const getCompiledSql = (sourceCode: string): string => {
     let compiled = sourceCode;
@@ -351,7 +389,23 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isRealBronzeModel) {
+      setIsSavingSql(true);
+      setSaveError(null);
+      try {
+        await saveBronzeModelSql(sistema, selectedTable, sqlCode);
+        onSave(node.id, sqlCode, modelName, materialization);
+        setIsDirty(false);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2000);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Falha ao salvar o modelo dbt.');
+      } finally {
+        setIsSavingSql(false);
+      }
+      return;
+    }
     onSave(node.id, sqlCode, modelName, materialization);
     setIsDirty(false);
     onClose();
@@ -459,8 +513,9 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               <span className="hidden sm:inline">dbt compile</span>
             </button>
 
-            {/* Reset to Automatic */}
-            {canEdit && (
+            {/* Reset to Automatic — escondido nos modelos reais: sobrescreveria o
+                arquivo .sql do projeto com o template de demonstração. */}
+            {canEdit && !isRealBronzeModel && (
               <button
                 type="button"
                 id="btn-dbt-reset-auto"
@@ -640,6 +695,37 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               </div>
             </div>
 
+            {bqTables.length > 1 && (
+              <div className="flex items-center gap-2 text-orange-200">
+                <FileCode className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <span className="text-orange-400/80">Editando o modelo de:</span>
+                <select
+                  id="select-bronze-table"
+                  value={selectedTable}
+                  onChange={(e) => {
+                    if (isDirty && !window.confirm('Trocar de tabela descarta as edições não salvas deste modelo. Continuar?')) return;
+                    setSelectedTable(e.target.value);
+                  }}
+                  className="bg-slate-900 border border-orange-900/60 rounded px-2 py-1 text-orange-200 font-mono text-xs"
+                >
+                  {bqTables.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 text-orange-400/80 font-mono text-[11px]">
+              <FileCode className="w-3.5 h-3.5 shrink-0" />
+              <span>Arquivo real: dbt/models/medallion/bronze/.../{modelName}.sql</span>
+              {isLoadingSql && <RefreshCw className="w-3 h-3 animate-spin ml-1" />}
+            </div>
+
+            {loadError && (
+              <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{loadError}</span>
+              </div>
+            )}
+
             {bronzeBuild.error && (
               <div className="flex items-start gap-1.5 bg-rose-950/60 border border-rose-800 rounded-lg p-2 text-rose-300">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -771,8 +857,12 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
             <span className="hidden sm:inline">
-              O código editado é salvo diretamente na configuração do nó da pipeline e integrado ao CI/CD do dbt.
+              {isRealBronzeModel
+                ? `Salvar grava direto no arquivo .sql do projeto dbt — a próxima construção da Bronze (ou "Do zero") usa este conteúdo.`
+                : 'O código editado é salvo na configuração do nó da pipeline (ainda não gera um arquivo dbt real nesta camada).'}
             </span>
+            {saveError && <span className="text-rose-400">{saveError}</span>}
+            {saveSuccess && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Salvo no arquivo dbt.</span>}
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
@@ -782,22 +872,22 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
             >
-              Cancelar
+              {isRealBronzeModel ? 'Fechar' : 'Cancelar'}
             </button>
 
             <button
               type="button"
               id="btn-dbt-save"
               onClick={handleSave}
-              disabled={!canEdit}
+              disabled={!canEdit || isLoadingSql || isSavingSql}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition shadow-md cursor-pointer ${
-                canEdit 
-                  ? 'bg-gradient-to-r from-[#FF694B] to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-orange-950' 
+                canEdit && !isLoadingSql && !isSavingSql
+                  ? 'bg-gradient-to-r from-[#FF694B] to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-orange-950'
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
             >
-              <Check className="w-4 h-4" />
-              <span>Salvar Modelo dbt</span>
+              {isSavingSql ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              <span>{isSavingSql ? 'Salvando...' : 'Salvar Modelo dbt'}</span>
             </button>
           </div>
         </div>

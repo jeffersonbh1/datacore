@@ -298,3 +298,26 @@ export async function buildBronzeLayer(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * Lê o .sql real de um modelo Bronze gerado (o mesmo arquivo que `dbt build`
+ * executa) — usado pelo editor visual do Studio ao abrir um nó Bronze, em vez
+ * do template genérico de demonstração.
+ */
+export async function getBronzeModelSql(sistema: string, table: string): Promise<{ name: string; sql: string }> {
+  const qs = new URLSearchParams({ sistema, table });
+  return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`);
+}
+
+/**
+ * Sobrescreve o .sql de um modelo Bronze já gerado. Edição manual: a próxima
+ * regeração da integração (criação/re-sync) sobrescreve de novo, como
+ * qualquer outro arquivo gerado por server/dbtCodegen.ts.
+ */
+export async function saveBronzeModelSql(sistema: string, table: string, sql: string): Promise<{ ok: boolean; name: string }> {
+  const qs = new URLSearchParams({ sistema, table });
+  return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify({ sql }),
+  });
+}

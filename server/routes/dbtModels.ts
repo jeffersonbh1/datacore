@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { airbyteFetch } from '../airbyteClient';
 import {
+  bronzeModelName,
   listGeneratedModels,
+  readGeneratedModelSql,
+  writeGeneratedModelSql,
   writeIntegrationModels,
   type IntegrationModelsSpec,
   type IntegrationTableSpec,
@@ -136,4 +139,72 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
 
 dbtModelsRouter.get('/', (_req, res) => {
   res.json({ models: listGeneratedModels() });
+});
+
+// Resolve (sistema, tabela) -> nome do modelo, com o mesmo slug usado no codegen
+// (server/dbtCodegen.ts::bronzeModelName). Usado pelo editor visual, que só
+// conhece o nome do sistema/tabela do node — não o nome do modelo já fatiado.
+dbtModelsRouter.get('/by-table/sql', (req, res) => {
+  try {
+    const sistema = String(req.query.sistema || '');
+    const table = String(req.query.table || '');
+    if (!sistema || !table) {
+      res.status(400).json({ error: 'Query params "sistema" e "table" são obrigatórios.' });
+      return;
+    }
+    const name = bronzeModelName(sistema, table);
+    const sql = readGeneratedModelSql(name);
+    res.json({ name, sql });
+  } catch (err) {
+    res.status(404).json({ error: err instanceof Error ? err.message : 'Modelo dbt não encontrado.' });
+  }
+});
+
+dbtModelsRouter.put('/by-table/sql', (req, res) => {
+  try {
+    const sistema = String(req.query.sistema || '');
+    const table = String(req.query.table || '');
+    const { sql } = req.body as { sql?: string };
+    if (!sistema || !table) {
+      res.status(400).json({ error: 'Query params "sistema" e "table" são obrigatórios.' });
+      return;
+    }
+    if (typeof sql !== 'string' || !sql.trim()) {
+      res.status(400).json({ error: 'Campo "sql" (string não vazia) é obrigatório.' });
+      return;
+    }
+    const name = bronzeModelName(sistema, table);
+    writeGeneratedModelSql(name, sql);
+    res.json({ ok: true, name });
+  } catch (err) {
+    res.status(404).json({ error: err instanceof Error ? err.message : 'Falha ao salvar o modelo dbt.' });
+  }
+});
+
+// Conteúdo real do .sql gerado (o mesmo arquivo que `dbt build` executa) — usado
+// pelo editor visual do Studio para exibir/editar o modelo de fato, em vez de um
+// template genérico desconectado do projeto dbt.
+dbtModelsRouter.get('/:name/sql', (req, res) => {
+  try {
+    const sql = readGeneratedModelSql(req.params.name);
+    res.json({ name: req.params.name, sql });
+  } catch (err) {
+    res.status(404).json({ error: err instanceof Error ? err.message : 'Modelo dbt não encontrado.' });
+  }
+});
+
+// Sobrescreve o .sql de um modelo já gerado. Edição manual: uma regeração da
+// integração (criação/re-sync) sobrescreve de novo, como qualquer arquivo gerado.
+dbtModelsRouter.put('/:name/sql', (req, res) => {
+  try {
+    const { sql } = req.body as { sql?: string };
+    if (typeof sql !== 'string' || !sql.trim()) {
+      res.status(400).json({ error: 'Campo "sql" (string não vazia) é obrigatório.' });
+      return;
+    }
+    writeGeneratedModelSql(req.params.name, sql);
+    res.json({ ok: true, name: req.params.name });
+  } catch (err) {
+    res.status(404).json({ error: err instanceof Error ? err.message : 'Falha ao salvar o modelo dbt.' });
+  }
 });

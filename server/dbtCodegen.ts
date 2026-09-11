@@ -367,3 +367,36 @@ export function listGeneratedModels(): string[] {
   }
   return out.sort();
 }
+
+/** Localiza o .sql de um modelo Bronze gerado por nome, em qualquer subpasta de sistema. */
+function findGeneratedModelPath(name: string): string | null {
+  // Mesmo charset de sanitizeIdent/sistemaSlug — barra path traversal.
+  if (!/^[A-Za-z0-9_]+$/.test(name)) return null;
+  const base = join(resolveDbtProjectDir(), 'models', 'medallion', 'bronze');
+  if (!existsSync(base)) return null;
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const candidate = join(base, entry.name, `${name}.sql`);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Lê o .sql de um modelo Bronze gerado (o mesmo arquivo que o `dbt build` executa). */
+export function readGeneratedModelSql(name: string): string {
+  const path = findGeneratedModelPath(name);
+  if (!path) throw new Error(`Modelo dbt "${name}" não encontrado em models/medallion/bronze/.`);
+  return readFileSync(path, 'utf8');
+}
+
+/**
+ * Sobrescreve o .sql de um modelo Bronze já gerado (edição manual no Studio).
+ * Só edita arquivos existentes — um modelo inexistente precisa ser gerado antes
+ * (POST /api/dbt/models). A próxima regeração da integração (writeIntegrationModels)
+ * sobrescreve esta edição manual, como qualquer outro arquivo gerado.
+ */
+export function writeGeneratedModelSql(name: string, sql: string): void {
+  const path = findGeneratedModelPath(name);
+  if (!path) throw new Error(`Modelo dbt "${name}" não encontrado — gere o modelo da integração antes de editá-lo.`);
+  retrySync(() => writeFileSync(path, sql, 'utf8'));
+}
