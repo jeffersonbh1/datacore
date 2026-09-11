@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_datacore_integracoes'
+    , alias = 'bronze_salesforce_integracoes'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela integracoes.
+-- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela integracoes.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'integracoes')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_integracoes  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_integracoes  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'integracoes') }}

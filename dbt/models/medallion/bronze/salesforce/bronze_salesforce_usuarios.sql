@@ -1,14 +1,14 @@
 {{ config(
     materialized = 'incremental'
-    , alias = 'bronze_datacore_usuarios'
+    , alias = 'bronze_salesforce_usuarios'
     , unique_key = 'id'
     , incremental_strategy = 'merge'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela usuarios.
+-- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela usuarios.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'usuarios')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_usuarios  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_usuarios  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'usuarios') }}

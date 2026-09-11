@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_datacore_pipeline_runs'
+    , alias = 'bronze_salesforce_pipeline_runs'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela pipeline_runs.
+-- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela pipeline_runs.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'pipeline_runs')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_pipeline_runs  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_pipeline_runs  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'pipeline_runs') }}

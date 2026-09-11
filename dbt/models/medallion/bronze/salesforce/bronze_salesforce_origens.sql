@@ -1,26 +1,25 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_datacore_destinos'
+    , alias = 'bronze_salesforce_origens'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela destinos.
+-- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela origens.
 -- A regeração sobrescreve este arquivo.
--- Origem: source('datacore_raw', 'destinos')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_destinos  (renome + LGPD Art. 46 + dedup CDC)
+-- Origem: source('datacore_raw', 'origens')  (dataset via DBT_RAW_DATASET)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_origens  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
-    select * from {{ source('datacore_raw', 'destinos') }}
+    select * from {{ source('datacore_raw', 'origens') }}
 ),
 
 tipado as (
     select
         tipo,
         criado_em,
-        modo_escrita,
         configuracao,
+        airbyte_source_id,
         nome,
         id_empresa,
-        airbyte_destination_id,
         id,
         status,
         cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
