@@ -160,7 +160,7 @@ mesmo workspace do Airbyte e a mesma service account do BigQuery.
 | Gateway | BigQuery | HTTPS (API) | service account JSON | Rodar `dbt build`, criar datasets e tabelas Bronze |
 | Airbyte | BigQuery | HTTPS | service account (do destino) | Escrever as tabelas `raw_*` |
 
-> **Rede.** A VM do Airbyte tem IP externo efêmero (`34.39.241.52` hoje) e a
+> **Rede.** A VM do Airbyte tem IP externo efêmero (`34.95.218.184` hoje) e a
 > porta 8000 precisa de regra de firewall para o Cloud Run. Em produção:
 > reservar IP estático *ou* usar VPC connector + IP interno.
 

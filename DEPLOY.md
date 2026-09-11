@@ -11,7 +11,7 @@ Frontend  ── Cloud Run (serve estático do dist/)         imagem: Dockerfile
   ▼
 Gateway   ── Cloud Run (Express, server/)                imagem: Dockerfile  (+ dbt)
   ├── Supabase  (Auth admin + Postgres/RLS)   HTTPS
-  ├── Airbyte   VM 34.39.241.52:8000          HTTP  ← precisa de firewall/IP fixo
+  ├── Airbyte   VM 34.95.218.184:8000          HTTP  ← precisa de firewall/IP fixo
   └── BigQuery  (camadas Bronze/Silver/Gold)  HTTPS, via service account
 ```
 
@@ -24,7 +24,7 @@ Gateway são deployados aqui.
 
 | # | Item | Estado hoje | Ação |
 |---|------|-------------|------|
-| 1 | IP do Airbyte | `.env.local` apontava para `34.39.184.77` (mudou após restart) | ✅ atualizado p/ `34.39.241.52`; ver passo 2 p/ prod |
+| 1 | IP do Airbyte | `.env.local` apontava para `34.39.241.52` (mudou após restart) | ✅ atualizado p/ `34.95.218.184`; ver passo 2 p/ prod |
 | 2 | IP **efêmero** da VM | muda a cada stop/start | **Reservar IP estático** OU usar VPC connector + IP interno |
 | 3 | Firewall da VM :8000 | provavelmente fechado p/ o Cloud Run | abrir (passo 2) |
 | 4 | Deploy do gateway | não existia cloudbuild | ✅ `cloudbuild.gateway.yaml` criado |
@@ -83,7 +83,7 @@ O gateway (Cloud Run) precisa alcançar `:8000` da VM. Escolha **A** (rápido) o
 ```bash
 # 1. Promover o IP efêmero atual a estático (para não mudar em restart)
 gcloud compute addresses create airbyte-ip --region=$REGION \
-  --addresses=34.39.241.52                       # falha se já não estiver livre; então:
+  --addresses=34.95.218.184                       # falha se já não estiver livre; então:
 # gcloud compute addresses create airbyte-ip --region=$REGION
 # e reassociar o novo IP à instância (gcloud compute instances delete-access-config / add-access-config)
 
@@ -96,7 +96,7 @@ gcloud compute firewall-rules create allow-airbyte-api \
 gcloud compute instances add-tags <NOME_DA_VM> --zone=<ZONA> --tags=airbyte
 ```
 
-`_AIRBYTE_BASE_URL=http://34.39.241.52:8000`
+`_AIRBYTE_BASE_URL=http://34.95.218.184:8000`
 
 ### B. VPC connector + IP interno (recomendado)
 
@@ -163,7 +163,7 @@ export IMAGE=$REGION-docker.pkg.dev/$PROJ/datacore/gateway:$(git rev-parse --sho
 gcloud builds submit --config cloudbuild.gateway.yaml --substitutions=\
 _IMAGE=$IMAGE,_REGION=$REGION,_SERVICE=datacore-gateway,_RUNTIME_SA=$GATEWAY_SA,\
 _SUPABASE_URL=https://umpltpxoqtlbnpmjwclt.supabase.co,\
-_AIRBYTE_BASE_URL=http://34.39.241.52:8000,\
+_AIRBYTE_BASE_URL=http://34.95.218.184:8000,\
 _AIRBYTE_CLIENT_ID=<client id>,_AIRBYTE_WORKSPACE_ID=<workspace id>,\
 _DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false,_DBT_CODEGEN_GIT=off
 ```

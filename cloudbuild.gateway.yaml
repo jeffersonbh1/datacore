@@ -45,7 +45,7 @@ substitutions:
   _IMAGE: ''            # obrigatório
   _RUNTIME_SA: ''       # obrigatório — SA de runtime do Cloud Run
   _SUPABASE_URL: ''
-  _AIRBYTE_BASE_URL: 'http://34.39.241.52:8000'
+  _AIRBYTE_BASE_URL: 'http://34.95.218.184:8000'
   _AIRBYTE_CLIENT_ID: ''
   _AIRBYTE_WORKSPACE_ID: ''
   _DBT_GCP_PROJECT: data-plataform-dev
