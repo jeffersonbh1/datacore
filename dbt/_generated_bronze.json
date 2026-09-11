@@ -2,11 +2,15 @@
   "datacore": {
     "bronze_datacore_dbt_execucoes": {
       "table": "dbt_execucoes",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_dbt_modelos": {
       "table": "dbt_modelos",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_dbt_ultima_execucao": {
       "table": "dbt_ultima_execucao",
@@ -14,169 +18,47 @@
     },
     "bronze_datacore_destinos": {
       "table": "destinos",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_empresas": {
       "table": "empresas",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_integracoes": {
       "table": "integracoes",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_origens": {
       "table": "origens",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_tabelas_carregadas": {
       "table": "tabelas_carregadas",
-      "pk": []
+      "pk": [
+        "id"
+      ]
     },
     "bronze_datacore_usuarios": {
       "table": "usuarios",
-      "pk": []
-    }
-  },
-  "datacore1": {
-    "bronze_datacore1_dbt_execucoes": {
-      "table": "dbt_execucoes",
       "pk": [
         "id"
       ]
     },
-    "bronze_datacore1_dbt_modelos": {
-      "table": "dbt_modelos",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_dbt_ultima_execucao": {
-      "table": "dbt_ultima_execucao",
-      "pk": []
-    },
-    "bronze_datacore1_destinos": {
-      "table": "destinos",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_empresas": {
-      "table": "empresas",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_integracoes": {
-      "table": "integracoes",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_origens": {
-      "table": "origens",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_pipeline_runs": {
+    "bronze_datacore_pipeline_runs": {
       "table": "pipeline_runs",
       "pk": [
         "id"
       ]
     },
-    "bronze_datacore1_pipelines": {
-      "table": "pipelines",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_tabelas_carregadas": {
-      "table": "tabelas_carregadas",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacore1_usuarios": {
-      "table": "usuarios",
-      "pk": [
-        "id"
-      ]
-    }
-  },
-  "datacoredbt": {
-    "bronze_datacoredbt_dbt_execucoes": {
-      "table": "dbt_execucoes",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_dbt_modelos": {
-      "table": "dbt_modelos",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_dbt_ultima_execucao": {
-      "table": "dbt_ultima_execucao",
-      "pk": []
-    },
-    "bronze_datacoredbt_destinos": {
-      "table": "destinos",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_empresas": {
-      "table": "empresas",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_integracoes": {
-      "table": "integracoes",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_origens": {
-      "table": "origens",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_pipeline_runs": {
-      "table": "pipeline_runs",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_pipelines": {
-      "table": "pipelines",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_tabelas_carregadas": {
-      "table": "tabelas_carregadas",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_datacoredbt_usuarios": {
-      "table": "usuarios",
-      "pk": [
-        "id"
-      ]
-    }
-  },
-  "crm": {
-    "bronze_crm_usuarios": {
-      "table": "usuarios",
-      "pk": [
-        "id"
-      ]
-    },
-    "bronze_crm_pipelines": {
+    "bronze_datacore_pipelines": {
       "table": "pipelines",
       "pk": [
         "id"

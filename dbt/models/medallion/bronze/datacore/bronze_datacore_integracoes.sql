@@ -37,4 +37,13 @@ tipado as (
     from fonte
 )
 
-select * from tipado
+, deduplicado as (
+    select *
+    from tipado
+    qualify row_number() over (
+        partition by id
+        order by dt_ingestao_lake desc
+    ) = 1
+)
+
+select * from deduplicado

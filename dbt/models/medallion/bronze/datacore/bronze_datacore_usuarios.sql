@@ -1,6 +1,8 @@
 {{ config(
-    materialized = 'table'
+    materialized = 'incremental'
     , alias = 'bronze_datacore_usuarios'
+    , unique_key = 'id'
+    , incremental_strategy = 'merge'
 ) }}
 
 -- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela usuarios.
@@ -10,6 +12,9 @@
 
 with fonte as (
     select * from {{ source('datacore_raw', 'usuarios') }}
+    {% if is_incremental() %}
+    where _airbyte_extracted_at > (select max(dt_ingestao_lake) from {{ this }})
+    {% endif %}
 ),
 
 tipado as (
@@ -19,6 +24,7 @@ tipado as (
         dt_alteracao,
         ultimo_acesso_em,
         nome,
+        auth_user_id,
         mfa_habilitado,
         dt_criacao,
         departamento,
@@ -33,4 +39,13 @@ tipado as (
     from fonte
 )
 
-select * from tipado
+, deduplicado as (
+    select *
+    from tipado
+    qualify row_number() over (
+        partition by id
+        order by dt_ingestao_lake desc
+    ) = 1
+)
+
+select * from deduplicado

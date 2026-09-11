@@ -1,12 +1,12 @@
 {{ config(
     materialized = 'table'
-    , alias = 'bronze_datacoredbt_pipelines'
+    , alias = 'bronze_datacore_pipelines'
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "DataCoreDBT", camada Bronze, tabela pipelines.
+-- GERADO por server/dbtCodegen.ts — sistema "DataCore", camada Bronze, tabela pipelines.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'pipelines')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacoredbt_pipelines  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_datacore_pipelines  (renome + LGPD Art. 46 + dedup CDC)
 
 with fonte as (
     select * from {{ source('datacore_raw', 'pipelines') }}
