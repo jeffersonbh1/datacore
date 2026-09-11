@@ -195,6 +195,7 @@ export function buildPipelineFromIntegration(
     // Persisted integrations map to a numeric `integracoes.id` (see mapIntegracaoRow);
     // locally-created ones use a "int-auto-<ts>" string and aren't in the DB.
     integrationId: /^\d+$/.test(integration.id) ? Number(integration.id) : undefined,
+    airbyteConnectionId: integration.airbyteConnectionId,
     name: integration.name,
     description: `Pipeline automático 4 passos (1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver) integrando ${source.name} com ${destination.name}. Tabelas: ${selectedTables.join(', ')}. ${integration.scheduleSummary || ''}.`,
     category: 'Integração Automática Lakehouse',
@@ -239,6 +240,16 @@ export interface PipelineRunSummary {
 
 const FINISHED_STATUSES: PipelineRunSummary['status'][] = ['succeeded', 'failed', 'cancelled', 'incomplete'];
 
+/** Mesmo mapeamento usado por applyRealMetrics — exportado para o polling ao vivo
+ *  do Studio Visual ETL (VisualCanvas), que consulta o Airbyte diretamente sem
+ *  passar pelo pipeline_runs/Supabase. */
+export function mapSyncStatusToNodeStatus(status: PipelineRunSummary['status']): NodeStatus {
+  return status === 'succeeded' ? 'success'
+    : status === 'failed' ? 'error'
+    : status === 'running' ? 'running'
+    : 'warning';
+}
+
 /**
  * Overlays real Airbyte sync history onto a deterministically-built pipeline.
  * `runs` must be ordered most-recent-first. A pipeline with no runs yet is
@@ -264,11 +275,7 @@ export function applyRealMetrics(pipeline: Pipeline, runs: PipelineRunSummary[])
     ? Math.round((finished.filter(r => r.status === 'succeeded').length / finished.length) * 10000) / 100
     : pipeline.actualSla;
 
-  const sourceNodeStatus: NodeStatus =
-    latest.status === 'succeeded' ? 'success'
-    : latest.status === 'failed' ? 'error'
-    : latest.status === 'running' ? 'running'
-    : 'warning';
+  const sourceNodeStatus: NodeStatus = mapSyncStatusToNodeStatus(latest.status);
 
   const lastRunAt = latest.finalizadoEm
     ? new Date(latest.finalizadoEm).toLocaleString('pt-BR')

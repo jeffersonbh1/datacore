@@ -8,7 +8,8 @@ import {
 import { CanvasNode, CanvasEdge, Pipeline, NodeType, PIIType, MaskingMethod } from '../../types';
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
 import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
-import { buildBronzeLayer, BronzeTableResult } from '../../lib/airbyteGateway';
+import { buildBronzeLayer, BronzeTableResult, fetchConnectionJobs } from '../../lib/airbyteGateway';
+import { mapSyncStatusToNodeStatus } from '../../lib/pipelineBuilder';
 
 interface VisualCanvasProps {
   pipeline: Pipeline;
@@ -86,6 +87,51 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const bronzeTableNames: string[] = Array.from(new Set<string>(bronzeTableTitles)).sort();
   const isTableVisible = (table: string) => visibleTables === null || visibleTables.has(table);
   const isNodeVisible = (node: CanvasNode) => node.type !== 'bronze' || isTableVisible(node.title);
+
+  // Passo 1 (nó "source") reflete o status REAL da última sincronização Airbyte
+  // (ver applyRealMetrics em pipelineBuilder.ts — 'idle' = nunca rodou, 'running' =
+  // sincronizando agora). Enquanto essa carga na raw não tiver rodado ao menos uma
+  // vez, ou estiver em execução, a construção das camadas seguintes (Bronze/Silver/
+  // Gold) fica bloqueada — não faz sentido processar dados que ainda não chegaram.
+  const sourceNode = nodes.find(n => n.type === 'source');
+  const rawSyncStatus = sourceNode?.status ?? 'idle';
+  const rawSyncBlocked = rawSyncStatus === 'idle' || rawSyncStatus === 'running';
+
+  // Esse status só é atualizado quando o app carrega (App.tsx busca o histórico
+  // real do Airbyte uma vez) — sem isto, ele fica travado em "running" mesmo
+  // depois que a sincronização real termina, até a página ser recarregada.
+  // Consulta o Airbyte direto (sem passar pelo pipeline_runs/Supabase) e
+  // atualiza só o nó "source"; local (setNodes) + propagado pro pai (onUpdatePipeline).
+  const [isRefreshingSync, setIsRefreshingSync] = useState(false);
+  const refreshSourceSyncStatus = React.useCallback(async () => {
+    if (!pipeline.airbyteConnectionId) return;
+    setIsRefreshingSync(true);
+    try {
+      const jobs = await fetchConnectionJobs(pipeline.airbyteConnectionId, 1);
+      if (!jobs.length) return;
+      const newStatus = mapSyncStatusToNodeStatus(jobs[0].status);
+      setNodes(prev => {
+        const current = prev.find(n => n.type === 'source');
+        if (!current || current.status === newStatus) return prev;
+        const updated = prev.map(n => n.type === 'source' ? { ...n, status: newStatus } : n);
+        onUpdatePipeline({ ...pipeline, nodes: updated });
+        return updated;
+      });
+    } catch (err) {
+      console.error('Falha ao atualizar o status da sincronização:', err);
+    } finally {
+      setIsRefreshingSync(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipeline.airbyteConnectionId]);
+
+  // Enquanto a Raw estiver sincronizando, verifica periodicamente se já terminou —
+  // sem isso, o bloqueio das camadas seguintes nunca se desfaz sozinho.
+  React.useEffect(() => {
+    if (rawSyncStatus !== 'running') return;
+    const interval = setInterval(refreshSourceSyncStatus, 10000);
+    return () => clearInterval(interval);
+  }, [rawSyncStatus, refreshSourceSyncStatus]);
 
   const toggleTableVisible = (table: string) => {
     setVisibleTables(prev => {
@@ -242,7 +288,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   // Manual trigger for now — not wired to run automatically after each sync.
   const handleBuildBronze = async (node: CanvasNode, fullRefresh = false) => {
     const bq = node.config.bigquery;
-    if (!bq || bronzeBuild.status === 'running') return;
+    if (!bq || bronzeBuild.status === 'running' || rawSyncBlocked) return;
 
     setBronzeBuild({ status: 'running' });
     try {
@@ -576,6 +622,20 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             </button>
           </div>
 
+          {/* Manual refresh: checa o Airbyte agora, sem esperar o próximo poll/reload */}
+          {pipeline.airbyteConnectionId && (
+            <button
+              id="btn-refresh-sync-status"
+              onClick={refreshSourceSyncStatus}
+              disabled={isRefreshingSync}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer shadow-2xs shrink-0 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+              title="Verificar agora se a sincronização da Raw já terminou"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingSync ? 'animate-spin' : ''}`} />
+              <span>Atualizar Status</span>
+            </button>
+          )}
+
           {/* Code/DAG Export */}
           <button
             id="btn-export-dag"
@@ -622,7 +682,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        className="flex-1 relative overflow-hidden bg-[#f1f5f9] select-none canvas-background-area"
+        className="flex-1 relative overflow-auto bg-[#f1f5f9] select-none canvas-background-area"
         style={{
           backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
           backgroundSize: '24px 24px'
@@ -791,6 +851,16 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                   </div>
                 )}
 
+                {/* Bloqueado até a carga da Raw (Passo 1) rodar ao menos uma vez com sucesso */}
+                {rawSyncBlocked && (node.type === 'bronze' || node.type === 'silver' || node.type === 'gold') && (
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] bg-slate-100 border border-slate-300 px-2 py-1 rounded text-slate-600 font-semibold">
+                    <Lock className="w-3 h-3 shrink-0" />
+                    <span className="truncate">
+                      {rawSyncStatus === 'running' ? 'Aguardando sincronização da Raw...' : 'Bloqueado — Raw ainda não sincronizada'}
+                    </span>
+                  </div>
+                )}
+
                 {/* LGPD Badge on Node if LGPD node */}
                 {node.type === 'lgpd_mask' && (
                   <div className="mt-1 flex items-center justify-between text-[10px] bg-emerald-50 border border-emerald-200 px-2 py-1 rounded text-emerald-800">
@@ -849,7 +919,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         </div>
 
         {/* Floating Quick Help - 5 Passos Lakehouse & dbt Indicator */}
-        <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-xs border border-slate-200 px-3.5 py-2 rounded-xl text-xs text-slate-700 shadow-md flex flex-wrap items-center gap-2.5">
+        <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-xs border border-slate-200 px-3.5 py-2 rounded-xl text-xs text-slate-700 shadow-md flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
             <span>1. Source</span>
@@ -1586,7 +1656,9 @@ with DAG(
           canEdit={canEdit}
           onSave={handleSaveDbtModel}
           onClose={() => setDbtEditingNode(null)}
-          canBuildBronze={canExecute}
+          canBuildBronze={canExecute && !rawSyncBlocked}
+          rawSyncBlocked={rawSyncBlocked}
+          rawSyncStatus={rawSyncStatus}
           bronzeBuild={bronzeBuild}
           onBuildBronze={(fullRefresh) => handleBuildBronze(dbtEditingNode, fullRefresh)}
         />

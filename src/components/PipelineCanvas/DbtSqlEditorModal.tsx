@@ -3,9 +3,9 @@ import {
   X, Check, Copy, Download, RefreshCw, Play, FileCode,
   Layers, Database, Sparkles, CheckCircle2, AlertCircle,
   Terminal, ShieldCheck, Cpu, Code2, Sliders, ExternalLink,
-  HelpCircle, Eye, EyeOff
+  HelpCircle, Eye, EyeOff, Lock
 } from 'lucide-react';
-import { CanvasNode, Pipeline, CanvasEdge } from '../../types';
+import { CanvasNode, Pipeline, CanvasEdge, NodeStatus } from '../../types';
 import { BronzeTableResult, getBronzeModelSql, saveBronzeModelSql } from '../../lib/airbyteGateway';
 
 interface DbtSqlEditorModalProps {
@@ -16,6 +16,10 @@ interface DbtSqlEditorModalProps {
   canEdit: boolean;
   /** Real "Construir Camada Bronze" action — only rendered for bronze nodes with a BigQuery destination. */
   canBuildBronze: boolean;
+  /** true quando a carga da Raw (Passo 1, nó "source") ainda não rodou ou está rodando —
+   *  já refletido em `canBuildBronze`, mas exposto à parte para mostrar o motivo certo. */
+  rawSyncBlocked: boolean;
+  rawSyncStatus: NodeStatus;
   bronzeBuild: { status: 'idle' | 'running' | 'done' | 'error'; results?: BronzeTableResult[]; error?: string };
   onBuildBronze: (fullRefresh?: boolean) => void;
 }
@@ -264,6 +268,8 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   onClose,
   canEdit,
   canBuildBronze,
+  rawSyncBlocked,
+  rawSyncStatus,
   bronzeBuild,
   onBuildBronze
 }) => {
@@ -664,6 +670,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                   id="btn-build-bronze"
                   disabled={!canBuildBronze || bronzeBuild.status === 'running'}
                   onClick={() => onBuildBronze(false)}
+                  title={rawSyncBlocked ? 'Bloqueado: a carga da Raw (Passo 1) ainda não terminou' : undefined}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                     !canBuildBronze || bronzeBuild.status === 'running'
                       ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
@@ -672,6 +679,8 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                 >
                   {bronzeBuild.status === 'running' ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : rawSyncBlocked ? (
+                    <Lock className="w-3.5 h-3.5" />
                   ) : (
                     <Play className="w-3.5 h-3.5" />
                   )}
@@ -682,7 +691,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                   id="btn-build-bronze-full"
                   disabled={!canBuildBronze || bronzeBuild.status === 'running'}
                   onClick={() => onBuildBronze(true)}
-                  title="Reconstrói do zero (--full-refresh). Use na 1ª vez, ou quando o schema mudou / a tabela veio do modo antigo."
+                  title={rawSyncBlocked ? 'Bloqueado: a carga da Raw (Passo 1) ainda não terminou' : 'Reconstrói do zero (--full-refresh). Use na 1ª vez, ou quando o schema mudou / a tabela veio do modo antigo.'}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer border ${
                     !canBuildBronze || bronzeBuild.status === 'running'
                       ? 'bg-slate-800 text-slate-600 border-slate-800 cursor-not-allowed'
@@ -694,6 +703,17 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {rawSyncBlocked && (
+              <div className="flex items-center gap-1.5 text-slate-300 bg-slate-900/60 border border-slate-700 rounded-lg px-2.5 py-1.5">
+                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>
+                  {rawSyncStatus === 'running'
+                    ? 'A sincronização da Raw (Passo 1) está em execução — aguarde terminar para construir a Bronze.'
+                    : 'A carga da Raw (Passo 1) ainda não foi executada nenhuma vez — sincronize a origem antes de construir a Bronze.'}
+                </span>
+              </div>
+            )}
 
             {bqTables.length > 1 && (
               <div className="flex items-center gap-2 text-orange-200">

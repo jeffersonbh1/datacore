@@ -67,6 +67,9 @@ export interface Pipeline {
   /** id (bigint) da integração de origem em `integracoes`, quando persistida.
    *  Usado para excluir a integração (e seu pipeline/runs, por cascade) do banco. */
   integrationId?: number;
+  /** Conexão real no Airbyte (quando existe) — usado para checar ao vivo se a
+   *  sincronização da Raw (nó "source") já terminou (ver VisualCanvas). */
+  airbyteConnectionId?: string;
   name: string;
   description: string;
   category: string;
