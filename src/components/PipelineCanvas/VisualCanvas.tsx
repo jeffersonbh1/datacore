@@ -247,8 +247,13 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     setBronzeBuild({ status: 'running' });
     try {
       const { results } = await buildBronzeLayer({ ...bq, fullRefresh });
-      const hasFailure = results.some(r => r.status === 'error');
-      setBronzeBuild({ status: hasFailure ? 'error' : 'done', results });
+      const failed = results.filter(r => r.status === 'error');
+      const hasFailure = failed.length > 0;
+      setBronzeBuild({
+        status: hasFailure ? 'error' : 'done',
+        results,
+        error: hasFailure ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+      });
 
       const newStatus = hasFailure ? 'error' : 'success';
       const updatedNodes = nodes.map(n => n.id === node.id ? { ...n, status: newStatus } : n);
@@ -1143,19 +1148,6 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                     className="w-full bg-white border border-teal-200 rounded-lg px-3 py-2 text-slate-900 font-mono text-xs"
                   />
                 </div>
-                <div>
-                  <label className="block text-slate-500 font-semibold mb-1 text-xs">Modo de Gravação (Write Mode)</label>
-                  <select
-                    disabled={!canEdit}
-                    value={selectedNode.config.writeMode || 'merge_upsert'}
-                    onChange={(e) => handleUpdateNodeConfig(selectedNode.id, { writeMode: e.target.value as any })}
-                    className="w-full bg-white border border-teal-200 rounded-lg px-3 py-2 text-slate-900 text-xs"
-                  >
-                    <option value="merge_upsert">Merge / Upsert (Atualizar ou Inserir - Recomendado)</option>
-                    <option value="append">Append (Inserção Incremental)</option>
-                    <option value="overwrite">Overwrite (Sobrescrever Partição)</option>
-                  </select>
-                </div>
               </div>
             )}
 
@@ -1225,21 +1217,6 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 font-mono"
                   />
                 </div>
-                {selectedNode.type === 'destination' && (
-                  <div>
-                    <label className="block text-slate-500 font-semibold mb-1">Modo de Gravação (Write Mode)</label>
-                    <select
-                      disabled={!canEdit}
-                      value={selectedNode.config.writeMode || 'append'}
-                      onChange={(e) => handleUpdateNodeConfig(selectedNode.id, { writeMode: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-900"
-                    >
-                      <option value="append">Append (Adicionar no final)</option>
-                      <option value="merge_upsert">Merge / Upsert (Atualizar ou Inserir)</option>
-                      <option value="overwrite">Overwrite (Sobrescrever partição)</option>
-                    </select>
-                  </div>
-                )}
               </div>
             )}
 

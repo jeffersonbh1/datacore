@@ -263,7 +263,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [destAuthMethod, setDestAuthMethod] = useState<'service_account' | 'key_pair' | 'user_pass' | 'iam_role'>('service_account');
   const [destCredentials, setDestCredentials] = useState('');
   const [destCredentialsFileName, setDestCredentialsFileName] = useState<string | null>(null);
-  const [destWriteMode, setDestWriteMode] = useState<'append' | 'merge_upsert' | 'overwrite'>('merge_upsert');
+  const destWriteMode: 'append' | 'merge_upsert' | 'overwrite' = 'merge_upsert';
 
   // Destination test status
   const [isTestingDest, setIsTestingDest] = useState(false);
@@ -1942,32 +1942,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                         </div>
                       )}
 
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Modo de Gravação das Tabelas
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { id: 'merge_upsert', label: 'Merge / Upsert (Recomendado)', desc: 'Atualiza se existir, insere novos' },
-                            { id: 'append', label: 'Append Only', desc: 'Apenas adiciona registros' },
-                            { id: 'overwrite', label: 'Overwrite Total', desc: 'Trunca e substitui tabela' }
-                          ].map(mode => (
-                            <button
-                              key={mode.id}
-                              type="button"
-                              onClick={() => setDestWriteMode(mode.id as any)}
-                              className={`p-2.5 rounded-lg border text-left cursor-pointer transition ${
-                                destWriteMode === mode.id 
-                                  ? 'border-indigo-600 bg-indigo-50 text-indigo-900 font-semibold' 
-                                  : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                              }`}
-                            >
-                              <div className="text-xs">{mode.label}</div>
-                              <div className="text-[10px] text-slate-500 truncate">{mode.desc}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                     </div>
 
                     {/* Test Destination Button */}
