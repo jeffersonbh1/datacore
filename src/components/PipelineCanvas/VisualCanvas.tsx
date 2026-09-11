@@ -52,6 +52,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
   const [dbtEditingNode, setDbtEditingNode] = useState<CanvasNode | null>(null);
   const [isExecutingPipeline, setIsExecutingPipeline] = useState(false);
+  const [pipelineExecStep, setPipelineExecStep] = useState<'raw' | 'bronze' | 'silver' | null>(null);
   const [pipelineExecError, setPipelineExecError] = useState<string | null>(null);
   const [showDataPreview, setShowDataPreview] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -347,17 +348,23 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     }
   };
 
-  // Aguarda o job de sync mais recente da conexão sair de 'running'/'pending',
-  // consultando o Airbyte real a cada poucos segundos (mesmo endpoint do botão
+  // Aguarda especificamente o job disparado por triggerAirbyteSync terminar —
+  // não basta olhar "o job mais recente da conexão": logo depois do trigger, a
+  // listagem pode ainda trazer o job ANTERIOR (já 'succeeded'), o que faria a
+  // Raw parecer concluída na hora sem o sync novo ter rodado de verdade.
+  // Consultando o Airbyte real a cada poucos segundos (mesmo endpoint do botão
   // "Atualizar Status"). Usado só dentro de handleExecutePipeline — não é o
   // polling de fundo (esse já existe em refreshSourceSyncStatus/useEffect acima).
-  const waitForSyncToFinish = async (connectionId: string, timeoutMs = 10 * 60 * 1000): Promise<NodeStatus> => {
+  const waitForSyncToFinish = async (connectionId: string, jobId: number, timeoutMs = 10 * 60 * 1000): Promise<NodeStatus> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const jobs = await fetchConnectionJobs(connectionId, 1);
-      if (jobs.length) {
-        const mapped = mapSyncStatusToNodeStatus(jobs[0].status);
-        if (mapped !== 'running') return mapped;
+      const jobs = await fetchConnectionJobs(connectionId, 10);
+      const job = jobs.find(j => j.jobId === jobId);
+      // 'pending' (na fila) e 'running' são os únicos estados não-terminais —
+      // tratar 'pending' como pronto (via mapSyncStatusToNodeStatus, que cai no
+      // 'warning' default) encerraria a espera antes do job sequer começar.
+      if (job && job.status !== 'pending' && job.status !== 'running') {
+        return mapSyncStatusToNodeStatus(job.status);
       }
       await new Promise(r => setTimeout(r, 5000));
     }
@@ -396,10 +403,13 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     setPipelineExecError(null);
 
     try {
-      // 1) RAW — dispara o sync real e espera terminar
+      // 1) RAW — dispara o sync real e espera ESSE job específico terminar (não
+      // basta olhar o job mais recente: logo após o trigger ele ainda pode ser
+      // o job anterior, já 'succeeded', o que faria a Raw parecer pronta na hora).
+      setPipelineExecStep('raw');
       setNodesStatusByType('source', 'running');
-      await triggerAirbyteSync(pipeline.airbyteConnectionId);
-      const rawResult = await waitForSyncToFinish(pipeline.airbyteConnectionId);
+      const triggered = await triggerAirbyteSync(pipeline.airbyteConnectionId);
+      const rawResult = await waitForSyncToFinish(pipeline.airbyteConnectionId, triggered.jobId);
       setNodesStatusByType('source', rawResult);
 
       if (rawResult !== 'success') {
@@ -416,6 +426,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       if (bronzeNodes.length > 0) {
         const bq = bronzeNodes[0].config.bigquery!;
         const allTables = bronzeNodes.flatMap(n => n.config.bigquery!.tables);
+        setPipelineExecStep('bronze');
         setNodesStatusByType('bronze', 'running');
         setBronzeBuild({ status: 'running' });
         try {
@@ -457,6 +468,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       const silverNode = nodes.find(n => n.type === 'silver' && n.config.bigquery);
       if (silverNode) {
         const bq = silverNode.config.bigquery!;
+        setPipelineExecStep('silver');
         setNodeStatusById(silverNode.id, 'running');
         setSilverBuild({ status: 'running' });
         try {
@@ -483,6 +495,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       }
     } finally {
       setIsExecutingPipeline(false);
+      setPipelineExecStep(null);
     }
   };
 
@@ -810,7 +823,12 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             {isExecutingPipeline ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
-                <span>Executando...</span>
+                <span>
+                  {pipelineExecStep === 'raw' ? 'Sincronizando Raw (Airbyte)...'
+                    : pipelineExecStep === 'bronze' ? 'Construindo Bronze...'
+                    : pipelineExecStep === 'silver' ? 'Construindo Silver...'
+                    : 'Executando...'}
+                </span>
               </>
             ) : (
               <>
