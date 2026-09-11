@@ -72,6 +72,29 @@ Construir Bronze (botão do canvas ou bronzeAutoSync)
    → resultado mapeado por tabela; modelo ausente = erro (sem fallback)
 ```
 
+## Setup local (Windows)
+
+O gateway invoca o `dbt` via `child_process.spawn`, que depende do PATH — sem
+ele, a Bronze falha com `Executável "dbt" não encontrado`. Duas pegadinhas no
+Windows:
+
+1. **`npm run server:dev` não ativa venv nenhuma.** Ativar `.venv` só afeta o
+   shell atual, não o processo Node. Solução: aponte `DBT_BIN` (em
+   `.env.local`) direto para o `dbt.exe` do venv — o gateway lê essa var e
+   ignora o PATH (default continua `"dbt"`, então produção/Docker não muda).
+2. **`pip install -r requirements.txt` pode falhar com "No such file or
+   directory" / dica de Long Path** se o venv estiver dentro do repo
+   sincronizado pelo OneDrive (o path fica longo demais para o Windows).
+   Crie o venv fora do OneDrive, num caminho curto:
+   ```powershell
+   python -m venv C:\dbt-venv
+   C:\dbt-venv\Scripts\pip.exe install -r dbt\requirements.txt
+   ```
+   Depois, em `.env.local`:
+   ```
+   DBT_BIN="C:/dbt-venv/Scripts/dbt.exe"
+   ```
+
 ## Rodar o exemplo (sem Airbyte)
 
 ```bash

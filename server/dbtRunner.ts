@@ -144,7 +144,8 @@ function spawnDbt(
   env: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn('dbt', args, { cwd, env, shell: false });
+    const bin = env.DBT_BIN || 'dbt';
+    const child = spawn(bin, args, { cwd, env, shell: false });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {
@@ -158,7 +159,7 @@ function spawnDbt(
       clearTimeout(timer);
       if (err.code === 'ENOENT') {
         rejectPromise(new DbtUnavailableError(
-          'Executável "dbt" não encontrado no PATH. Instale dbt-bigquery (ver dbt/requirements.txt) — a camada Bronze depende dele.',
+          `Executável "${bin}" não encontrado. Instale dbt-bigquery (ver dbt/requirements.txt) ou aponte DBT_BIN para o caminho do executável — a camada Bronze depende dele.`,
         ));
         return;
       }
