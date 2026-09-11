@@ -21,6 +21,8 @@ export interface TableResult {
   status: 'ok' | 'error';
   error?: string;
   model?: string;
+  /** Linhas gravadas nesta tabela (adapter_response.rows_affected do dbt-bigquery). */
+  rowsAffected?: number;
 }
 
 export interface BuildSilverOutput {
@@ -92,6 +94,7 @@ export async function buildSilverViaDbt(input: BuildSilverInput): Promise<BuildS
       status: statusFromDbt(node.status),
       error: statusFromDbt(node.status) === 'ok' ? undefined : (node.message || `dbt status "${node.status}"`),
       model: modelName,
+      rowsAffected: node.rowsAffected,
     };
   });
 

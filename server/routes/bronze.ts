@@ -25,6 +25,8 @@ export interface TableResult {
   error?: string;
   /** Modelo dbt que produziu a tabela (models/medallion/bronze/<sistema>/bronze_<sistema>_<t>.sql). */
   model?: string;
+  /** Linhas gravadas nesta tabela (adapter_response.rows_affected do dbt-bigquery). */
+  rowsAffected?: number;
 }
 
 export interface BuildBronzeOutput {
@@ -94,6 +96,7 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
       status: statusFromDbt(node.status),
       error: statusFromDbt(node.status) === 'ok' ? undefined : (node.message || `dbt status "${node.status}"`),
       model: modelName,
+      rowsAffected: node.rowsAffected,
     };
   });
 

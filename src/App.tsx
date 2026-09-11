@@ -15,6 +15,7 @@ import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
 import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipelineHeader';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
 import { PipelinesOverview } from './components/PipelinesList/PipelinesOverview';
+import { ExecutionsView } from './components/Executions/ExecutionsView';
 import { LgpdHub } from './components/Governance/LgpdHub';
 import { CostAnalytics } from './components/FinOps/CostAnalytics';
 import { RbacManager } from './components/Security/RbacManager';
@@ -226,7 +227,7 @@ export default function App() {
             }
           }
 
-          let pipeline = buildPipelineFromIntegration(`pipe-${record.id}`, integration, source, destination);
+          let pipeline = buildPipelineFromIntegration(`pipe-${record.id}`, integration, source, destination, record.id);
 
           // Fase 2: overlay real Airbyte sync history onto the deterministic
           // canvas — best-effort, a pipeline with no real connection yet (or a
@@ -504,6 +505,7 @@ export default function App() {
                     canEdit={permissions.canEditPipelines}
                     canExecute={permissions.canTriggerExecutions}
                     canViewRawPII={permissions.canViewRawPII}
+                    idEmpresa={currentUser.idEmpresa}
                   />
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
@@ -553,6 +555,14 @@ export default function App() {
                 canCreate={permissions.canCreatePipelines}
                 canEdit={permissions.canEditPipelines}
                 canTrigger={permissions.canTriggerExecutions}
+              />
+            )}
+
+            {activeTab === 'execucoes' && (
+              <ExecutionsView
+                pipelines={pipelines}
+                onNavigateToStudio={handleNavigateToStudio}
+                idEmpresa={currentUser.idEmpresa}
               />
             )}
 

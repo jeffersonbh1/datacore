@@ -1,15 +1,16 @@
-import React, { useState, useRef } from 'react';
-import { 
-  Play, Pause, Plus, Trash2, ShieldCheck, Database, Filter, Cpu, 
-  Boxes, Sparkles, FolderArchive, Radio, Server, Globe, Layers, 
-  Lock, Eye, Code2, CheckCircle, AlertCircle, RefreshCw, ZoomIn, 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Play, Pause, Plus, Trash2, ShieldCheck, Database, Filter, Cpu,
+  Boxes, Sparkles, FolderArchive, Radio, Server, Globe, Layers,
+  Lock, Eye, Code2, CheckCircle, AlertCircle, RefreshCw, ZoomIn,
   ZoomOut, Maximize2, X, Download, Sliders, ChevronRight
 } from 'lucide-react';
 import { CanvasNode, CanvasEdge, Pipeline, NodeType, NodeStatus, PIIType, MaskingMethod } from '../../types';
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
 import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
-import { buildBronzeLayer, buildSilverLayer, BronzeTableResult, fetchConnectionJobs, triggerAirbyteSync } from '../../lib/airbyteGateway';
-import { mapSyncStatusToNodeStatus } from '../../lib/pipelineBuilder';
+import { buildBronzeLayer, buildSilverLayer, BronzeTableResult, AirbyteJob, fetchConnectionJobs, triggerAirbyteSync } from '../../lib/airbyteGateway';
+import { isMedallionDbtNode, mapSyncStatusToNodeStatus, PipelineRunSummary, TableBuildResult } from '../../lib/pipelineBuilder';
+import { fetchPipelineRunsForPipeline, upsertPipelineRuns, updatePipelineRunLayerStatus } from '../../lib/supabase';
 
 interface VisualCanvasProps {
   pipeline: Pipeline;
@@ -17,35 +18,19 @@ interface VisualCanvasProps {
   canEdit: boolean;
   canExecute: boolean;
   canViewRawPII: boolean;
+  /** Empresa do usuário logado — necessária para gravar pipeline_runs (ver
+   *  handleExecutePipeline). Sem ela, o acompanhamento de execução na tela
+   *  "Execuções" fica sem dados para este run, mas a execução em si funciona. */
+  idEmpresa?: number | null;
 }
-
-export const isMedallionDbtNode = (node: CanvasNode | null | undefined): boolean => {
-  if (!node) return false;
-  const typeLower = (node.type || '').toLowerCase();
-  const titleLower = (node.title || '').toLowerCase();
-  const subtitleLower = (node.subtitle || '').toLowerCase();
-
-  return (
-    typeLower === 'bronze' ||
-    typeLower === 'silver' ||
-    typeLower === 'gold' ||
-    titleLower.includes('bronze') ||
-    titleLower.includes('silver') ||
-    titleLower.includes('gold') ||
-    subtitleLower.includes('bronze') ||
-    subtitleLower.includes('silver') ||
-    subtitleLower.includes('gold') ||
-    titleLower.includes('ouro') ||
-    titleLower.includes('prata')
-  );
-};
 
 export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   pipeline,
   onUpdatePipeline,
   canEdit,
   canExecute,
-  canViewRawPII
+  canViewRawPII,
+  idEmpresa
 }) => {
   const [nodes, setNodes] = useState<CanvasNode[]>(pipeline.nodes);
   const [edges, setEdges] = useState<CanvasEdge[]>(pipeline.edges);
@@ -54,6 +39,18 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const [isExecutingPipeline, setIsExecutingPipeline] = useState(false);
   const [pipelineExecStep, setPipelineExecStep] = useState<'raw' | 'bronze' | 'silver' | null>(null);
   const [pipelineExecError, setPipelineExecError] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  // Checado nos pontos de parada seguros de handleExecutePipeline (dentro do
+  // polling da Raw, e antes de iniciar a Bronze/a Silver). Não interrompe uma
+  // chamada dbt build já em voo — o build em si roda até o fim no gateway —
+  // só impede que a próxima etapa comece depois dele. Ref (não state) porque
+  // precisa refletir o clique mais recente dentro do closure assíncrono já em
+  // execução, que não re-lê state via useState.
+  const cancelRequestedRef = useRef(false);
+  // id do job da Raw disparado pela execução em andamento — usado só pelo
+  // "watchdog" abaixo (vigilanteDeExecucaoTravada) para achar a linha certa em
+  // pipeline_runs; não é o que decide o fluxo normal (isso é waitForSyncToFinish).
+  const [activeAirbyteJobId, setActiveAirbyteJobId] = useState<number | null>(null);
   const [showDataPreview, setShowDataPreview] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
@@ -355,20 +352,29 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   // Consultando o Airbyte real a cada poucos segundos (mesmo endpoint do botão
   // "Atualizar Status"). Usado só dentro de handleExecutePipeline — não é o
   // polling de fundo (esse já existe em refreshSourceSyncStatus/useEffect acima).
-  const waitForSyncToFinish = async (connectionId: string, jobId: number, timeoutMs = 10 * 60 * 1000): Promise<NodeStatus> => {
+  const waitForSyncToFinish = async (
+    connectionId: string,
+    jobId: number,
+    timeoutMs = 10 * 60 * 1000
+  ): Promise<{ status: NodeStatus; job: AirbyteJob | null; cancelled?: boolean }> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      // Checado a cada volta (não interrompe o job no Airbyte — ele continua
+      // rodando lá — só para de esperar por ele aqui).
+      if (cancelRequestedRef.current) {
+        return { status: 'warning', job: null, cancelled: true };
+      }
       const jobs = await fetchConnectionJobs(connectionId, 10);
       const job = jobs.find(j => j.jobId === jobId);
       // 'pending' (na fila) e 'running' são os únicos estados não-terminais —
       // tratar 'pending' como pronto (via mapSyncStatusToNodeStatus, que cai no
       // 'warning' default) encerraria a espera antes do job sequer começar.
       if (job && job.status !== 'pending' && job.status !== 'running') {
-        return mapSyncStatusToNodeStatus(job.status);
+        return { status: mapSyncStatusToNodeStatus(job.status), job };
       }
       await new Promise(r => setTimeout(r, 5000));
     }
-    return 'warning'; // timeout — nem sucesso nem falha confirmados
+    return { status: 'warning', job: null }; // timeout — nem sucesso nem falha confirmados
   };
 
   const setNodeStatusById = (nodeId: string, status: NodeStatus) => {
@@ -382,6 +388,17 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   const setNodesStatusByType = (type: CanvasNode['type'], status: NodeStatus) => {
     setNodes(prev => {
       const updated = prev.map(n => n.type === type ? { ...n, status } : n);
+      onUpdatePipeline({ ...pipeline, nodes: updated });
+      return updated;
+    });
+  };
+
+  // Como setNodesStatusByType, mas só toca os ids informados — usado para não
+  // sobrescrever o status de tabelas Bronze que ficaram de fora do filtro do
+  // Studio (visibleTables) durante o "Executar Pipeline".
+  const setNodesStatusByIds = (ids: Set<string>, status: NodeStatus) => {
+    setNodes(prev => {
+      const updated = prev.map(n => ids.has(n.id) ? { ...n, status } : n);
       onUpdatePipeline({ ...pipeline, nodes: updated });
       return updated;
     });
@@ -401,6 +418,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
 
     setIsExecutingPipeline(true);
     setPipelineExecError(null);
+    setIsCancelling(false);
+    cancelRequestedRef.current = false;
 
     try {
       // 1) RAW — dispara o sync real e espera ESSE job específico terminar (não
@@ -409,8 +428,48 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
       setPipelineExecStep('raw');
       setNodesStatusByType('source', 'running');
       const triggered = await triggerAirbyteSync(pipeline.airbyteConnectionId);
-      const rawResult = await waitForSyncToFinish(pipeline.airbyteConnectionId, triggered.jobId);
+      setActiveAirbyteJobId(triggered.jobId);
+
+      // Sem idEmpresa/dbId (pipeline criado nesta sessão, ainda não recarregado —
+      // ver Pipeline.dbId) a execução segue normalmente, só não fica visível na
+      // tela de acompanhamento.
+      const canPersistRun = Boolean(idEmpresa && pipeline.dbId);
+
+      // Grava a linha em pipeline_runs JÁ COM O JOB EM ANDAMENTO, antes de esperar
+      // terminar — senão a tela "Execuções" não mostra nada até a Raw finalizar,
+      // que é justamente o problema que essa tela existe para resolver. É
+      // sobrescrita com o resultado final logo abaixo (mesmo onConflict de
+      // upsertPipelineRuns), e de novo pelas camadas Bronze/Silver.
+      if (canPersistRun) {
+        try {
+          await upsertPipelineRuns(idEmpresa!, pipeline.dbId!, [{
+            jobId: triggered.jobId,
+            status: (triggered.status as AirbyteJob['status']) || 'pending',
+            jobType: 'sync',
+            connectionId: pipeline.airbyteConnectionId,
+            startTime: new Date().toISOString(),
+          }]);
+        } catch (err) {
+          console.error('Erro ao registrar o início da execução da Raw:', err);
+        }
+      }
+
+      const { status: rawResult, job: rawJob, cancelled: cancelledDuringRaw } = await waitForSyncToFinish(pipeline.airbyteConnectionId, triggered.jobId);
       setNodesStatusByType('source', rawResult);
+
+      // Best-effort: atualiza a mesma linha com o resultado final da Raw.
+      if (canPersistRun && rawJob) {
+        try {
+          await upsertPipelineRuns(idEmpresa!, pipeline.dbId!, [rawJob]);
+        } catch (err) {
+          console.error('Erro ao registrar o histórico de execução da Raw:', err);
+        }
+      }
+
+      if (cancelledDuringRaw) {
+        setPipelineExecError('Execução cancelada. A sincronização no Airbyte não é interrompida (continua rodando lá) — só paramos de esperar por ela aqui; Bronze e Silver não serão construídas para este disparo.');
+        return;
+      }
 
       if (rawResult !== 'success') {
         setPipelineExecError(
@@ -421,14 +480,49 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         return;
       }
 
-      // 2) BRONZE — constrói todas as tabelas de uma vez (um dbt build só)
-      const bronzeNodes = nodes.filter(n => n.type === 'bronze' && n.config.bigquery);
+      // Grava o resultado de Bronze/Silver na mesma linha de pipeline_runs
+      // registrada acima (best-effort — ver canPersistRun).
+      const persistLayerStatus = async (
+        layer: 'bronze' | 'silver',
+        status: 'running' | 'built' | 'failed',
+        errorMessage?: string,
+        tables?: TableBuildResult[]
+      ) => {
+        if (!canPersistRun) return;
+        try {
+          await updatePipelineRunLayerStatus(pipeline.dbId!, triggered.jobId, layer, status, errorMessage, tables);
+        } catch (err) {
+          console.error(`Erro ao registrar status da camada ${layer}:`, err);
+        }
+      };
+
+      if (cancelRequestedRef.current) {
+        setPipelineExecError('Execução cancelada antes de iniciar a Bronze.');
+        return;
+      }
+
+      // 2) BRONZE — constrói de uma vez só as tabelas visíveis no filtro do Studio
+      // (visibleTables); tabelas ocultas pelo filtro não são tocadas — nem
+      // construídas, nem têm o status alterado.
+      const allBronzeNodes = nodes.filter(n => n.type === 'bronze' && n.config.bigquery);
+      const bronzeNodes = allBronzeNodes.filter(n => isTableVisible(n.title));
+      if (allBronzeNodes.length > 0 && bronzeNodes.length === 0) {
+        setPipelineExecError('Nenhuma tabela selecionada no filtro do Studio — nada para construir na Bronze/Silver.');
+        return;
+      }
+      // Preenchido ao fim do bloco Bronze com as tabelas que realmente terminaram
+      // OK — a Silver, mais abaixo, só constrói para essas (nunca faz sentido
+      // gerar Silver de uma tabela cuja Bronze falhou/não existe).
+      let bronzeSucceededTables = new Set<string>();
+
       if (bronzeNodes.length > 0) {
         const bq = bronzeNodes[0].config.bigquery!;
         const allTables = bronzeNodes.flatMap(n => n.config.bigquery!.tables);
+        const bronzeNodeIds = new Set<string>(bronzeNodes.map(n => n.id));
         setPipelineExecStep('bronze');
-        setNodesStatusByType('bronze', 'running');
+        setNodesStatusByIds(bronzeNodeIds, 'running');
         setBronzeBuild({ status: 'running' });
+        await persistLayerStatus('bronze', 'running');
         try {
           const { results } = await buildBronzeLayer({
             projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset,
@@ -443,7 +537,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           });
           setNodes(prev => {
             const updated = prev.map(n => {
-              if (n.type !== 'bronze' || !n.config.bigquery) return n;
+              if (n.type !== 'bronze' || !n.config.bigquery || !bronzeNodeIds.has(n.id)) return n;
               const table = n.config.bigquery.tables[0];
               const r = byTable.get(table);
               return { ...n, status: (r?.status === 'ok' ? 'success' : 'error') as NodeStatus };
@@ -451,30 +545,57 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             onUpdatePipeline({ ...pipeline, nodes: updated });
             return updated;
           });
+          await persistLayerStatus('bronze', failed.length ? 'failed' : 'built',
+            failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            results.map(r => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
+          bronzeSucceededTables = new Set(allTables.filter(t => byTable.get(t)?.status === 'ok'));
+          // Falha em UMA tabela não trava as outras: a Bronze já roda cada tabela
+          // independente (um dbt build só, mas modelos falham sem derrubar os
+          // demais) e a Silver abaixo segue só com quem deu certo aqui.
           if (failed.length) {
-            setPipelineExecError(`Falha ao construir a Bronze: ${failed.map(r => r.table).join(', ')} — execução interrompida.`);
-            return;
+            setPipelineExecError(
+              bronzeSucceededTables.size > 0
+                ? `Falha ao construir a Bronze para: ${failed.map(r => r.table).join(', ')} — as demais tabelas seguem para a Silver.`
+                : `Falha ao construir a Bronze para todas as tabelas selecionadas: ${failed.map(r => r.table).join(', ')} — execução interrompida.`
+            );
+            if (bronzeSucceededTables.size === 0) return;
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Falha ao construir a camada Bronze.';
           setBronzeBuild({ status: 'error', error: msg });
-          setNodesStatusByType('bronze', 'error');
+          setNodesStatusByIds(bronzeNodeIds, 'error');
           setPipelineExecError(msg);
+          await persistLayerStatus('bronze', 'failed', msg,
+            allTables.map(table => ({ table, status: 'error', rowsAffected: null, error: msg })));
           return;
         }
       }
 
-      // 3) SILVER — um único nó cobre todas as tabelas
+      if (cancelRequestedRef.current) {
+        setPipelineExecError('Execução cancelada antes de iniciar a Silver. A Bronze já construída acima permanece como está.');
+        return;
+      }
+
+      // 3) SILVER — um único nó cobre todas as tabelas; a lista enviada é
+      // reduzida às tabelas visíveis no filtro do Studio E cuja Bronze desta
+      // execução deu certo (nunca faz sentido rodar a Silver sobre uma Bronze
+      // que falhou/não rodou).
       const silverNode = nodes.find(n => n.type === 'silver' && n.config.bigquery);
       if (silverNode) {
         const bq = silverNode.config.bigquery!;
+        const silverTables = bq.tables.filter(t => isTableVisible(t) && bronzeSucceededTables.has(t));
+        if (silverTables.length === 0) {
+          setPipelineExecError('Nenhuma tabela com Bronze bem-sucedida nesta execução — Silver não foi construída.');
+          return;
+        }
         setPipelineExecStep('silver');
         setNodeStatusById(silverNode.id, 'running');
         setSilverBuild({ status: 'running' });
+        await persistLayerStatus('silver', 'running');
         try {
           const { results } = await buildSilverLayer({
             projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset,
-            silverDataset: bq.silverDataset, tables: bq.tables, sistema: bq.sistema, location: bq.location,
+            silverDataset: bq.silverDataset, tables: silverTables, sistema: bq.sistema, location: bq.location,
           });
           const failed = results.filter(r => r.status === 'error');
           setSilverBuild({
@@ -483,6 +604,9 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             error: failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
           });
           setNodeStatusById(silverNode.id, failed.length ? 'error' : 'success');
+          await persistLayerStatus('silver', failed.length ? 'failed' : 'built',
+            failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            results.map(r => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
           if (failed.length) {
             setPipelineExecError(`Falha ao construir a Silver: ${failed.map(r => r.table).join(', ')}.`);
           }
@@ -491,13 +615,106 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           setSilverBuild({ status: 'error', error: msg });
           setNodeStatusById(silverNode.id, 'error');
           setPipelineExecError(msg);
+          await persistLayerStatus('silver', 'failed', msg,
+            silverTables.map(table => ({ table, status: 'error', rowsAffected: null, error: msg })));
         }
       }
     } finally {
       setIsExecutingPipeline(false);
       setPipelineExecStep(null);
+      setIsCancelling(false);
+      setActiveAirbyteJobId(null);
     }
   };
+
+  // Cancelamento cooperativo: só marca a intenção (ref, lido nos pontos de
+  // parada de handleExecutePipeline acima) — não aborta uma chamada de rede já
+  // em voo (o dbt build em andamento no gateway continua até o fim; só a
+  // etapa SEGUINTE deixa de começar). O job no Airbyte também não é cancelado.
+  const handleCancelExecution = () => {
+    if (!isExecutingPipeline || cancelRequestedRef.current) return;
+    cancelRequestedRef.current = true;
+    setIsCancelling(true);
+  };
+
+  // Sincroniza o canvas local com o que pipeline_runs diz de verdade, e destrava
+  // a UI — usado quando o watchdog abaixo detecta que a execução já terminou
+  // mas esta tela ficou presa em "rodando" (o polling de waitForSyncToFinish
+  // depende de um setTimeout que o Chrome pode atrasar/pausar indefinidamente
+  // numa aba em segundo plano — o mesmo problema que a reconciliação da tela
+  // Execuções já resolve para o histórico, mas que não destravava este canvas).
+  const reconcileLocalUiFromRun = (run: PipelineRunSummary) => {
+    const bronzeByTable = new Map((run.bronzeTables || []).map(t => [t.table, t]));
+    setNodes(prev => {
+      const updated = prev.map(n => {
+        if (n.type === 'source') {
+          return { ...n, status: mapSyncStatusToNodeStatus(run.status) };
+        }
+        if (n.type === 'bronze' && n.config.bigquery) {
+          const table = n.config.bigquery.tables[0];
+          const t = bronzeByTable.get(table);
+          if (t) return { ...n, status: (t.status === 'ok' ? 'success' : 'error') as NodeStatus };
+          if (run.bronzeStatus === 'built') return { ...n, status: 'success' as NodeStatus };
+          if (run.bronzeStatus === 'failed') return { ...n, status: 'error' as NodeStatus };
+          return n;
+        }
+        if (n.type === 'silver' && n.config.bigquery) {
+          if (run.silverStatus === 'built') return { ...n, status: 'success' as NodeStatus };
+          if (run.silverStatus === 'failed') return { ...n, status: 'error' as NodeStatus };
+          return n;
+        }
+        return n;
+      });
+      onUpdatePipeline({ ...pipeline, nodes: updated });
+      return updated;
+    });
+
+    const anyFailed = run.status === 'failed' || run.bronzeStatus === 'failed' || run.silverStatus === 'failed';
+    setPipelineExecError(
+      `Esta execução já tinha terminado${anyFailed ? ', com falha em alguma camada' : ' com sucesso'} — ` +
+      'a tela ficou travada esperando uma atualização que não chegou a tempo (provavelmente por a aba ter ' +
+      'ficado em segundo plano). O status acima foi sincronizado a partir do histórico real.'
+    );
+    // Se o closure original de handleExecutePipeline ainda estiver "dormindo"
+    // num setTimeout, isso faz ele desistir no próximo checkpoint em vez de
+    // repetir/sobrescrever o que acabamos de sincronizar aqui.
+    cancelRequestedRef.current = true;
+    setIsExecutingPipeline(false);
+    setPipelineExecStep(null);
+    setIsCancelling(false);
+    setActiveAirbyteJobId(null);
+  };
+
+  // Watchdog: enquanto uma execução está "rodando" aqui, confere periodicamente
+  // se pipeline_runs já mostra todas as camadas aplicáveis num estado terminal —
+  // se sim, a Studio ficou presa (ver reconcileLocalUiFromRun) e é destravada.
+  useEffect(() => {
+    if (!isExecutingPipeline || !pipeline.dbId || !activeAirbyteJobId) return;
+
+    const check = async () => {
+      try {
+        const runs = await fetchPipelineRunsForPipeline(pipeline.dbId!, 5);
+        const run = runs.find(r => r.airbyteJobId === activeAirbyteJobId);
+        if (!run) return;
+
+        const rawDone = run.status !== 'pending' && run.status !== 'running';
+        const hasBronzeLayer = nodes.some(n => n.type === 'bronze' && n.config.bigquery);
+        const hasSilverLayer = nodes.some(n => n.type === 'silver' && n.config.bigquery);
+        const bronzeDone = !hasBronzeLayer || run.bronzeStatus === 'built' || run.bronzeStatus === 'failed';
+        const silverDone = !hasSilverLayer || run.silverStatus === 'built' || run.silverStatus === 'failed';
+
+        if (rawDone && bronzeDone && silverDone) {
+          reconcileLocalUiFromRun(run);
+        }
+      } catch (err) {
+        console.error('Erro ao verificar se a execução travada já terminou:', err);
+      }
+    };
+
+    const interval = setInterval(check, 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExecutingPipeline, pipeline.dbId, activeAirbyteJobId]);
 
   const handleAddOperator = (op: typeof AVAILABLE_OPERATORS[0]) => {
     const lastNode = nodes[nodes.length - 1];
@@ -806,37 +1023,56 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             <span className="md:hidden">DAG</span>
           </button>
 
-          {/* Execute Pipeline — dispara o fluxo real: sync Airbyte (Raw) -> Bronze -> Silver */}
-          <button
-            id="btn-run-pipeline"
-            onClick={handleExecutePipeline}
-            disabled={isExecutingPipeline || !canExecute}
-            title="Executa de verdade: sincroniza a Raw no Airbyte, depois constrói a Bronze e a Silver via dbt"
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs shrink-0 whitespace-nowrap ${
-              isExecutingPipeline
-                ? 'bg-amber-100 text-amber-800 border border-amber-300 cursor-wait'
-                : canExecute
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
-                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-            }`}
-          >
-            {isExecutingPipeline ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
-                <span>
-                  {pipelineExecStep === 'raw' ? 'Sincronizando Raw (Airbyte)...'
-                    : pipelineExecStep === 'bronze' ? 'Construindo Bronze...'
-                    : pipelineExecStep === 'silver' ? 'Construindo Silver...'
-                    : 'Executando...'}
+          {/* Execute Pipeline — dispara o fluxo real: sync Airbyte (Raw) -> Bronze -> Silver.
+              Enquanto executa, o próprio botão vira "Cancelar" no lugar de ficar
+              só desabilitado mostrando o passo atual. */}
+          {isExecutingPipeline ? (
+            <button
+              id="btn-cancel-pipeline"
+              onClick={handleCancelExecution}
+              disabled={isCancelling}
+              title="Cancela a partir do próximo ponto de parada seguro — a etapa em andamento (sync no Airbyte ou dbt build) não é interrompida no meio, só a etapa seguinte deixa de começar."
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition shrink-0 whitespace-nowrap border ${
+                isCancelling
+                  ? 'bg-rose-50 text-rose-400 border-rose-200 cursor-wait'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 cursor-pointer'
+              }`}
+            >
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>
+                {isCancelling ? 'Cancelando...'
+                  : pipelineExecStep === 'raw' ? 'Sincronizando Raw (Airbyte)...'
+                  : pipelineExecStep === 'bronze' ? 'Construindo Bronze...'
+                  : pipelineExecStep === 'silver' ? 'Construindo Silver...'
+                  : 'Executando...'}
+              </span>
+              {!isCancelling && (
+                <span className="flex items-center gap-1 pl-2 ml-1 border-l border-rose-200">
+                  <X className="w-3.5 h-3.5" />
+                  Cancelar
                 </span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Executar Pipeline</span>
-              </>
-            )}
-          </button>
+              )}
+            </button>
+          ) : (
+            <button
+              id="btn-run-pipeline"
+              onClick={handleExecutePipeline}
+              disabled={!canExecute}
+              title={
+                visibleTables !== null && visibleTables.size < bronzeTableNames.length
+                  ? `Executa de verdade: sincroniza a Raw no Airbyte (todas as tabelas), depois constrói a Bronze e a Silver via dbt só para as ${visibleTables.size} de ${bronzeTableNames.length} tabelas selecionadas no filtro`
+                  : 'Executa de verdade: sincroniza a Raw no Airbyte, depois constrói a Bronze e a Silver via dbt'
+              }
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs shrink-0 whitespace-nowrap ${
+                canExecute
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+              }`}
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Executar Pipeline</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -898,7 +1134,21 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
               const dx = Math.abs(x2 - x1) * 0.5;
               const pathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
-              const isEdgeActive = srcNode.status === 'running';
+              // O fluxo anima na aresta que LEVA à camada sendo processada agora
+              // (dados saindo da anterior, entrando na que está rodando). Usa
+              // pipelineExecStep — o passo que handleExecutePipeline está
+              // executando agora — como única fonte de verdade, em vez de
+              // inferir por node.status: como pipelineExecStep só pode valer
+              // uma coisa por vez ('raw' | 'bronze' | 'silver' | null), é
+              // impossível duas etapas animarem ao mesmo tempo, ou uma etapa já
+              // concluída continuar animando (o que status por nó, combinado
+              // com o polling em segundo plano do status real da Raw, podia
+              // deixar acontecer).
+              const isEdgeActive =
+                pipelineExecStep === 'raw' ? tgtNode.type === 'raw_data'
+                : pipelineExecStep === 'bronze' ? tgtNode.type === 'bronze'
+                : pipelineExecStep === 'silver' ? tgtNode.type === 'silver'
+                : false;
 
               return (
                 <g key={edge.id}>

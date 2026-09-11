@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Network, Layers, ShieldCheck, DollarSign,
+  Network, Layers, ShieldCheck, DollarSign, Activity,
   Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2
 } from 'lucide-react';
 
-export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
+export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'execucoes' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -41,6 +41,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'auto-pipeline',
       label: 'Pipeline Automático',
       icon: <Wand2 className="w-4 h-4 text-indigo-600 shrink-0" />
+    },
+    {
+      id: 'execucoes',
+      label: 'Execuções',
+      icon: <Activity className="w-4 h-4 text-indigo-600 shrink-0" />
     },
     {
       id: 'governance',

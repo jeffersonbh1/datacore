@@ -4,7 +4,7 @@ import {
   SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration, Pipeline,
   SourceType, DestinationType, CloudProvider, TableSyncConfig, SyncFrequencyOption
 } from '../types';
-import { PipelineRunSummary } from './pipelineBuilder';
+import { PipelineRunSummary, TableBuildResult } from './pipelineBuilder';
 import { AirbyteJob } from './airbyteGateway';
 
 // Environment variables configured via .env / Vite
@@ -675,11 +675,20 @@ export async function upsertPipelineRuns(idEmpresa: number, pipelineDbId: number
 
 function mapPipelineRunRow(row: Record<string, unknown>): PipelineRunSummary {
   return {
+    airbyteJobId: Number(row.airbyte_job_id),
     status: row.status as PipelineRunSummary['status'],
     recordsSynced: row.records_synced != null ? Number(row.records_synced) : null,
     durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
     iniciadoEm: String(row.iniciado_em),
     finalizadoEm: row.finalizado_em ? String(row.finalizado_em) : null,
+    bronzeStatus: (row.bronze_status as PipelineRunSummary['bronzeStatus']) || 'not_applicable',
+    bronzeError: (row.bronze_error as string) || null,
+    bronzeBuiltEm: (row.bronze_built_em as string) || null,
+    bronzeTables: (row.bronze_tables as PipelineRunSummary['bronzeTables']) || null,
+    silverStatus: (row.silver_status as PipelineRunSummary['silverStatus']) || 'not_applicable',
+    silverError: (row.silver_error as string) || null,
+    silverTables: (row.silver_tables as PipelineRunSummary['silverTables']) || null,
+    silverBuiltEm: (row.silver_built_em as string) || null,
   };
 }
 
@@ -688,10 +697,54 @@ export async function fetchPipelineRunsForPipeline(pipelineDbId: number, limit =
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('pipeline_runs')
-    .select('status, records_synced, duration_ms, iniciado_em, finalizado_em')
+    .select('airbyte_job_id, status, records_synced, duration_ms, iniciado_em, finalizado_em, bronze_status, bronze_error, bronze_built_em, bronze_tables, silver_status, silver_error, silver_built_em, silver_tables')
     .eq('pipeline_id', pipelineDbId)
     .order('iniciado_em', { ascending: false })
     .limit(limit);
   if (error) throw new Error(`Erro ao buscar histórico de execuções: ${error.message}`);
   return (data || []).map(mapPipelineRunRow);
+}
+
+/**
+ * Grava o progresso de uma construção manual de Bronze/Silver (ver
+ * VisualCanvas.handleExecutePipeline) na linha de pipeline_runs do job do
+ * Airbyte que a originou — mesmas colunas que o auto-sync do gateway
+ * (server/routes/bronzeAutoSync.ts) usa para a Bronze, agora também para a
+ * Silver (sql/008) e com o estado intermediário 'running' (sql/009), para a
+ * tela "Execuções" mostrar "Construindo..." em vez de só "Pendente"/"Falhou"/
+ * "Construída". A linha precisa já existir (ver upsertPipelineRuns) — chamar
+ * depois que o job da Raw foi registrado. `bronze_built_em`/`silver_built_em`
+ * só é gravado nos estados terminais (built/failed) — 'running' não é "quando
+ * terminou de construir".
+ */
+export async function updatePipelineRunLayerStatus(
+  pipelineDbId: number,
+  airbyteJobId: number,
+  layer: 'bronze' | 'silver',
+  status: 'running' | 'built' | 'failed',
+  errorMessage?: string,
+  /** Detalhe por tabela (status + rowsAffected) — omitido na gravação inicial
+   *  ('running', antes do dbt build terminar), presente no fechamento. */
+  tables?: TableBuildResult[]
+): Promise<void> {
+  if (!supabase) return;
+  const isTerminal = status !== 'running';
+  const patch = layer === 'bronze'
+    ? {
+        bronze_status: status, bronze_error: errorMessage || null,
+        ...(isTerminal ? { bronze_built_em: new Date().toISOString() } : {}),
+        ...(tables ? { bronze_tables: tables } : {}),
+      }
+    : {
+        silver_status: status, silver_error: errorMessage || null,
+        ...(isTerminal ? { silver_built_em: new Date().toISOString() } : {}),
+        ...(tables ? { silver_tables: tables } : {}),
+      };
+
+  const { error } = await supabase
+    .from('pipeline_runs')
+    .update(patch)
+    .eq('pipeline_id', pipelineDbId)
+    .eq('airbyte_job_id', airbyteJobId);
+  if (error) throw new Error(`Erro ao atualizar status da camada ${layer}: ${error.message}`);
 }

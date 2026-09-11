@@ -68,6 +68,11 @@ export interface CanvasEdge {
 
 export interface Pipeline {
   id: string;
+  /** id (bigint) da linha em `pipelines`, quando persistida — necessário para
+   *  gravar/ler `pipeline_runs` (ver ExecutionsView e VisualCanvas.handleExecutePipeline).
+   *  Ausente para um pipeline recém-criado nesta sessão, antes do reload que o
+   *  busca de volta via fetchPipelinesPorEmpresa (ver App.tsx). */
+  dbId?: number;
   /** id (bigint) da integração de origem em `integracoes`, quando persistida.
    *  Usado para excluir a integração (e seu pipeline/runs, por cascade) do banco. */
   integrationId?: number;

@@ -185,8 +185,12 @@ connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
   try {
     const { connectionId } = req.params;
     const limit = Math.min(Number(req.query.limit) || 20, 100);
+    // orderBy=createdAt|DESC: sem isso o Airbyte devolve os jobs mais ANTIGOS
+    // primeiro — uma conexão com mais jobs históricos que `limit` faria o job
+    // recém-disparado nunca aparecer na resposta (waitForSyncToFinish no Studio
+    // e a reconciliação da tela Execuções dependem de sempre ver o mais recente).
     const data = await airbyteFetch<{ data: AirbyteJob[] }>(
-      `/jobs?connectionId=${connectionId}&jobType=sync&limit=${limit}`
+      `/jobs?connectionId=${connectionId}&jobType=sync&limit=${limit}&orderBy=${encodeURIComponent('createdAt|DESC')}`
     );
     res.json(data);
   } catch (err) {

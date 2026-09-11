@@ -16,6 +16,30 @@ export const WEEKDAYS = [
   { key: 'dom', label: 'Dom', full: 'Domingo', cronVal: '0' },
 ];
 
+// Movida de VisualCanvas.tsx: viver num arquivo que só exporta o componente
+// quebra o Fast Refresh do Vite a cada edição (força remontar o canvas
+// inteiro, perdendo o estado local de uma execução em andamento).
+export const isMedallionDbtNode = (node: CanvasNode | null | undefined): boolean => {
+  if (!node) return false;
+  const typeLower = (node.type || '').toLowerCase();
+  const titleLower = (node.title || '').toLowerCase();
+  const subtitleLower = (node.subtitle || '').toLowerCase();
+
+  return (
+    typeLower === 'bronze' ||
+    typeLower === 'silver' ||
+    typeLower === 'gold' ||
+    titleLower.includes('bronze') ||
+    titleLower.includes('silver') ||
+    titleLower.includes('gold') ||
+    subtitleLower.includes('bronze') ||
+    subtitleLower.includes('silver') ||
+    subtitleLower.includes('gold') ||
+    titleLower.includes('ouro') ||
+    titleLower.includes('prata')
+  );
+};
+
 function buildCronExpression(integration: AutoIntegration): string | undefined {
   const { syncFrequency, executionTimes, weeklyDays, monthlyDay } = integration;
   if (!executionTimes || executionTimes.length === 0) return undefined;
@@ -63,7 +87,9 @@ export function buildPipelineFromIntegration(
   pipelineId: string,
   integration: AutoIntegration,
   source: SourceConnectorConfig,
-  destination: DestinationConnectorConfig
+  destination: DestinationConnectorConfig,
+  /** id (bigint) da linha em `pipelines`, quando já conhecido (ver Pipeline.dbId). */
+  dbId?: number
 ): Pipeline {
   const nodes: CanvasNode[] = [];
   const edges: CanvasEdge[] = [];
@@ -201,6 +227,7 @@ export function buildPipelineFromIntegration(
 
   return {
     id: pipelineId,
+    dbId,
     // Persisted integrations map to a numeric `integracoes.id` (see mapIntegracaoRow);
     // locally-created ones use a "int-auto-<ts>" string and aren't in the DB.
     integrationId: /^\d+$/.test(integration.id) ? Number(integration.id) : undefined,
@@ -239,12 +266,34 @@ export function buildPipelineFromIntegration(
 // only writer of pipeline_runs. This function only ever reads runs, never fakes them.
 // =============================================================================
 
+/** Uma linha de BronzeTableResult/TableResult (ver airbyteGateway.ts e server/routes/bronze|silver.ts),
+ *  como persistida em pipeline_runs.bronze_tables/silver_tables (sql/010). */
+export interface TableBuildResult {
+  table: string;
+  status: 'ok' | 'error';
+  rowsAffected: number | null;
+  error: string | null;
+}
+
 export interface PipelineRunSummary {
+  airbyteJobId: number;
   status: 'pending' | 'running' | 'incomplete' | 'failed' | 'succeeded' | 'cancelled';
   recordsSynced: number | null;
   durationMs: number | null;
   iniciadoEm: string;
   finalizadoEm: string | null;
+  /** Estado da Bronze/Silver para este job — ver sql/007/008/009_*.sql. 'not_applicable'
+   *  até a construção começar (destino não-BigQuery, job ainda não sucedido, etc.);
+   *  'running' enquanto o dbt build está de fato rodando. */
+  bronzeStatus: 'not_applicable' | 'running' | 'built' | 'failed';
+  bronzeError: string | null;
+  bronzeBuiltEm: string | null;
+  /** Detalhe por tabela (sql/010) — null até a primeira tentativa de construção. */
+  bronzeTables: TableBuildResult[] | null;
+  silverStatus: 'not_applicable' | 'running' | 'built' | 'failed';
+  silverError: string | null;
+  silverTables: TableBuildResult[] | null;
+  silverBuiltEm: string | null;
 }
 
 const FINISHED_STATUSES: PipelineRunSummary['status'][] = ['succeeded', 'failed', 'cancelled', 'incomplete'];

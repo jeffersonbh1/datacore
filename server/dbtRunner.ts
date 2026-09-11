@@ -42,6 +42,9 @@ export interface DbtModelResult {
   status: string;
   message?: string;
   executionTime?: number;
+  /** `adapter_response.rows_affected` do dbt-bigquery — linhas gravadas por
+   *  este model na última DDL/DML. Undefined se o adapter não reportou (raro). */
+  rowsAffected?: number;
 }
 
 export interface RunDbtResult {
@@ -178,6 +181,7 @@ interface RunResultsFile {
     status: string;
     message: string | null;
     execution_time: number;
+    adapter_response?: { rows_affected?: number | null };
   }>;
 }
 
@@ -191,6 +195,7 @@ function readRunResults(projectDir: string): DbtModelResult[] {
     status: r.status,
     message: r.message || undefined,
     executionTime: r.execution_time,
+    rowsAffected: r.adapter_response?.rows_affected ?? undefined,
   }));
 }
 

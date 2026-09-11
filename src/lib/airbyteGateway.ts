@@ -226,6 +226,8 @@ export interface BronzeTableResult {
   error?: string;
   /** Modelo dbt que produziu a tabela (bronze_<sistema>_<tabela>). */
   model?: string;
+  /** Linhas gravadas nesta tabela (adapter_response.rows_affected do dbt-bigquery). */
+  rowsAffected?: number;
 }
 
 export interface BronzeDbtSummary {
