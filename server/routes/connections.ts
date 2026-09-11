@@ -161,6 +161,23 @@ interface AirbyteJob {
   rowsSynced?: number;
 }
 
+// Dispara uma sincronização manual imediata (POST /jobs, jobType=sync). Usado para
+// executar a integração assim que ela é criada — o agendamento (cron) do bloco
+// "Frequência de Sincronização" está desativado nesta versão (ver AutoPipelineView),
+// então a única forma de a sincronização acontecer de imediato é este disparo manual.
+connectionsRouter.post('/:connectionId/sync', async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const data = await airbyteFetch('/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ connectionId, jobType: 'sync' }),
+    });
+    res.status(201).json(data);
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});
+
 // Real sync/execution history for a connection — the source of truth Fase 2's
 // pipeline_runs is populated from (see src/lib/pipelineRuns.ts), instead of the
 // static placeholder metrics the canvas used to show.

@@ -16,7 +16,7 @@ import {
 import {
   AirbyteDestination, AirbyteSource, AirbyteConnectionStreamInput, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
-  fetchSourceCatalog, fetchStreams, generateDbtModels, regenerateDbtModelsFromIntegration
+  fetchSourceCatalog, fetchStreams, generateDbtModels, regenerateDbtModelsFromIntegration, triggerAirbyteSync
 } from '../../lib/airbyteGateway';
 import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline } from '../../lib/supabase';
 import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
@@ -948,10 +948,13 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
     // Create the real Airbyte connection when both source and destination are real
     // Airbyte resources (confirmed for the source via the streams discovery above;
-    // heuristically for the destination via its UUID shape). All 4 frequency options
-    // now map onto a real Airbyte schedule: daily/weekly/monthly become a native Airbyte
-    // cron expression, and "once" creates the connection in manual mode (Airbyte has no
-    // native one-shot future schedule — see buildAirbyteSchedule on the gateway).
+    // heuristically for the destination via its UUID shape).
+    //
+    // O bloco "Frequência de Sincronização / Horários de Execução" está desativado
+    // nesta versão (reservado para o agendamento via Airflow) — por isso a conexão
+    // é sempre criada em modo manual (sem cron do Airbyte; ver buildAirbyteSchedule
+    // no gateway para frequency "once") e a execução de imediato é disparada logo
+    // abaixo via triggerAirbyteSync, em vez de depender de qualquer agendamento.
     const realScheduleFrequencies: SyncFrequencyOption[] = ['daily', 'weekly', 'monthly', 'once'];
     let airbyteConnectionId: string | undefined;
     if (usingRealStreams && isRealAirbyteId(selectedDestId) && realScheduleFrequencies.includes(syncFrequency)) {
@@ -973,18 +976,18 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
           destinationId: selectedDestId,
           streams,
           writeMode: destWriteMode,
-          schedule: {
-            frequency: syncFrequency as 'daily' | 'weekly' | 'monthly' | 'once',
-            executionTimes,
-            // weeklyDays holds UI keys ('seg', 'ter', ...) — convert to the Unix cron
-            // values ('0'-'6', Sun=0) the gateway expects before sending.
-            weeklyDays: syncFrequency === 'weekly'
-              ? weeklyDays.map(d => WEEKDAYS.find(w => w.key === d)?.cronVal || '1')
-              : undefined,
-            monthlyDay: syncFrequency === 'monthly' ? monthlyDay : undefined,
-          },
+          schedule: { frequency: 'once', executionTimes: [] },
         });
         airbyteConnectionId = created.connectionId;
+
+        // Execução de imediato: dispara a sincronização manual assim que a conexão
+        // existe. Best-effort — a conexão já foi criada com sucesso; se o disparo
+        // falhar, o usuário ainda pode sincronizar manualmente depois.
+        try {
+          await triggerAirbyteSync(airbyteConnectionId);
+        } catch (err) {
+          console.error('Falha ao disparar a sincronização imediata:', err);
+        }
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Falha ao criar a integração no Airbyte.');
         setIsCreating(false);
@@ -993,7 +996,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
 
     const newIntegrationId = `int-auto-${Date.now()}`;
-    const scheduleSummary = getScheduleSummaryText();
+    // O bloco de agendamento está desativado (ver acima) — a integração roda uma vez,
+    // de imediato, então o resumo exibido reflete isso em vez do texto do
+    // seletor de frequência (que fica preso no valor padrão, sem efeito real).
+    const scheduleSummary = 'Execução imediata (agendamento desativado nesta versão)';
 
     // Create the AutoIntegration record first — the canvas (nodes/edges/cron/etc.)
     // is fully derivable from it via buildPipelineFromIntegration, which is the
@@ -2401,9 +2407,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 </div>
               )}
 
-              {/* Frequência de Sincronização e Horários de Execução */}
+              {/* Frequência de Sincronização e Horários de Execução — desativado nesta
+                  versão: a execução acontece de imediato na criação da integração (ver
+                  handleCreateAutoIntegration / triggerAirbyteSync). O bloco fica visível,
+                  mas sem interação, para ser reaproveitado quando o agendamento passar a
+                  ser orquestrado pelo Airflow. */}
               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                <div className="opacity-50 pointer-events-none select-none space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-indigo-600" />
@@ -2427,17 +2438,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 </div>
 
                 {usingRealStreams && isRealAirbyteId(selectedDestId) && (
-                  syncFrequency === 'once' ? (
-                    <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Esta integração será criada de verdade no Airbyte em modo <strong>manual</strong> — o Airbyte não agenda uma execução única automática, então a sincronização precisará ser disparada manualmente (na tela do Airbyte ou por um recurso futuro de agendamento único).</span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Esta integração será criada de verdade no Airbyte, com o agendamento cron nativo configurado ({getScheduleSummaryText()}).</span>
-                    </div>
-                  )
+                  <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Esta integração será criada de verdade no Airbyte em modo <strong>manual</strong> (sem cron) — a seleção acima não tem efeito nesta versão.</span>
+                  </div>
                 )}
 
                 {/* 4 Frequency Options Grid: Diário, Semanal, Mensal, Carga única */}
@@ -2724,7 +2728,16 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                  </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Agendamento desativado nesta versão — a integração executa <strong>imediatamente</strong> ao ser criada.
+                      Este bloco será reativado quando a orquestração passar a ser feita pelo Airflow.
+                    </span>
+                  </div>
 
                 {/* LGPD Auto Sanitization */}
                 <div className="p-4 bg-white rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

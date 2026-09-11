@@ -188,6 +188,18 @@ export async function updateAirbyteConnectionStatus(
   });
 }
 
+/**
+ * Dispara uma sincronização manual imediata da conexão. Usado ao criar a
+ * integração: o bloco "Frequência de Sincronização" está desativado nesta
+ * versão (reservado para o agendamento via Airflow), então a execução de
+ * imediato depende deste disparo em vez do cron do Airbyte.
+ */
+export async function triggerAirbyteSync(connectionId: string): Promise<{ jobId: number; status: string }> {
+  return gatewayFetch(`/api/airbyte/connections/${connectionId}/sync`, {
+    method: 'POST',
+  });
+}
+
 export interface AirbyteJob {
   jobId: number;
   status: 'pending' | 'running' | 'incomplete' | 'failed' | 'succeeded' | 'cancelled';
