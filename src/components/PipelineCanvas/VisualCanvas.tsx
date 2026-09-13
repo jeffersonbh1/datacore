@@ -9,7 +9,7 @@ import { CanvasNode, CanvasEdge, Pipeline, NodeType, NodeStatus, PIIType, Maskin
 import { AVAILABLE_CONNECTORS, AVAILABLE_OPERATORS, MOCK_RAW_SAMPLE, MOCK_MASKED_SAMPLE } from '../../data/initialData';
 import { DbtSqlEditorModal, getDbtLayer } from './DbtSqlEditorModal';
 import { buildBronzeLayer, buildSilverLayer, BronzeTableResult, AirbyteJob, fetchConnectionJobs, triggerAirbyteSync } from '../../lib/airbyteGateway';
-import { isMedallionDbtNode, mapSyncStatusToNodeStatus, PipelineRunSummary, TableBuildResult } from '../../lib/pipelineBuilder';
+import { isMedallionDbtNode, mapSyncStatusToNodeStatus, summarizeTableFailures, PipelineRunSummary, TableBuildResult } from '../../lib/pipelineBuilder';
 import { fetchPipelineRunsForPipeline, upsertPipelineRuns, updatePipelineRunLayerStatus } from '../../lib/supabase';
 
 interface VisualCanvasProps {
@@ -86,10 +86,58 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     setShowTableFilter(false);
   }, [pipeline.id]);
 
+  // Reidrata o estado de execução ao montar (troca de aba/pipeline sempre
+  // desmonta este componente — ver App.tsx). Sem isto, pipelineExecStep e
+  // isExecutingPipeline sempre nascem no valor inicial (null/false), mesmo com
+  // uma execução real ainda rodando no Airbyte/gateway — e como a animação do
+  // fluxo (abaixo, no SVG) usa só pipelineExecStep como fonte de verdade, ela
+  // simplesmente nunca mais aparece depois de sair da tela e voltar. Aqui,
+  // confere o último pipeline_runs e, se ele ainda não chegou a um estado
+  // terminal, restaura o step/status correspondente — o watchdog mais abaixo
+  // (isExecutingPipeline + activeAirbyteJobId) assume o polling daqui pra frente.
+  React.useEffect(() => {
+    if (!pipeline.dbId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [run] = await fetchPipelineRunsForPipeline(pipeline.dbId!, 1);
+        if (cancelled || !run) return;
+        const rawRunning = run.status === 'pending' || run.status === 'running';
+        const bronzeRunning = run.bronzeStatus === 'running';
+        const silverRunning = run.silverStatus === 'running';
+        if (!rawRunning && !bronzeRunning && !silverRunning) return;
+
+        setActiveAirbyteJobId(run.airbyteJobId);
+        setIsExecutingPipeline(true);
+        setPipelineExecStep(rawRunning ? 'raw' : bronzeRunning ? 'bronze' : 'silver');
+        setNodes(prev => {
+          const updated = prev.map((n): CanvasNode => {
+            if (n.type === 'source') {
+              return { ...n, status: rawRunning ? 'running' : mapSyncStatusToNodeStatus(run.status) };
+            }
+            if (n.type === 'bronze' && n.config.bigquery && bronzeRunning) {
+              return { ...n, status: 'running' };
+            }
+            if (n.type === 'silver' && n.config.bigquery && silverRunning) {
+              return { ...n, status: 'running' };
+            }
+            return n;
+          });
+          onUpdatePipeline({ ...pipeline, nodes: updated });
+          return updated;
+        });
+      } catch (err) {
+        console.error('Falha ao verificar execução em andamento ao carregar o pipeline:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipeline.dbId]);
+
   const bronzeTableTitles: string[] = nodes.filter(n => n.type === 'bronze').map((n): string => n.title);
   const bronzeTableNames: string[] = Array.from(new Set<string>(bronzeTableTitles)).sort();
   const isTableVisible = (table: string) => visibleTables === null || visibleTables.has(table);
-  const isNodeVisible = (node: CanvasNode) => node.type !== 'bronze' || isTableVisible(node.title);
+  const isNodeVisible = (node: CanvasNode) => (node.type !== 'bronze' && node.type !== 'silver') || isTableVisible(node.title);
 
   // Passo 1 (nó "source") reflete o status REAL da última sincronização Airbyte
   // (ver applyRealMetrics em pipelineBuilder.ts — 'idle' = nunca rodou, 'running' =
@@ -316,8 +364,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
     }
   };
 
-  // Camada Silver real: mesmo mecanismo da Bronze, um único nó cobrindo todas as
-  // tabelas selecionadas (ver bigquery.tables no nó silver em pipelineBuilder.ts).
+  // Camada Silver real: mesmo mecanismo da Bronze — um nó por tabela (ver
+  // pipelineBuilder.ts), então este builda só a tabela do nó clicado.
   const handleBuildSilver = async (node: CanvasNode, fullRefresh = false) => {
     const bq = node.config.bigquery;
     if (!bq || silverBuild.status === 'running' || rawSyncBlocked) return;
@@ -533,7 +581,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           setBronzeBuild({
             status: failed.length ? 'error' : 'done',
             results,
-            error: failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            error: failed.length ? summarizeTableFailures(failed) : undefined,
           });
           setNodes(prev => {
             const updated = prev.map(n => {
@@ -546,7 +594,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             return updated;
           });
           await persistLayerStatus('bronze', failed.length ? 'failed' : 'built',
-            failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            failed.length ? summarizeTableFailures(failed) : undefined,
             results.map(r => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
           bronzeSucceededTables = new Set(allTables.filter(t => byTable.get(t)?.status === 'ok'));
           // Falha em UMA tabela não trava as outras: a Bronze já roda cada tabela
@@ -576,20 +624,23 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
         return;
       }
 
-      // 3) SILVER — um único nó cobre todas as tabelas; a lista enviada é
-      // reduzida às tabelas visíveis no filtro do Studio E cuja Bronze desta
-      // execução deu certo (nunca faz sentido rodar a Silver sobre uma Bronze
-      // que falhou/não rodou).
-      const silverNode = nodes.find(n => n.type === 'silver' && n.config.bigquery);
-      if (silverNode) {
-        const bq = silverNode.config.bigquery!;
-        const silverTables = bq.tables.filter(t => isTableVisible(t) && bronzeSucceededTables.has(t));
-        if (silverTables.length === 0) {
-          setPipelineExecError('Nenhuma tabela com Bronze bem-sucedida nesta execução — Silver não foi construída.');
-          return;
-        }
+      // 3) SILVER — um nó por tabela (mesmo padrão da Bronze acima); a lista
+      // enviada ao dbt é reduzida às tabelas visíveis no filtro do Studio E cuja
+      // Bronze desta execução deu certo (nunca faz sentido rodar a Silver sobre
+      // uma Bronze que falhou/não rodou).
+      const allSilverNodes = nodes.filter(n => n.type === 'silver' && n.config.bigquery);
+      const silverNodes = allSilverNodes.filter(n => isTableVisible(n.title) && bronzeSucceededTables.has(n.title));
+      if (allSilverNodes.length > 0 && silverNodes.length === 0) {
+        setPipelineExecError('Nenhuma tabela com Bronze bem-sucedida nesta execução — Silver não foi construída.');
+        return;
+      }
+
+      if (silverNodes.length > 0) {
+        const bq = silverNodes[0].config.bigquery!;
+        const silverTables = silverNodes.flatMap(n => n.config.bigquery!.tables);
+        const silverNodeIds = new Set<string>(silverNodes.map(n => n.id));
         setPipelineExecStep('silver');
-        setNodeStatusById(silverNode.id, 'running');
+        setNodesStatusByIds(silverNodeIds, 'running');
         setSilverBuild({ status: 'running' });
         await persistLayerStatus('silver', 'running');
         try {
@@ -597,28 +648,45 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
             projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset,
             silverDataset: bq.silverDataset, tables: silverTables, sistema: bq.sistema, location: bq.location,
           });
+          const byTable = new Map(results.map(r => [r.table, r]));
           const failed = results.filter(r => r.status === 'error');
           setSilverBuild({
             status: failed.length ? 'error' : 'done',
             results,
-            error: failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            error: failed.length ? summarizeTableFailures(failed) : undefined,
           });
-          setNodeStatusById(silverNode.id, failed.length ? 'error' : 'success');
+          setNodes(prev => {
+            const updated = prev.map(n => {
+              if (n.type !== 'silver' || !n.config.bigquery || !silverNodeIds.has(n.id)) return n;
+              const table = n.config.bigquery.tables[0];
+              const r = byTable.get(table);
+              return { ...n, status: (r?.status === 'ok' ? 'success' : 'error') as NodeStatus };
+            });
+            onUpdatePipeline({ ...pipeline, nodes: updated });
+            return updated;
+          });
           await persistLayerStatus('silver', failed.length ? 'failed' : 'built',
-            failed.length ? failed.map(r => `${r.table}: ${r.error}`).join(' | ') : undefined,
+            failed.length ? summarizeTableFailures(failed) : undefined,
             results.map(r => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
           if (failed.length) {
-            setPipelineExecError(`Falha ao construir a Silver: ${failed.map(r => r.table).join(', ')}.`);
+            setPipelineExecError(`Falha ao construir a Silver para: ${failed.map(r => r.table).join(', ')}.`);
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Falha ao construir a camada Silver.';
           setSilverBuild({ status: 'error', error: msg });
-          setNodeStatusById(silverNode.id, 'error');
+          setNodesStatusByIds(silverNodeIds, 'error');
           setPipelineExecError(msg);
           await persistLayerStatus('silver', 'failed', msg,
             silverTables.map(table => ({ table, status: 'error', rowsAffected: null, error: msg })));
         }
       }
+    } catch (err) {
+      // Catch de segurança: o disparo/espera do sync no Airbyte (acima) não tem
+      // try/catch próprio — sem isto, um erro aqui (rede fora do ar, 401, etc.)
+      // deixava o nó "source" preso em 'running' pra sempre, sem erro visível.
+      const msg = err instanceof Error ? err.message : 'Falha ao executar o pipeline.';
+      setNodesStatusByType('source', 'error');
+      setPipelineExecError(msg);
     } finally {
       setIsExecutingPipeline(false);
       setPipelineExecStep(null);
@@ -645,6 +713,7 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
   // Execuções já resolve para o histórico, mas que não destravava este canvas).
   const reconcileLocalUiFromRun = (run: PipelineRunSummary) => {
     const bronzeByTable = new Map((run.bronzeTables || []).map(t => [t.table, t]));
+    const silverByTable = new Map((run.silverTables || []).map(t => [t.table, t]));
     setNodes(prev => {
       const updated = prev.map(n => {
         if (n.type === 'source') {
@@ -659,6 +728,9 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({
           return n;
         }
         if (n.type === 'silver' && n.config.bigquery) {
+          const table = n.config.bigquery.tables[0];
+          const t = silverByTable.get(table);
+          if (t) return { ...n, status: (t.status === 'ok' ? 'success' : 'error') as NodeStatus };
           if (run.silverStatus === 'built') return { ...n, status: 'success' as NodeStatus };
           if (run.silverStatus === 'failed') return { ...n, status: 'error' as NodeStatus };
           return n;

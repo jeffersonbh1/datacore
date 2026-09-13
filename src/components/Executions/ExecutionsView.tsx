@@ -4,7 +4,7 @@ import {
   ChevronRight, ExternalLink, AlertCircle, Database, Boxes, Layers, FileText, X
 } from 'lucide-react';
 import { Pipeline } from '../../types';
-import { PipelineRunSummary, TableBuildResult } from '../../lib/pipelineBuilder';
+import { PipelineRunSummary, TableBuildResult, isGeneralLayerFailure } from '../../lib/pipelineBuilder';
 import { fetchPipelineRunsForPipeline, upsertPipelineRuns } from '../../lib/supabase';
 import { fetchConnectionJobs } from '../../lib/airbyteGateway';
 
@@ -27,6 +27,13 @@ const RUN_STATUS_LABEL: Record<PipelineRunSummary['status'], string> = {
 };
 
 const OPEN_RUN_STATUSES: PipelineRunSummary['status'][] = ['pending', 'running'];
+
+/** Execuções mostradas por página na tabela de histórico de cada pipeline. */
+const RUNS_PER_PAGE = 12;
+
+/** Quantos registros de histórico buscar do Supabase por pipeline — precisa ser
+ *  bem maior que RUNS_PER_PAGE para a paginação ter mais de uma página de verdade. */
+const HISTORY_FETCH_LIMIT = 100;
 
 /**
  * Um run ainda está "em andamento" se a Raw não terminou, OU se já terminou
@@ -182,7 +189,7 @@ async function reconcileOpenRuns(
     await upsertPipelineRuns(idEmpresa, pipeline.dbId, finished);
     // Relê do banco para pegar os campos já calculados (duração em ms, etc.)
     // em vez de duplicar aqui o parsing que upsertPipelineRuns/mapPipelineRunRow já fazem.
-    return await fetchPipelineRunsForPipeline(pipeline.dbId, Math.max(runs.length, 10));
+    return await fetchPipelineRunsForPipeline(pipeline.dbId, Math.max(runs.length, HISTORY_FETCH_LIMIT));
   } catch (err) {
     console.error(`Erro ao reconciliar execuções com o Airbyte para "${pipeline.name}":`, err);
     return runs;
@@ -197,6 +204,9 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Chave "<pipelineId>:<airbyteJobId>" do run cujo detalhe por tabela está aberto.
   const [expandedRunKey, setExpandedRunKey] = useState<string | null>(null);
+  // Página atual (0-based) da tabela de execuções de cada pipeline — RUNS_PER_PAGE
+  // por vez, em vez do histórico inteiro numa lista só.
+  const [runsPageByPipeline, setRunsPageByPipeline] = useState<Record<string, number>>({});
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [logModal, setLogModal] = useState<{ layer: string; result: TableBuildResult } | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -210,7 +220,7 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
           .filter(p => p.dbId)
           .map(async p => {
             try {
-              const runs = await fetchPipelineRunsForPipeline(p.dbId!, 10);
+              const runs = await fetchPipelineRunsForPipeline(p.dbId!, HISTORY_FETCH_LIMIT);
               const reconciled = await reconcileOpenRuns(p, runs, idEmpresa);
               return [p.id, reconciled] as const;
             } catch (err) {
@@ -300,12 +310,19 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
             const latest = runs[0];
             const isExpanded = expandedId === pipeline.id;
             const noHistoryYet = !pipeline.dbId;
+            const totalPages = Math.max(1, Math.ceil(runs.length / RUNS_PER_PAGE));
+            const runsPage = Math.min(runsPageByPipeline[pipeline.id] || 0, totalPages - 1);
+            const pageStart = runsPage * RUNS_PER_PAGE;
+            const pagedRuns = runs.slice(pageStart, pageStart + RUNS_PER_PAGE);
 
             return (
               <div key={pipeline.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setExpandedId(isExpanded ? null : pipeline.id)}
+                  onClick={() => {
+                    setExpandedId(isExpanded ? null : pipeline.id);
+                    if (!isExpanded) setRunsPageByPipeline(prev => ({ ...prev, [pipeline.id]: 0 }));
+                  }}
                   className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-slate-50/60 transition cursor-pointer"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -364,7 +381,7 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
                             </tr>
                           </thead>
                           <tbody>
-                            {runs.map(run => {
+                            {pagedRuns.map(run => {
                               const runKey = `${pipeline.id}:${run.airbyteJobId}`;
                               const isRunExpanded = expandedRunKey === runKey;
 
@@ -387,6 +404,29 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
                                   {isRunExpanded && (
                                     <tr className="border-t border-slate-200/70 bg-white">
                                       <td colSpan={7} className="p-3">
+                                        {/* Erro GERAL (mesma causa em várias tabelas da mesma camada — ex.: queda de
+                                            conexão com o BigQuery) fica num card preso a ESTA execução (data/hora da
+                                            linha acima), não num banner solto no fim da lista referindo-se sempre à
+                                            última execução. Erro por tabela (causas diferentes) não repete aqui — já
+                                            fica no botão de log de cada tabela abaixo. */}
+                                        {isGeneralLayerFailure(run.bronzeTables) && (
+                                          <div className="mb-3 flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg px-2.5 py-1.5">
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                            <span>
+                                              <span className="font-semibold">Erro geral na Bronze em {formatDateTime(run.iniciadoEm)}: </span>
+                                              {run.bronzeError}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {isGeneralLayerFailure(run.silverTables) && (
+                                          <div className="mb-3 flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg px-2.5 py-1.5">
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                            <span>
+                                              <span className="font-semibold">Erro geral na Silver em {formatDateTime(run.iniciadoEm)}: </span>
+                                              {run.silverError}
+                                            </span>
+                                          </div>
+                                        )}
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                           <LayerTablesList label="Bronze" tables={run.bronzeTables} onOpenLog={(layer, result) => setLogModal({ layer, result })} />
                                           <LayerTablesList label="Silver" tables={run.silverTables} onOpenLog={(layer, result) => setLogModal({ layer, result })} />
@@ -402,10 +442,30 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
                       </div>
                     )}
 
-                    {(runs[0]?.bronzeError || runs[0]?.silverError) && (
-                      <div className="mt-2 flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg px-2.5 py-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>{runs[0].bronzeError || runs[0].silverError}</span>
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
+                        <span>
+                          Mostrando {pageStart + 1}–{Math.min(pageStart + RUNS_PER_PAGE, runs.length)} de {runs.length} execuções
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={runsPage === 0}
+                            onClick={() => setRunsPageByPipeline(prev => ({ ...prev, [pipeline.id]: runsPage - 1 }))}
+                            className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                          >
+                            Anterior
+                          </button>
+                          <span className="font-mono">Página {runsPage + 1} de {totalPages}</span>
+                          <button
+                            type="button"
+                            disabled={runsPage >= totalPages - 1}
+                            onClick={() => setRunsPageByPipeline(prev => ({ ...prev, [pipeline.id]: runsPage + 1 }))}
+                            className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                          >
+                            Próxima
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

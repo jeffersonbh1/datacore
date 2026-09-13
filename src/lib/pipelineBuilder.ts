@@ -192,33 +192,49 @@ export function buildPipelineFromIntegration(
     return bronzeNodeId;
   });
 
-  const silverNodeId = `${pipelineId}-silver`;
-  nodes.push({
-    id: silverNodeId,
-    type: 'silver',
-    title: `Camada Silver (${destination.name})`,
-    subtitle: `${destination.type.toUpperCase()} • ${destination.databaseOrDataset}`,
-    provider: destination.provider,
-    iconName: 'Boxes',
-    x: BRONZE_BASE_X + bronzeColumns * COL_SPACING + 40,
-    y: 190,
-    status: 'idle',
-    config: {
-      destinationTable: `${destination.databaseOrDataset}.[${selectedTables.join(', ')}]`,
-      writeMode: destination.writeMode,
-      bigquery: isBigQueryDestination && bronzeDataset ? {
-        projectId: destination.accountOrProject,
-        rawDataset,
-        bronzeDataset,
-        silverDataset: bronzeDataset.replace(/^bronze_/, 'silver_'),
-        tables: selectedTables,
-        location: destination.warehouseOrCluster || undefined,
-        sistema: source.name,
-      } : undefined,
-    }
-  });
-  bronzeNodeIds.forEach((bronzeNodeId, i) => {
-    edges.push({ id: `${pipelineId}-e-bronze-silver-${i}`, source: bronzeNodeId, target: silverNodeId, animated: true });
+  // One Silver node per table (not one combined node) — mirrors the Bronze grid
+  // above: each Bronze node fans into its OWN Silver node (1:1), so every table
+  // gets its own place to build/inspect its silver_ table independently (same
+  // reasoning as the Bronze comment above — a combined node hid per-table status
+  // and made "which table failed" only discoverable via the log button, not the
+  // canvas itself).
+  const silverDataset = bronzeDataset ? bronzeDataset.replace(/^bronze_/, 'silver_') : undefined;
+  const SILVER_BASE_X = BRONZE_BASE_X + bronzeColumns * COL_SPACING + 40;
+
+  selectedTables.forEach((table, i) => {
+    const silverNodeId = `${pipelineId}-silver-${i}`;
+    const col = Math.floor(i / ROWS_PER_COL);
+    const row = i % ROWS_PER_COL;
+
+    nodes.push({
+      id: silverNodeId,
+      type: 'silver',
+      title: table,
+      subtitle: isBigQueryDestination && silverDataset
+        ? `${silverDataset}.silver_${table}`
+        : `${destination.type.toUpperCase()} • ${destination.databaseOrDataset}`,
+      provider: destination.provider,
+      iconName: 'Boxes',
+      x: SILVER_BASE_X + col * COL_SPACING,
+      y: BRONZE_BASE_Y + row * ROW_SPACING,
+      status: 'idle',
+      config: {
+        destinationTable: isBigQueryDestination && silverDataset
+          ? `${silverDataset}.silver_${table}`
+          : `${destination.databaseOrDataset}.${table}`,
+        writeMode: destination.writeMode,
+        bigquery: isBigQueryDestination && bronzeDataset ? {
+          projectId: destination.accountOrProject,
+          rawDataset,
+          bronzeDataset,
+          silverDataset,
+          tables: [table],
+          location: destination.warehouseOrCluster || undefined,
+          sistema: source.name,
+        } : undefined,
+      }
+    });
+    edges.push({ id: `${pipelineId}-e-bronze-silver-${i}`, source: bronzeNodeIds[i], target: silverNodeId, animated: true });
   });
 
   const cronExpr = buildCronExpression(integration);
@@ -294,6 +310,49 @@ export interface PipelineRunSummary {
   silverError: string | null;
   silverTables: TableBuildResult[] | null;
   silverBuiltEm: string | null;
+}
+
+/** Escapa uma string para uso literal dentro de new RegExp(). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Erros de dbt/BigQuery quase sempre embutem o nome da própria tabela/model na
+ * mensagem (ex.: ".../tables/silver_salesforce_dbt_execucoes?prettyPrint=false").
+ * Isso faz com que a MESMA causa raiz (uma queda de conexão que derruba todas as
+ * tabelas de um build) nunca bata por igualdade exata de string entre tabelas
+ * diferentes. Normaliza removendo o nome da tabela antes de comparar, para que
+ * "mesma causa, tabela diferente" seja reconhecido como erro geral.
+ */
+function normalizeTableError(table: string, error: string): string {
+  return error.replace(new RegExp(escapeRegExp(table), 'g'), '<tabela>');
+}
+
+// Resumo usado no banner de execução (Studio) e em pipeline_runs.bronze_error/
+// silver_error (card da execução na tela Execuções). O detalhe completo de CADA
+// tabela já fica disponível no botão de log dela (TableBuildResult -> ExecutionsView/
+// LayerTablesList) — este resumo nunca deve repetir o texto bruto do erro de cada
+// tabela, senão vira o mesmo erro despejado várias vezes num "muro de texto" (ex.:
+// uma queda de conexão com o BigQuery que derruba todo mundo ao mesmo tempo). Aqui só
+// distinguimos: erro GERAL (mesma causa em todas as tabelas selecionadas — não é
+// específico de uma tabela) de erro POR TABELA (causas diferentes — aí o resumo só
+// aponta quais tabelas falharam, e o "porquê" de cada uma vive no log dela).
+export function summarizeTableFailures(failed: { table: string; error?: string | null }[]): string {
+  if (failed.length === 0) return '';
+  const distinctErrors = new Set(failed.map((f) => normalizeTableError(f.table, f.error || '')));
+  if (failed.length > 1 && distinctErrors.size === 1) {
+    return `Erro geral — a mesma falha atingiu as ${failed.length} tabelas selecionadas (não é um problema de uma tabela específica): ${failed[0].error} — ver o log de qualquer uma delas para o detalhe completo.`;
+  }
+  return `Falha em ${failed.length} ${failed.length > 1 ? 'tabelas' : 'tabela'} (${failed.map((f) => f.table).join(', ')}) — ver o log de cada uma para o erro completo.`;
+}
+
+/** True quando as tabelas que falharam nesta camada compartilham a mesma causa —
+ *  usado para decidir se mostra o card de "erro geral" na tela Execuções. */
+export function isGeneralLayerFailure(tables: TableBuildResult[] | null): boolean {
+  const failed = (tables || []).filter((t) => t.status === 'error' && t.error);
+  if (failed.length < 2) return false;
+  return new Set(failed.map((t) => normalizeTableError(t.table, t.error as string))).size === 1;
 }
 
 const FINISHED_STATUSES: PipelineRunSummary['status'][] = ['succeeded', 'failed', 'cancelled', 'incomplete'];
