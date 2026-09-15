@@ -9,6 +9,11 @@ async function gatewayFetch<T>(path: string, init: RequestInit = {}): Promise<T>
   }
 
   const res = await fetch(`${gatewayUrl}${path}`, {
+    // Toda chamada ao gateway é uma leitura/ação "ao vivo" (status de pipeline,
+    // SQL de modelo dbt recém-regenerado, etc.) — nunca deve vir do cache HTTP
+    // do navegador, ou o app pode mostrar um estado desatualizado mesmo com o
+    // servidor já correto (foi exatamente o que aconteceu com o SQL do dbt).
+    cache: 'no-store',
     ...init,
     headers: {
       'Content-Type': 'application/json',
