@@ -7,14 +7,14 @@
 -- Rode este script no SQL Editor do Supabase (mesmo projeto de 001..007).
 -- =============================================================================
 
-alter table pipeline_runs
-  add column if not exists silver_status text
-    check (silver_status in ('not_applicable', 'built', 'failed'))
-    default 'not_applicable',
-  add column if not exists silver_built_em timestamptz,
-  add column if not exists silver_error text;
+ALTER TABLE pipeline_runs
+  ADD COLUMN IF NOT EXISTS silver_status TEXT
+    CHECK (silver_status IN ('not_applicable', 'built', 'failed'))
+    DEFAULT 'not_applicable',
+  ADD COLUMN IF NOT EXISTS silver_built_em TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS silver_error TEXT;
 
-comment on column pipeline_runs.silver_status is
+COMMENT ON COLUMN pipeline_runs.silver_status IS
   'Estado da construção da Camada Silver para este job do Airbyte (gravado por handleExecutePipeline no Studio, via updatePipelineRunLayerStatus). "not_applicable" até a tentativa acontecer; "built"/"failed" depois da tentativa real.';
-comment on column pipeline_runs.silver_error is
+COMMENT ON COLUMN pipeline_runs.silver_error IS
   'Detalhe do erro (tabelas que falharam) quando silver_status = ''failed''. Nulo em qualquer outro estado.';

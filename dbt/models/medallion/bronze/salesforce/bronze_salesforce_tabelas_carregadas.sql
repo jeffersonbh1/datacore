@@ -18,33 +18,33 @@
 --   registrado_em -> dth_registrado
 --   tipo_carga -> tp_carga
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'tabelas_carregadas') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'tabelas_carregadas') }}
 ),
 
-tipado as (
-    select
-        atualizado_em as dth_atualizado,
-        connection_id as id_connection,
-        nome_tabela as des_nome_tabela,
-        namespace as des_namespace,
-        integracao_nome as des_integracao_nome,
-        id as id_tabela_carregada,
-        coluna_atualizacao as des_coluna_atualizacao,
-        registrado_em as dth_registrado,
-        tipo_carga as tp_carga,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        atualizado_em AS dth_atualizado,
+        connection_id AS id_connection,
+        nome_tabela AS des_nome_tabela,
+        namespace AS des_namespace,
+        integracao_nome AS des_integracao_nome,
+        id AS id_tabela_carregada,
+        coluna_atualizacao AS des_coluna_atualizacao,
+        registrado_em AS dth_registrado,
+        tipo_carga AS tp_carga,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_tabela_carregada
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_tabela_carregada
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

@@ -16,22 +16,22 @@
 --   iniciado_em -> dth_iniciado
 --   status -> des_status
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'dbt_ultima_execucao') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'dbt_ultima_execucao') }}
 ),
 
-tipado as (
-    select
-        modelo_id as id_modelo,
-        execucao_id as id_execucao,
-        finalizado_em as dth_finalizado,
-        disparado_por as des_disparado_por,
-        sucesso as des_sucesso,
-        iniciado_em as dth_iniciado,
-        status as des_status,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        modelo_id AS id_modelo,
+        execucao_id AS id_execucao,
+        finalizado_em AS dth_finalizado,
+        disparado_por AS des_disparado_por,
+        sucesso AS des_sucesso,
+        iniciado_em AS dth_iniciado,
+        status AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-select * from tipado
+SELECT * FROM tipado

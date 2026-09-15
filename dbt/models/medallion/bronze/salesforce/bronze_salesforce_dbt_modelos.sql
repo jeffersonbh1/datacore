@@ -15,30 +15,30 @@
 --   nome -> des_nome
 --   id -> id_dbt_modelo
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'dbt_modelos') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'dbt_modelos') }}
 ),
 
-tipado as (
-    select
-        atualizado_em as dth_atualizado,
-        criado_em as dth_criado,
-        tabela_origem as des_tabela_origem,
-        camada as des_camada,
-        nome as des_nome,
-        id as id_dbt_modelo,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        atualizado_em AS dth_atualizado,
+        criado_em AS dth_criado,
+        tabela_origem AS des_tabela_origem,
+        camada AS des_camada,
+        nome AS des_nome,
+        id AS id_dbt_modelo,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_dbt_modelo
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_dbt_modelo
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

@@ -18,23 +18,23 @@
 -- jobs do Airbyte — não campos estáticos aqui.
 -- =============================================================================
 
-create table if not exists pipelines (
-  id bigint generated always as identity primary key,
-  id_empresa bigint not null references empresas(id) on delete cascade,
-  integracao_id bigint not null unique references integracoes(id) on delete cascade,
-  nome text not null,
-  categoria text not null default 'Integração Automática Lakehouse',
-  camadas text[] not null default '{raw,bronze,silver}',
-  layout_overrides jsonb not null default '{}'::jsonb,
-  criado_por uuid references usuarios(id) on delete set null,
-  criado_em timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS pipelines (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id_empresa BIGINT NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+  integracao_id BIGINT NOT NULL UNIQUE REFERENCES integracoes(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  categoria TEXT NOT NULL DEFAULT 'Integração Automática Lakehouse',
+  camadas TEXT[] NOT NULL DEFAULT '{raw,bronze,silver}',
+  layout_overrides JSONB NOT NULL DEFAULT '{}'::JSONB,
+  criado_por UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-comment on table pipelines is
+COMMENT ON TABLE pipelines IS
   'Vitrine 1:1 de uma integração no Studio Visual ETL. A topologia (nodes/edges) é derivada de integracoes por buildPipelineFromIntegration(), não armazenada aqui — só o vínculo estável, metadados de exibição e layout_overrides (posições de nó customizadas pelo usuário).';
-comment on column pipelines.layout_overrides is
+COMMENT ON COLUMN pipelines.layout_overrides IS
   'Só posições {node_id: {x,y}} arrastadas pelo usuário no canvas. Nunca a topologia inteira.';
 
-create index if not exists idx_pipelines_empresa on pipelines(id_empresa);
-create index if not exists idx_pipelines_integracao on pipelines(integracao_id);
+CREATE INDEX IF NOT EXISTS idx_pipelines_empresa ON pipelines(id_empresa);
+CREATE INDEX IF NOT EXISTS idx_pipelines_integracao ON pipelines(integracao_id);

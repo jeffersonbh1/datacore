@@ -21,31 +21,31 @@
   ========================================================================
 */
 
-with silver as (
-    select * from {{ ref('silver_transacoes') }}
+WITH silver AS (
+    SELECT * FROM {{ ref('silver_transacoes') }}
 ),
 
-kpis as (
+kpis AS (
 
-    select
+    SELECT
         data_referencia,
         ano_transacao,
         mes_transacao,
         status_transacao,
         faixa_ticket,
 
-        count(distinct id_transacao)                                             as total_transacoes,
-        count(distinct cpf_titular_mascarado)                                    as clientes_unicos_atendidos,
-        sum(if(ind_transacao_sucesso, valor_transacao, 0))                       as receita_liquida_total,
-        avg(if(ind_transacao_sucesso, valor_transacao, null))                    as ticket_medio,
-        countif(not ind_transacao_sucesso)                                       as total_cancelamentos,
-        round(safe_divide(countif(ind_transacao_sucesso) * 100.0, count(*)), 2)  as taxa_aprovacao_percentual,
+        count(DISTINCT id_transacao)                                             AS total_transacoes,
+        count(DISTINCT cpf_titular_mascarado)                                    AS clientes_unicos_atendidos,
+        sum(IF(ind_transacao_sucesso, valor_transacao, 0))                       AS receita_liquida_total,
+        avg(IF(ind_transacao_sucesso, valor_transacao, NULL))                    AS ticket_medio,
+        countif(NOT ind_transacao_sucesso)                                       AS total_cancelamentos,
+        round(safe_divide(countif(ind_transacao_sucesso) * 100.0, count(*)), 2)  AS taxa_aprovacao_percentual,
 
-        current_timestamp()                                                      as _dbt_gold_loaded_at
+        current_timestamp()                                                      AS _dbt_gold_loaded_at
 
-    from silver
-    group by 1, 2, 3, 4, 5
+    FROM silver
+    GROUP BY 1, 2, 3, 4, 5
 
 )
 
-select * from kpis
+SELECT * FROM kpis

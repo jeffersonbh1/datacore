@@ -21,41 +21,41 @@
   ========================================================================
 */
 
-with bronze as (
-    select * from {{ ref('bronze_transacoes') }}
+WITH bronze AS (
+    SELECT * FROM {{ ref('bronze_transacoes') }}
 ),
 
-curado as (
+curado AS (
 
-    select
+    SELECT
         id_transacao,
 
-        dt_geracao_origem                                as dt_transacao,
-        cast(dt_geracao_origem as date)                  as data_referencia,
-        extract(year  from dt_geracao_origem)            as ano_transacao,
-        extract(month from dt_geracao_origem)            as mes_transacao,
+        dt_geracao_origem                                AS dt_transacao,
+        cast(dt_geracao_origem AS DATE)                  AS data_referencia,
+        extract(year  FROM dt_geracao_origem)            AS ano_transacao,
+        extract(month FROM dt_geracao_origem)            AS mes_transacao,
 
         valor_transacao,
-        case
-            when valor_transacao > 1000 then 'TICKET_ALTO'
-            when valor_transacao > 200  then 'TICKET_MEDIO'
-            else 'TICKET_VAREJO'
-        end                                             as faixa_ticket,
+        CASE
+            WHEN valor_transacao > 1000 THEN 'TICKET_ALTO'
+            WHEN valor_transacao > 200  THEN 'TICKET_MEDIO'
+            ELSE 'TICKET_VAREJO'
+        END                                             AS faixa_ticket,
 
         status_transacao,
         cpf_titular_mascarado,
         numero_cartao_hash,
         email_comprador_tokenizado,
 
-        status_transacao in unnest({{ var('status_sucesso') }}) as ind_transacao_sucesso,
+        status_transacao IN unnest({{ var('status_sucesso') }}) AS ind_transacao_sucesso,
 
-        current_timestamp()                             as _dbt_silver_updated_at
+        current_timestamp()                             AS _dbt_silver_updated_at
 
-    from bronze
-    where id_transacao is not null
-      and valor_transacao is not null
-      and valor_transacao >= 0
+    FROM bronze
+    WHERE id_transacao IS NOT NULL
+      AND valor_transacao IS NOT NULL
+      AND valor_transacao >= 0
 
 )
 
-select * from curado
+SELECT * FROM curado

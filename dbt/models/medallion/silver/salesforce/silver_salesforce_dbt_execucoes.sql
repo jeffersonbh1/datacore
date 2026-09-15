@@ -10,4 +10,4 @@
 -- Origem: ref('bronze_salesforce_dbt_execucoes')
 -- Saída : <DBT_SCHEMA_SILVER>.silver_salesforce_dbt_execucoes
 
-select * from {{ ref('bronze_salesforce_dbt_execucoes') }}
+SELECT * FROM {{ ref('bronze_salesforce_dbt_execucoes') }}

@@ -10,4 +10,4 @@
 -- Origem: ref('bronze_salesforce_tabelas_carregadas')
 -- Saída : <DBT_SCHEMA_SILVER>.silver_salesforce_tabelas_carregadas
 
-select * from {{ ref('bronze_salesforce_tabelas_carregadas') }}
+SELECT * FROM {{ ref('bronze_salesforce_tabelas_carregadas') }}

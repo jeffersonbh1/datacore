@@ -14,70 +14,70 @@
 -- =============================================================================
 
 -- 1. usuarios ------------------------------------------------------------
-alter table usuarios enable row level security;
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 
-create policy "usuarios_select_own_or_admin" on usuarios
-  for select
-  using (
+CREATE POLICY "usuarios_select_own_or_admin" ON usuarios
+  FOR SELECT
+  USING (
     auth_user_id = auth.uid()
-    or exists (select 1 from usuarios me where me.auth_user_id = auth.uid() and me.papel = 'admin')
+    OR EXISTS (SELECT 1 FROM usuarios me WHERE me.auth_user_id = auth.uid() AND me.papel = 'admin')
   );
 
-create policy "usuarios_update_own" on usuarios
-  for update
-  using (auth_user_id = auth.uid())
-  with check (auth_user_id = auth.uid());
+CREATE POLICY "usuarios_update_own" ON usuarios
+  FOR UPDATE
+  USING (auth_user_id = auth.uid())
+  WITH CHECK (auth_user_id = auth.uid());
 
 -- Sem policy de INSERT/DELETE para anon/authenticated: contas só são criadas
 -- pelo gateway via service role (Admin API), que ignora RLS.
 
 -- 2. empresas --------------------------------------------------------------
-alter table empresas enable row level security;
+ALTER TABLE empresas ENABLE ROW LEVEL SECURITY;
 
-create policy "empresas_select_own_or_admin" on empresas
-  for select
-  using (
-    id = (select id_empresa from usuarios where auth_user_id = auth.uid())
-    or exists (select 1 from usuarios me where me.auth_user_id = auth.uid() and me.papel = 'admin')
+CREATE POLICY "empresas_select_own_or_admin" ON empresas
+  FOR SELECT
+  USING (
+    id = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM usuarios me WHERE me.auth_user_id = auth.uid() AND me.papel = 'admin')
   );
 
-create policy "empresas_write_admin_only" on empresas
-  for all
-  using (exists (select 1 from usuarios me where me.auth_user_id = auth.uid() and me.papel = 'admin'))
-  with check (exists (select 1 from usuarios me where me.auth_user_id = auth.uid() and me.papel = 'admin'));
+CREATE POLICY "empresas_write_admin_only" ON empresas
+  FOR ALL
+  USING (EXISTS (SELECT 1 FROM usuarios me WHERE me.auth_user_id = auth.uid() AND me.papel = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM usuarios me WHERE me.auth_user_id = auth.uid() AND me.papel = 'admin'));
 
 -- 3. origens / destinos / integracoes / pipelines / pipeline_runs ----------
 -- Isolamento por tenant: só enxerga/grava linhas da própria empresa.
-alter table origens enable row level security;
-alter table destinos enable row level security;
-alter table integracoes enable row level security;
-alter table pipelines enable row level security;
-alter table pipeline_runs enable row level security;
+ALTER TABLE origens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE destinos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE integracoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pipelines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pipeline_runs ENABLE ROW LEVEL SECURITY;
 
-create policy "origens_tenant_isolation" on origens
-  for all
-  using (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()))
-  with check (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()));
+CREATE POLICY "origens_tenant_isolation" ON origens
+  FOR ALL
+  USING (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()))
+  WITH CHECK (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()));
 
-create policy "destinos_tenant_isolation" on destinos
-  for all
-  using (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()))
-  with check (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()));
+CREATE POLICY "destinos_tenant_isolation" ON destinos
+  FOR ALL
+  USING (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()))
+  WITH CHECK (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()));
 
-create policy "integracoes_tenant_isolation" on integracoes
-  for all
-  using (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()))
-  with check (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()));
+CREATE POLICY "integracoes_tenant_isolation" ON integracoes
+  FOR ALL
+  USING (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()))
+  WITH CHECK (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()));
 
-create policy "pipelines_tenant_isolation" on pipelines
-  for all
-  using (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()))
-  with check (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()));
+CREATE POLICY "pipelines_tenant_isolation" ON pipelines
+  FOR ALL
+  USING (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()))
+  WITH CHECK (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()));
 
-create policy "pipeline_runs_tenant_isolation" on pipeline_runs
-  for all
-  using (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()))
-  with check (id_empresa = (select id_empresa from usuarios where auth_user_id = auth.uid()));
+CREATE POLICY "pipeline_runs_tenant_isolation" ON pipeline_runs
+  FOR ALL
+  USING (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()))
+  WITH CHECK (id_empresa = (SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid()));
 
 -- =============================================================================
 -- Rollback de emergência (rode manualmente se algo travar o acesso):

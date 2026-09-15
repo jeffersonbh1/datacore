@@ -18,34 +18,34 @@
 --   id -> id_pipeline
 --   layout_overrides -> des_layout_overrides
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'pipelines') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'pipelines') }}
 ),
 
-tipado as (
-    select
-        atualizado_em as dth_atualizado,
-        criado_em as dth_criado,
-        criado_por as des_criado_por,
-        categoria as tp_pipeline,
-        camadas as des_camadas,
-        nome as des_nome,
-        id_empresa as id_empresa,
-        integracao_id as id_integracao,
-        id as id_pipeline,
-        layout_overrides as des_layout_overrides,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        atualizado_em AS dth_atualizado,
+        criado_em AS dth_criado,
+        criado_por AS des_criado_por,
+        categoria AS tp_pipeline,
+        camadas AS des_camadas,
+        nome AS des_nome,
+        id_empresa AS id_empresa,
+        integracao_id AS id_integracao,
+        id AS id_pipeline,
+        layout_overrides AS des_layout_overrides,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_pipeline
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_pipeline
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

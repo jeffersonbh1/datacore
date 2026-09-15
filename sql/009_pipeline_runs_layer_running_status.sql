@@ -12,10 +12,10 @@
 -- Rode este script no SQL Editor do Supabase (mesmo projeto de 001..008).
 -- =============================================================================
 
-alter table pipeline_runs drop constraint if exists pipeline_runs_bronze_status_check;
-alter table pipeline_runs add constraint pipeline_runs_bronze_status_check
-  check (bronze_status in ('not_applicable', 'running', 'built', 'failed'));
+ALTER TABLE pipeline_runs DROP CONSTRAINT IF EXISTS pipeline_runs_bronze_status_check;
+ALTER TABLE pipeline_runs ADD CONSTRAINT pipeline_runs_bronze_status_check
+  CHECK (bronze_status IN ('not_applicable', 'running', 'built', 'failed'));
 
-alter table pipeline_runs drop constraint if exists pipeline_runs_silver_status_check;
-alter table pipeline_runs add constraint pipeline_runs_silver_status_check
-  check (silver_status in ('not_applicable', 'running', 'built', 'failed'));
+ALTER TABLE pipeline_runs DROP CONSTRAINT IF EXISTS pipeline_runs_silver_status_check;
+ALTER TABLE pipeline_runs ADD CONSTRAINT pipeline_runs_silver_status_check
+  CHECK (silver_status IN ('not_applicable', 'running', 'built', 'failed'));

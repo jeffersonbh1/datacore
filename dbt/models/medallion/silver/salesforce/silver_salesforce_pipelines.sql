@@ -10,4 +10,4 @@
 -- Origem: ref('bronze_salesforce_pipelines')
 -- Saída : <DBT_SCHEMA_SILVER>.silver_salesforce_pipelines
 
-select * from {{ ref('bronze_salesforce_pipelines') }}
+SELECT * FROM {{ ref('bronze_salesforce_pipelines') }}

@@ -10,14 +10,14 @@
 -- rodada da Bronze seja disparada duas vezes para o mesmo job do Airbyte.
 -- =============================================================================
 
-alter table pipeline_runs
-  add column if not exists bronze_status text
-    check (bronze_status in ('not_applicable', 'built', 'failed'))
-    default 'not_applicable',
-  add column if not exists bronze_built_em timestamptz,
-  add column if not exists bronze_error text;
+ALTER TABLE pipeline_runs
+  ADD COLUMN IF NOT EXISTS bronze_status TEXT
+    CHECK (bronze_status IN ('not_applicable', 'built', 'failed'))
+    DEFAULT 'not_applicable',
+  ADD COLUMN IF NOT EXISTS bronze_built_em TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS bronze_error TEXT;
 
-comment on column pipeline_runs.bronze_status is
+COMMENT ON COLUMN pipeline_runs.bronze_status IS
   'Estado da construção da Camada Bronze para este job do Airbyte (ver POST /api/bigquery/bronze/auto-sync). "not_applicable" até a tentativa acontecer (destino não-BigQuery, job ainda não sucedido, etc.); "built"/"failed" depois da tentativa real.';
-comment on column pipeline_runs.bronze_error is
+COMMENT ON COLUMN pipeline_runs.bronze_error IS
   'Detalhe do erro (JSON com as tabelas que falharam) quando bronze_status = ''failed''. Nulo em qualquer outro estado.';

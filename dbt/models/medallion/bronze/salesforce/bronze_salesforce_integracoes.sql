@@ -26,42 +26,42 @@
 --   dias_semana -> des_dias_semana
 --   status -> des_status
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'integracoes') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'integracoes') }}
 ),
 
-tipado as (
-    select
-        frequencia_sync as des_frequencia_sync,
-        nome as des_nome,
-        destino_id as id_destino,
-        tabelas_selecionadas as des_tabelas_selecionadas,
-        dia_mensal as des_dia_mensal,
-        data_execucao_unica as dat_execucao_unica,
-        criado_em as dth_criado,
-        horarios_execucao as des_horarios_execucao,
-        resumo_agendamento as des_resumo_agendamento,
-        origem_id as id_origem,
-        aplicar_sanitizacao_lgpd as des_aplicar_sanitizacao_lgpd,
-        table_sync_configs as des_table_sync_configs,
-        airbyte_connection_id as id_airbyte_connection,
-        pipeline_id as id_pipeline,
-        id_empresa as id_empresa,
-        id as id_integracao,
-        dias_semana as des_dias_semana,
-        status as des_status,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        frequencia_sync AS des_frequencia_sync,
+        nome AS des_nome,
+        destino_id AS id_destino,
+        tabelas_selecionadas AS des_tabelas_selecionadas,
+        dia_mensal AS des_dia_mensal,
+        data_execucao_unica AS dat_execucao_unica,
+        criado_em AS dth_criado,
+        horarios_execucao AS des_horarios_execucao,
+        resumo_agendamento AS des_resumo_agendamento,
+        origem_id AS id_origem,
+        aplicar_sanitizacao_lgpd AS des_aplicar_sanitizacao_lgpd,
+        table_sync_configs AS des_table_sync_configs,
+        airbyte_connection_id AS id_airbyte_connection,
+        pipeline_id AS id_pipeline,
+        id_empresa AS id_empresa,
+        id AS id_integracao,
+        dias_semana AS des_dias_semana,
+        status AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_integracao
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_integracao
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado
