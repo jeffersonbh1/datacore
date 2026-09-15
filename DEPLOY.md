@@ -223,8 +223,11 @@ valores realmente precisar mudar.
 ```bash
 export IMAGE=$REGION-docker.pkg.dev/$PROJ/datacore/gateway:$(git rev-parse --short HEAD)
 
+# _SERVICE e _RUNTIME_SA já têm como default os valores reais de produção
+# (airbyte-gateway / SA padrão do Compute) — só precisa sobrescrever se for
+# migrar para uma SA dedicada (ver passo 1) ou outro nome de serviço.
 gcloud builds submit --config cloudbuild.gateway.yaml --substitutions=\
-_IMAGE=$IMAGE,_REGION=$REGION,_SERVICE=datacore-gateway,_RUNTIME_SA=$GATEWAY_SA,\
+_IMAGE=$IMAGE,_REGION=$REGION,\
 _SUPABASE_URL=https://umpltpxoqtlbnpmjwclt.supabase.co,\
 _AIRBYTE_BASE_URL=http://35.198.9.239:8000,\
 _AIRBYTE_CLIENT_ID=<client id>,_AIRBYTE_WORKSPACE_ID=<workspace id>,\
@@ -235,7 +238,6 @@ _DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false,_DBT_CODEGEN_GIT=off
 - `_DBT_DISABLED=true` = parada de emergência: **toda** construção de Bronze
   passa a falhar (503) — não há mais fallback fora do dbt.
 - Pegue a URL: `gcloud run services describe airbyte-gateway --region=$REGION --format='value(status.url)'`
-  (nome real do serviço — não `datacore-gateway`, como os exemplos acima sugerem).
 
 **Como os modelos gerados chegam ao gateway** — a imagem "assa" `dbt/` no build.
 Uma integração nova só constrói a Bronze via dbt **depois** que
