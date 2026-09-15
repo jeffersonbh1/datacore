@@ -28,13 +28,13 @@ Gateway são deployados aqui.
 | 2 | IP **efêmero** da VM | muda a cada stop/start | **Reservar IP estático** OU usar VPC connector + IP interno |
 | 3 | Firewall da VM :8000 | provavelmente fechado p/ o Cloud Run | abrir (passo 2) |
 | 4 | Deploy do gateway | não existia cloudbuild | ✅ `cloudbuild.gateway.yaml` criado |
-| 5 | Segredos | em `.env.local` (texto) | mover p/ Secret Manager (passo 3) |
+| 5 | Segredos | ✅ todos em Secret Manager (passo 3) — ver nomes reais usados em produção | — |
 | 6 | `VITE_AIRBYTE_GATEWAY_URL` | `http://localhost:8080` | setar a URL do gateway no build do frontend (passo 6) |
 | 7 | Migrações SQL | `sql/001..007` | aplicar no Supabase (passo 4) |
 | 8 | Cloud Scheduler (auto-sync Bronze) | não configurado | criar job (passo 5) |
 | 9 | dbt no gateway | imagem/CPU/timeout maiores | `--memory=1Gi --timeout=900 --max-instances=1` (já no cloudbuild) |
 | 11 | Modelos dbt gerados | escritos em `dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<t>.sql` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
-| 10 | Chave da SA BigQuery | exposta em conversas/arquivo local | **rotacionar** e guardar só no Secret Manager |
+| 10 | Chave da SA BigQuery | ✅ rotacionada em 2026-09-15 (a chave anterior tinha virado uma variável de ambiente em texto puro com JWT inválido — ver passo 3) | as duas chaves antigas foram revogadas |
 
 ---
 
@@ -118,21 +118,68 @@ e use `_AIRBYTE_BASE_URL=http://<IP_INTERNO_DA_VM>:8000`.
 
 ## 3. Secret Manager
 
-```bash
-printf '%s' 'eyJhbG...'      | gcloud secrets create SUPABASE_SERVICE_ROLE_KEY --data-file=-
-printf '%s' '<client secret>' | gcloud secrets create AIRBYTE_CLIENT_SECRET     --data-file=-
-printf '%s' '<gateway key>'   | gcloud secrets create GATEWAY_API_KEY           --data-file=-
-gcloud secrets create BIGQUERY_CREDENTIALS_JSON --data-file=./bigquery-sa.json   # JSON íntegro
+> **Nomes reais em produção (2026-09-15): `kebab-case`, não `SCREAMING_SNAKE_CASE`.**
+> O `cloudbuild.gateway.yaml` deste repo ainda referencia os nomes em
+> `SCREAMING_SNAKE_CASE` abaixo (ex. `BIGQUERY_CREDENTIALS_JSON:latest`) — ele
+> nunca chegou a rodar contra o projeto real; o deploy que está no ar hoje foi
+> feito via `gcloud run deploy --source .` (passo 5). Se for usar o pipeline do
+> cloudbuild, ajuste os nomes dos segredos nele para bater com os criados aqui,
+> ou recrie os segredos com os nomes que o cloudbuild espera.
 
-for S in SUPABASE_SERVICE_ROLE_KEY AIRBYTE_CLIENT_SECRET GATEWAY_API_KEY BIGQUERY_CREDENTIALS_JSON; do
+```bash
+printf '%s' 'eyJhbG...'      | gcloud secrets create supabase-service-role-key --data-file=-
+printf '%s' '<client secret>' | gcloud secrets create airbyte-client-secret    --data-file=-
+printf '%s' '<client id>'     | gcloud secrets create airbyte-client-id        --data-file=-
+printf '%s' '<gateway key>'   | gcloud secrets create gateway-api-key          --data-file=-
+gcloud secrets create bigquery-credentials-json --data-file=./bigquery-sa.json  # JSON íntegro
+
+for S in supabase-service-role-key airbyte-client-secret airbyte-client-id gateway-api-key bigquery-credentials-json; do
   gcloud secrets add-iam-policy-binding $S \
     --member="serviceAccount:$GATEWAY_SA" --role="roles/secretmanager.secretAccessor"
 done
 ```
 
+> **`$GATEWAY_SA` na prática hoje** é a service account **padrão do Compute**
+> (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`) — a SA dedicada
+> `datacore-gateway-run` sugerida no passo 1 nunca foi criada. Funciona, mas é
+> o oposto do que o passo 1 recomenda (evitar a SA default); considerar migrar
+> para uma SA dedicada num momento de manutenção.
+
 > `GATEWAY_API_KEY` é o mesmo valor que o frontend manda em
 > `VITE_AIRBYTE_GATEWAY_API_KEY` (embutido no bundle — ou seja, visível ao cliente;
 > serve como chave de aplicação, não como segredo forte).
+
+### Ligar um segredo já existente ao Cloud Run (troca de credencial)
+
+Quando é só trocar o *valor* de um segredo que o serviço já usa, basta subir
+uma versão nova — o Cloud Run resolve `:latest` a cada revisão nova, então uma
+troca de valor só chega ao serviço vivo com uma nova revisão (ver passo 5,
+"Redeploy sem rebuildar a imagem"):
+
+```bash
+gcloud secrets versions add bigquery-credentials-json --data-file=./nova-chave.json
+gcloud run services update airbyte-gateway --region=$REGION \
+  --update-secrets="BIGQUERY_CREDENTIALS_JSON=bigquery-credentials-json:latest"
+```
+
+Se a variável **ainda não** for um segredo (caso real encontrado em produção:
+`BIGQUERY_CREDENTIALS_JSON` estava configurada como variável de ambiente em
+texto puro, com a chave corrompida — JWT inválido, toda construção da Bronze
+falhava com `invalid_grant: Invalid JWT Signature`), o Cloud Run recusa
+converter o tipo direto:
+
+```
+ERROR: Cannot update environment variable [BIGQUERY_CREDENTIALS_JSON] to the
+given type because it has already been set with a different type.
+```
+
+Nesse caso, remova a variável e adicione o segredo **no mesmo comando**:
+
+```bash
+gcloud run services update airbyte-gateway --region=$REGION \
+  --remove-env-vars="BIGQUERY_CREDENTIALS_JSON" \
+  --update-secrets="BIGQUERY_CREDENTIALS_JSON=bigquery-credentials-json:latest"
+```
 
 ---
 
@@ -157,6 +204,22 @@ em `pipeline_runs` — sem elas o auto-sync (passo 5) quebra.
 
 ## 5. Gateway — deploy
 
+O jeito documentado abaixo (`cloudbuild.gateway.yaml`, passando todo o
+ambiente e os segredos de novo a cada deploy) nunca chegou a rodar contra o
+projeto real. **O serviço em produção (`airbyte-gateway`) é atualizado assim:**
+
+```bash
+gcloud run deploy airbyte-gateway --source . --region=$REGION --project=$PROJ
+```
+
+Sem `--set-env-vars` / `--set-secrets` / `--service-account`, o Cloud Run
+**reaproveita a configuração da revisão anterior** (variáveis, segredos, SA,
+memória etc.) — só troca a imagem. É o caminho certo para uma mudança de
+código (como esta): mais simples e sem risco de sobrescrever por engano um
+segredo ou variável já ajustado manualmente. Reserve o comando com
+`--set-secrets`/`--set-env-vars` completo (abaixo) para quando algum desses
+valores realmente precisar mudar.
+
 ```bash
 export IMAGE=$REGION-docker.pkg.dev/$PROJ/datacore/gateway:$(git rev-parse --short HEAD)
 
@@ -171,7 +234,8 @@ _DBT_GCP_PROJECT=$PROJ,_DBT_DISABLED=false,_DBT_CODEGEN_GIT=off
 - Primeiro deploy pode levar ~5–8 min (a imagem instala `python3` + `dbt-bigquery`).
 - `_DBT_DISABLED=true` = parada de emergência: **toda** construção de Bronze
   passa a falhar (503) — não há mais fallback fora do dbt.
-- Pegue a URL: `gcloud run services describe datacore-gateway --region=$REGION --format='value(status.url)'`
+- Pegue a URL: `gcloud run services describe airbyte-gateway --region=$REGION --format='value(status.url)'`
+  (nome real do serviço — não `datacore-gateway`, como os exemplos acima sugerem).
 
 **Como os modelos gerados chegam ao gateway** — a imagem "assa" `dbt/` no build.
 Uma integração nova só constrói a Bronze via dbt **depois** que
