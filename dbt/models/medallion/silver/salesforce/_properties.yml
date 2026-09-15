@@ -7,52 +7,178 @@ models:
   - name: silver_salesforce_dbt_execucoes
     description: "Silver gerado — tabela dbt_execucoes."
     columns:
+      - name: id_modelo
+      - name: dth_criado
+      - name: des_log
+      - name: dth_finalizado
+      - name: des_disparado_por
       - name: id_dbt_execucao
         data_tests: [unique, not_null]
+      - name: des_sucesso
+      - name: dth_iniciado
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_dbt_modelos
     description: "Silver gerado — tabela dbt_modelos."
     columns:
+      - name: dth_atualizado
+      - name: dth_criado
+      - name: des_tabela_origem
+      - name: des_camada
+      - name: des_nome
       - name: id_dbt_modelo
         data_tests: [unique, not_null]
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_dbt_ultima_execucao
     description: "Silver gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+    columns:
+      - name: id_modelo
+      - name: id_execucao
+      - name: dth_finalizado
+      - name: des_disparado_por
+      - name: des_sucesso
+      - name: dth_iniciado
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_destinos
     description: "Silver gerado — tabela destinos."
     columns:
+      - name: tp_destino
+      - name: dth_criado
+      - name: des_modo_escrita
+      - name: des_configuracao
+      - name: des_nome
+      - name: id_empresa
+      - name: id_airbyte_destino
       - name: id_destino
         data_tests: [unique, not_null]
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_empresas
     description: "Silver gerado — tabela empresas."
     columns:
+      - name: dth_atualizado
+      - name: dth_criado
+      - name: id_airbyte_workspace
+      - name: des_nome
+      - name: des_plano
       - name: id_empresa
         data_tests: [unique, not_null]
+      - name: des_slug
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_integracoes
     description: "Silver gerado — tabela integracoes."
     columns:
+      - name: des_frequencia_sync
+      - name: des_nome
+      - name: id_destino
+      - name: des_tabelas_selecionadas
+      - name: des_dia_mensal
+      - name: dat_execucao_unica
+      - name: dth_criado
+      - name: des_horarios_execucao
+      - name: des_resumo_agendamento
+      - name: id_origem
+      - name: des_aplicar_sanitizacao_lgpd
+      - name: des_table_sync_configs
+      - name: id_airbyte_connection
+      - name: id_pipeline
+      - name: id_empresa
       - name: id_integracao
         data_tests: [unique, not_null]
+      - name: des_dias_semana
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_origens
     description: "Silver gerado — tabela origens."
     columns:
+      - name: tp_origem
+      - name: dth_criado
+      - name: des_configuracao
+      - name: id_airbyte_origem
+      - name: des_nome
+      - name: id_empresa
       - name: id_origem
         data_tests: [unique, not_null]
+      - name: des_status
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_pipeline_runs
     description: "Silver gerado — tabela pipeline_runs."
     columns:
+      - name: des_registros_sincronizacao
+      - name: dth_bronze_construcao
+      - name: dth_iniciado
+      - name: des_duracao_ms
+      - name: id_airbyte_job
+      - name: dth_criado
+      - name: dth_finalizado
+      - name: id_pipeline
+      - name: id_empresa
+      - name: des_bronze_status
       - name: id_pipeline_run
         data_tests: [unique, not_null]
+      - name: des_bronze_erro
+      - name: des_status
+      - name: des_bytes_sincronizacao
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_pipelines
     description: "Silver gerado — tabela pipelines."
     columns:
+      - name: dth_atualizado
+      - name: dth_criado
+      - name: des_criado_por
+      - name: tp_pipeline
+      - name: des_camadas
+      - name: des_nome
+      - name: id_empresa
+      - name: id_integracao
       - name: id_pipeline
         data_tests: [unique, not_null]
+      - name: des_layout_overrides
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_tabelas_carregadas
     description: "Silver gerado — tabela tabelas_carregadas."
     columns:
+      - name: dth_atualizado
+      - name: id_connection
+      - name: des_nome_tabela
+      - name: des_namespace
+      - name: des_integracao_nome
       - name: id_tabela_carregada
         data_tests: [unique, not_null]
+      - name: des_coluna_atualizacao
+      - name: dth_registrado
+      - name: tp_carga
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at
   - name: silver_salesforce_usuarios
     description: "Silver gerado — tabela usuarios."
     columns:
+      - name: des_senha_hash
+      - name: ind_visualizar_pii_bruto
+      - name: dat_alteracao
+      - name: dth_ultimo_acesso
+      - name: des_nome
+      - name: id_auth_usuario
+      - name: des_mfa_habilitado
+      - name: dat_criacao
+      - name: des_departamento
+      - name: id_empresa
+      - name: des_avatar_iniciais
       - name: id_usuario
         data_tests: [unique, not_null]
+      - name: ind_cadastro_ativo
+      - name: des_email
+      - name: des_papel
+      - name: dt_ingestao_lake
+      - name: _dbt_loaded_at

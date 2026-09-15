@@ -24,18 +24,18 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        atualizado_em AS dth_atualizado,
-        criado_em AS dth_criado,
-        criado_por AS des_criado_por,
-        categoria AS tp_pipeline,
-        camadas AS des_camadas,
-        nome AS des_nome,
-        id_empresa AS id_empresa,
-        integracao_id AS id_integracao,
-        id AS id_pipeline,
-        layout_overrides AS des_layout_overrides,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        atualizado_em                             AS dth_atualizado,
+        criado_em                                 AS dth_criado,
+        criado_por                                AS des_criado_por,
+        categoria                                 AS tp_pipeline,
+        camadas                                   AS des_camadas,
+        nome                                      AS des_nome,
+        id_empresa                                AS id_empresa,
+        integracao_id                             AS id_integracao,
+        id                                        AS id_pipeline,
+        layout_overrides                          AS des_layout_overrides,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

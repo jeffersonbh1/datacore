@@ -32,26 +32,26 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        frequencia_sync AS des_frequencia_sync,
-        nome AS des_nome,
-        destino_id AS id_destino,
-        tabelas_selecionadas AS des_tabelas_selecionadas,
-        dia_mensal AS des_dia_mensal,
-        data_execucao_unica AS dat_execucao_unica,
-        criado_em AS dth_criado,
-        horarios_execucao AS des_horarios_execucao,
-        resumo_agendamento AS des_resumo_agendamento,
-        origem_id AS id_origem,
-        aplicar_sanitizacao_lgpd AS des_aplicar_sanitizacao_lgpd,
-        table_sync_configs AS des_table_sync_configs,
-        airbyte_connection_id AS id_airbyte_connection,
-        pipeline_id AS id_pipeline,
-        id_empresa AS id_empresa,
-        id AS id_integracao,
-        dias_semana AS des_dias_semana,
-        status AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        frequencia_sync                           AS des_frequencia_sync,
+        nome                                      AS des_nome,
+        destino_id                                AS id_destino,
+        tabelas_selecionadas                      AS des_tabelas_selecionadas,
+        dia_mensal                                AS des_dia_mensal,
+        data_execucao_unica                       AS dat_execucao_unica,
+        criado_em                                 AS dth_criado,
+        horarios_execucao                         AS des_horarios_execucao,
+        resumo_agendamento                        AS des_resumo_agendamento,
+        origem_id                                 AS id_origem,
+        aplicar_sanitizacao_lgpd                  AS des_aplicar_sanitizacao_lgpd,
+        table_sync_configs                        AS des_table_sync_configs,
+        airbyte_connection_id                     AS id_airbyte_connection,
+        pipeline_id                               AS id_pipeline,
+        id_empresa                                AS id_empresa,
+        id                                        AS id_integracao,
+        dias_semana                               AS des_dias_semana,
+        status                                    AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

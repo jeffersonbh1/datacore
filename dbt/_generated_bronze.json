@@ -4,64 +4,221 @@
       "table": "dbt_execucoes",
       "pk": [
         "id_dbt_execucao"
+      ],
+      "columns": [
+        "id_modelo",
+        "dth_criado",
+        "des_log",
+        "dth_finalizado",
+        "des_disparado_por",
+        "id_dbt_execucao",
+        "des_sucesso",
+        "dth_iniciado",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_dbt_modelos": {
       "table": "dbt_modelos",
       "pk": [
         "id_dbt_modelo"
+      ],
+      "columns": [
+        "dth_atualizado",
+        "dth_criado",
+        "des_tabela_origem",
+        "des_camada",
+        "des_nome",
+        "id_dbt_modelo",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_dbt_ultima_execucao": {
       "table": "dbt_ultima_execucao",
-      "pk": []
+      "pk": [],
+      "columns": [
+        "id_modelo",
+        "id_execucao",
+        "dth_finalizado",
+        "des_disparado_por",
+        "des_sucesso",
+        "dth_iniciado",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
+      ]
     },
     "bronze_salesforce_destinos": {
       "table": "destinos",
       "pk": [
         "id_destino"
+      ],
+      "columns": [
+        "tp_destino",
+        "dth_criado",
+        "des_modo_escrita",
+        "des_configuracao",
+        "des_nome",
+        "id_empresa",
+        "id_airbyte_destino",
+        "id_destino",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_empresas": {
       "table": "empresas",
       "pk": [
         "id_empresa"
+      ],
+      "columns": [
+        "dth_atualizado",
+        "dth_criado",
+        "id_airbyte_workspace",
+        "des_nome",
+        "des_plano",
+        "id_empresa",
+        "des_slug",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_integracoes": {
       "table": "integracoes",
       "pk": [
         "id_integracao"
+      ],
+      "columns": [
+        "des_frequencia_sync",
+        "des_nome",
+        "id_destino",
+        "des_tabelas_selecionadas",
+        "des_dia_mensal",
+        "dat_execucao_unica",
+        "dth_criado",
+        "des_horarios_execucao",
+        "des_resumo_agendamento",
+        "id_origem",
+        "des_aplicar_sanitizacao_lgpd",
+        "des_table_sync_configs",
+        "id_airbyte_connection",
+        "id_pipeline",
+        "id_empresa",
+        "id_integracao",
+        "des_dias_semana",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_origens": {
       "table": "origens",
       "pk": [
         "id_origem"
+      ],
+      "columns": [
+        "tp_origem",
+        "dth_criado",
+        "des_configuracao",
+        "id_airbyte_origem",
+        "des_nome",
+        "id_empresa",
+        "id_origem",
+        "des_status",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_pipeline_runs": {
       "table": "pipeline_runs",
       "pk": [
         "id_pipeline_run"
+      ],
+      "columns": [
+        "des_registros_sincronizacao",
+        "dth_bronze_construcao",
+        "dth_iniciado",
+        "des_duracao_ms",
+        "id_airbyte_job",
+        "dth_criado",
+        "dth_finalizado",
+        "id_pipeline",
+        "id_empresa",
+        "des_bronze_status",
+        "id_pipeline_run",
+        "des_bronze_erro",
+        "des_status",
+        "des_bytes_sincronizacao",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_pipelines": {
       "table": "pipelines",
       "pk": [
         "id_pipeline"
+      ],
+      "columns": [
+        "dth_atualizado",
+        "dth_criado",
+        "des_criado_por",
+        "tp_pipeline",
+        "des_camadas",
+        "des_nome",
+        "id_empresa",
+        "id_integracao",
+        "id_pipeline",
+        "des_layout_overrides",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_tabelas_carregadas": {
       "table": "tabelas_carregadas",
       "pk": [
         "id_tabela_carregada"
+      ],
+      "columns": [
+        "dth_atualizado",
+        "id_connection",
+        "des_nome_tabela",
+        "des_namespace",
+        "des_integracao_nome",
+        "id_tabela_carregada",
+        "des_coluna_atualizacao",
+        "dth_registrado",
+        "tp_carga",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     },
     "bronze_salesforce_usuarios": {
       "table": "usuarios",
       "pk": [
         "id_usuario"
+      ],
+      "columns": [
+        "des_senha_hash",
+        "ind_visualizar_pii_bruto",
+        "dat_alteracao",
+        "dth_ultimo_acesso",
+        "des_nome",
+        "id_auth_usuario",
+        "des_mfa_habilitado",
+        "dat_criacao",
+        "des_departamento",
+        "id_empresa",
+        "des_avatar_iniciais",
+        "id_usuario",
+        "ind_cadastro_ativo",
+        "des_email",
+        "des_papel",
+        "dt_ingestao_lake",
+        "_dbt_loaded_at"
       ]
     }
   }

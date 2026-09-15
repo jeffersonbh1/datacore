@@ -22,15 +22,15 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        modelo_id AS id_modelo,
-        execucao_id AS id_execucao,
-        finalizado_em AS dth_finalizado,
-        disparado_por AS des_disparado_por,
-        sucesso AS des_sucesso,
-        iniciado_em AS dth_iniciado,
-        status AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        modelo_id                                 AS id_modelo,
+        execucao_id                               AS id_execucao,
+        finalizado_em                             AS dth_finalizado,
+        disparado_por                             AS des_disparado_por,
+        sucesso                                   AS des_sucesso,
+        iniciado_em                               AS dth_iniciado,
+        status                                    AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 
