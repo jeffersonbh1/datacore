@@ -33,23 +33,23 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        {{ hash_sha256('senha_hash') }} AS des_senha_hash,
-        pode_visualizar_pii_bruto AS ind_visualizar_pii_bruto,
-        dt_alteracao AS dat_alteracao,
-        ultimo_acesso_em AS dth_ultimo_acesso,
-        nome AS des_nome,
-        auth_user_id AS id_auth_usuario,
-        mfa_habilitado AS des_mfa_habilitado,
-        dt_criacao AS dat_criacao,
-        departamento AS des_departamento,
-        id_empresa AS id_empresa,
-        avatar_iniciais AS des_avatar_iniciais,
-        id AS id_usuario,
-        ind_cadastro_ativo AS ind_cadastro_ativo,
-        {{ tokenizar_email('email') }} AS des_email,
-        papel AS des_papel,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        {{ hash_sha256('senha_hash') }}           AS des_senha_hash,
+        pode_visualizar_pii_bruto                 AS ind_visualizar_pii_bruto,
+        dt_alteracao                              AS dat_alteracao,
+        ultimo_acesso_em                          AS dth_ultimo_acesso,
+        nome                                      AS des_nome,
+        auth_user_id                              AS id_auth_usuario,
+        mfa_habilitado                            AS des_mfa_habilitado,
+        dt_criacao                                AS dat_criacao,
+        departamento                              AS des_departamento,
+        id_empresa                                AS id_empresa,
+        avatar_iniciais                           AS des_avatar_iniciais,
+        id                                        AS id_usuario,
+        ind_cadastro_ativo                        AS ind_cadastro_ativo,
+        {{ tokenizar_email('email') }}            AS des_email,
+        papel                                     AS des_papel,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

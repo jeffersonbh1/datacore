@@ -23,16 +23,16 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        atualizado_em AS dth_atualizado,
-        criado_em AS dth_criado,
-        airbyte_workspace_id AS id_airbyte_workspace,
-        nome AS des_nome,
-        plano AS des_plano,
-        id AS id_empresa,
-        slug AS des_slug,
-        status AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        atualizado_em                             AS dth_atualizado,
+        criado_em                                 AS dth_criado,
+        airbyte_workspace_id                      AS id_airbyte_workspace,
+        nome                                      AS des_nome,
+        plano                                     AS des_plano,
+        id                                        AS id_empresa,
+        slug                                      AS des_slug,
+        status                                    AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

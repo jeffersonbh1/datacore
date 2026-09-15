@@ -21,14 +21,14 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        atualizado_em AS dth_atualizado,
-        criado_em AS dth_criado,
-        tabela_origem AS des_tabela_origem,
-        camada AS des_camada,
-        nome AS des_nome,
-        id AS id_dbt_modelo,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        atualizado_em                             AS dth_atualizado,
+        criado_em                                 AS dth_criado,
+        tabela_origem                             AS des_tabela_origem,
+        camada                                    AS des_camada,
+        nome                                      AS des_nome,
+        id                                        AS id_dbt_modelo,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

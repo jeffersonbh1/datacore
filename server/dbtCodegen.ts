@@ -115,6 +115,20 @@ function resolvePrimaryKey(t: IntegrationTableSpec, renameMap: Map<string, strin
   return primaryKeyBaseNames(t).map((k) => (renameMap ? renameMap.get(k) ?? k : k));
 }
 
+/** As duas colunas de marca d'água que `renderBronzeSql` sempre acrescenta,
+ *  fora da lista de colunas de negócio (ver ali). */
+const WATERMARK_COLUMNS = ['dt_ingestao_lake', '_dbt_loaded_at'];
+
+/** Todas as colunas do modelo gerado, na mesma ordem da projeção: as de
+ *  negócio (já padronizadas — ver server/bronzeNaming.ts) seguidas das de
+ *  marca d'água. Usado para documentar o schema inteiro no _properties.yml. */
+function resolveAllColumns(t: IntegrationTableSpec, renameMap: Map<string, string> | null): string[] {
+  const business = t.columns && t.columns.length > 0
+    ? t.columns.map((c) => (renameMap ? renameMap.get(c) ?? c : c))
+    : [];
+  return [...business, ...WATERMARK_COLUMNS];
+}
+
 type PiiMacro = 'mascarar_cpf' | 'tokenizar_email' | 'hash_sha256';
 
 function piiMacroFor(column: string): PiiMacro | null {
@@ -197,23 +211,39 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
     cfg.push(`    , incremental_strategy = 'merge'`);
   }
 
+  // Marca d'água (sempre acrescentada — ver `tipado`, abaixo) entra no MESMO
+  // grupo de alinhamento das colunas de negócio, para o "AS" cair na mesma
+  // coluna em toda a projeção (mesmo estilo de dbt/models/medallion/bronze/bronze_transacoes.sql).
+  const watermarkCols: { left: string; alias: string }[] = [
+    { left: 'cast(_airbyte_extracted_at AS TIMESTAMP)', alias: 'dt_ingestao_lake' },
+    { left: 'current_timestamp()', alias: '_dbt_loaded_at' },
+  ];
+
   let projection: string;
+  let watermark: string;
   let renameComment = '';
   if (cols) {
     const renamed: string[] = [];
-    projection = t
-      .columns!.map((c) => {
-        const novo = renameMap!.get(c)!;
-        if (novo !== c) renamed.push(`${c} -> ${novo}`);
-        const macro = spec.applyLgpd ? piiMacroFor(c) : null;
-        return macro ? `        {{ ${macro}('${c}') }} AS ${novo},` : `        ${c} AS ${novo},`;
-      })
-      .join('\n');
+    const businessCols = t.columns!.map((c) => {
+      const novo = renameMap!.get(c)!;
+      if (novo !== c) renamed.push(`${c} -> ${novo}`);
+      const macro = spec.applyLgpd ? piiMacroFor(c) : null;
+      return { left: macro ? `{{ ${macro}('${c}') }}` : c, alias: novo };
+    });
     if (renamed.length > 0) {
       renameComment = `\n-- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):\n${renamed.map((r) => `--   ${r}`).join('\n')}`;
     }
+    // Largura de alinhamento: a maior expressão da tabela (negócio + marca
+    // d'água) + 2 espaços de respiro mínimo — mesma folga usada nos exemplos.
+    const allCols = [...businessCols, ...watermarkCols];
+    const width = Math.max(...allCols.map((p) => p.left.length)) + 2;
+    const renderCol = (p: { left: string; alias: string }, last: boolean) =>
+      `        ${p.left.padEnd(width)}AS ${p.alias}${last ? '' : ','}`;
+    projection = businessCols.map((p) => renderCol(p, false)).join('\n') + '\n';
+    watermark = watermarkCols.map((p, i) => renderCol(p, i === watermarkCols.length - 1)).join('\n');
   } else {
-    projection = '        *,';
+    projection = '        *,\n';
+    watermark = watermarkCols.map((p, i) => `        ${p.left} AS ${p.alias}${i === watermarkCols.length - 1 ? '' : ','}`).join('\n');
   }
 
   const incrementalFilter = incremental
@@ -256,9 +286,7 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-${projection}
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+${projection}${watermark}
     FROM fonte
 )
 ${dedup}`;
@@ -295,31 +323,39 @@ SELECT * FROM {{ ref('${bronzeRef}') }}
 
 // --- _properties.yml por sistema ------------------------------------------------
 
-/** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK }. Acumula por sistema. */
-type BronzeManifest = Record<string, Record<string, { table: string; pk: string[] }>>;
+/** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK, todas as colunas
+ *  (já padronizadas — mesmos nomes que saem na projeção do .sql) }. Acumula por sistema. */
+type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: string[] }>>;
 
 type Layer = 'Bronze' | 'Silver';
 
-function layerModelBlock(layer: Layer, name: string, table: string, pk: string[]): string {
-  if (pk.length === 1) {
-    return `  - name: ${name}
-    description: "${layer} gerado — tabela ${table}."
-    columns:
-      - name: ${pk[0]}
-        data_tests: [unique, not_null]`;
-  }
+/** Lista TODAS as colunas do modelo em `columns:` — não só a PK — para o
+ *  _properties.yml documentar o schema inteiro. A(s) coluna(s) de PK mantêm
+ *  os data_tests de unicidade/not-null; as demais entram só com `name`. */
+function columnsBlock(pk: string[], columns: string[]): string {
+  if (columns.length === 0) return '';
+  const pkSet = new Set(pk);
+  const lines = columns.map((c) => {
+    if (!pkSet.has(c)) return `      - name: ${c}`;
+    const tests = pk.length === 1 ? '[unique, not_null]' : '[not_null]';
+    return `      - name: ${c}\n        data_tests: ${tests}`;
+  });
+  return `\n    columns:\n${lines.join('\n')}`;
+}
+
+function layerModelBlock(layer: Layer, name: string, table: string, pk: string[], columns: string[]): string {
+  const cols = columnsBlock(pk, columns);
   if (pk.length > 1) {
     return `  - name: ${name}
     description: "${layer} gerado — tabela ${table}."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
-${pk.map((k) => `            - ${k}`).join('\n')}
-    columns:
-${pk.map((k) => `      - name: ${k}\n        data_tests: [not_null]`).join('\n')}`;
+${pk.map((k) => `            - ${k}`).join('\n')}${cols}`;
   }
+  const semPk = pk.length === 0 ? ' (sem PK; sem deduplicação)' : '';
   return `  - name: ${name}
-    description: "${layer} gerado — tabela ${table} (sem PK; sem deduplicação)."`;
+    description: "${layer} gerado — tabela ${table}${semPk}."${cols}`;
 }
 
 function renderSistemaPropertiesYml(
@@ -327,11 +363,11 @@ function renderSistemaPropertiesYml(
   manifestFile: string,
   sistema: string,
   sys: string,
-  models: Record<string, { table: string; pk: string[] }>,
+  models: Record<string, { table: string; pk: string[]; columns: string[] }>,
 ): string {
   const blocks = Object.keys(models)
     .sort()
-    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk))
+    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk, models[name].columns))
     .join('\n');
   return `version: 2
 
@@ -416,7 +452,8 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // existe na tabela gerada), não para o nome original do source.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk };
+    const columns = resolveAllColumns(t, renameMap);
+    sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   bronzeManifest[sys] = sysModels;
   retrySync(() => writeFileSync(join(projectDir, BRONZE_MANIFEST_FILE), JSON.stringify(bronzeManifest, null, 2) + '\n', 'utf8'));
@@ -439,7 +476,8 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // de coluna já padronizados, então a PK do teste é a mesma da Bronze.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk };
+    const columns = resolveAllColumns(t, renameMap);
+    silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   silverManifest[sys] = silverSysModels;
   retrySync(() => writeFileSync(join(projectDir, SILVER_MANIFEST_FILE), JSON.stringify(silverManifest, null, 2) + '\n', 'utf8'));

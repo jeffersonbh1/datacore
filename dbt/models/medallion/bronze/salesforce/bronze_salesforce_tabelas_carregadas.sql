@@ -24,17 +24,17 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        atualizado_em AS dth_atualizado,
-        connection_id AS id_connection,
-        nome_tabela AS des_nome_tabela,
-        namespace AS des_namespace,
-        integracao_nome AS des_integracao_nome,
-        id AS id_tabela_carregada,
-        coluna_atualizacao AS des_coluna_atualizacao,
-        registrado_em AS dth_registrado,
-        tipo_carga AS tp_carga,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        atualizado_em                             AS dth_atualizado,
+        connection_id                             AS id_connection,
+        nome_tabela                               AS des_nome_tabela,
+        namespace                                 AS des_namespace,
+        integracao_nome                           AS des_integracao_nome,
+        id                                        AS id_tabela_carregada,
+        coluna_atualizacao                        AS des_coluna_atualizacao,
+        registrado_em                             AS dth_registrado,
+        tipo_carga                                AS tp_carga,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

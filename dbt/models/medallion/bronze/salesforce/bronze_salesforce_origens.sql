@@ -22,16 +22,16 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        tipo AS tp_origem,
-        criado_em AS dth_criado,
-        configuracao AS des_configuracao,
-        airbyte_source_id AS id_airbyte_origem,
-        nome AS des_nome,
-        id_empresa AS id_empresa,
-        id AS id_origem,
-        status AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        tipo                                      AS tp_origem,
+        criado_em                                 AS dth_criado,
+        configuracao                              AS des_configuracao,
+        airbyte_source_id                         AS id_airbyte_origem,
+        nome                                      AS des_nome,
+        id_empresa                                AS id_empresa,
+        id                                        AS id_origem,
+        status                                    AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 

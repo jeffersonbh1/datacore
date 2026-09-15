@@ -28,22 +28,22 @@ WITH fonte AS (
 
 tipado AS (
     SELECT
-        records_synced AS des_registros_sincronizacao,
-        bronze_built_em AS dth_bronze_construcao,
-        iniciado_em AS dth_iniciado,
-        duration_ms AS des_duracao_ms,
-        airbyte_job_id AS id_airbyte_job,
-        criado_em AS dth_criado,
-        finalizado_em AS dth_finalizado,
-        pipeline_id AS id_pipeline,
-        id_empresa AS id_empresa,
-        bronze_status AS des_bronze_status,
-        id AS id_pipeline_run,
-        bronze_error AS des_bronze_erro,
-        status AS des_status,
-        bytes_synced AS des_bytes_sincronizacao,
-        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
-        current_timestamp() AS _dbt_loaded_at
+        records_synced                            AS des_registros_sincronizacao,
+        bronze_built_em                           AS dth_bronze_construcao,
+        iniciado_em                               AS dth_iniciado,
+        duration_ms                               AS des_duracao_ms,
+        airbyte_job_id                            AS id_airbyte_job,
+        criado_em                                 AS dth_criado,
+        finalizado_em                             AS dth_finalizado,
+        pipeline_id                               AS id_pipeline,
+        id_empresa                                AS id_empresa,
+        bronze_status                             AS des_bronze_status,
+        id                                        AS id_pipeline_run,
+        bronze_error                              AS des_bronze_erro,
+        status                                    AS des_status,
+        bytes_synced                              AS des_bytes_sincronizacao,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
 
