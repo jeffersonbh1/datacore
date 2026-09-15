@@ -1,6 +1,9 @@
 # Build + deploy do gateway (server/) no Cloud Run.
 #   gcloud builds submit --config cloudbuild.gateway.yaml \
-#     --substitutions=_IMAGE=REGIAO-docker.pkg.dev/PROJ/datacore/gateway:TAG,_REGION=southamerica-east1,_SERVICE=datacore-gateway,_RUNTIME_SA=datacore-gateway-run@PROJ.iam.gserviceaccount.com
+#     --substitutions=_IMAGE=REGIAO-docker.pkg.dev/PROJ/datacore/gateway:TAG,_REGION=southamerica-east1,_SERVICE=airbyte-gateway,_RUNTIME_SA=489189813509-compute@developer.gserviceaccount.com
+# (_SERVICE e _RUNTIME_SA acima já são os valores reais de produção — nomes
+# herdados do primeiro deploy manual, diferentes do que a Seção 1 do
+# DEPLOY.md recomenda criar (SA dedicada "datacore-gateway-run"); ver DEPLOY.md § 3.)
 #
 # Segredos (SUPABASE_SERVICE_ROLE_KEY, AIRBYTE_CLIENT_SECRET, GATEWAY_API_KEY,
 # BIGQUERY_CREDENTIALS_JSON) vêm do Secret Manager via --set-secrets — nunca
@@ -45,9 +48,12 @@ images:
 
 substitutions:
   _REGION: southamerica-east1
-  _SERVICE: datacore-gateway
+  _SERVICE: airbyte-gateway
   _IMAGE: ''            # obrigatório
-  _RUNTIME_SA: ''       # obrigatório — SA de runtime do Cloud Run
+  # Default = SA padrão do Compute, a que o serviço real usa hoje (nenhuma SA
+  # dedicada foi criada — ver aviso no topo do arquivo). Sobrescreva se migrar
+  # para uma SA dedicada.
+  _RUNTIME_SA: '489189813509-compute@developer.gserviceaccount.com'
   _SUPABASE_URL: ''
   _AIRBYTE_BASE_URL: 'http://35.198.9.239:8000'
   _AIRBYTE_CLIENT_ID: ''
