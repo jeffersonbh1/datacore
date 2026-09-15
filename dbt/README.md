@@ -44,7 +44,10 @@ dbt/
 - **`_datacore_raw__sources.yml`** e cada **`<sistema>/_properties.yml`** são
   gerados a partir dos manifestos JSON, que **acumulam** (merge) — criar a
   integração B não apaga os modelos da A.
-- **`bronze_<sistema>_<tabela>.sql`**: renome das colunas selecionadas +
+- **`bronze_<sistema>_<tabela>.sql`**: renome das colunas selecionadas
+  seguindo a [convenção de nomenclatura da Bronze](../docs/CONVENCAO_NOMENCLATURA_BRONZE.md)
+  (`server/bronzeNaming.ts` — prefixo por tipo: `des_`, `vlr_`, `ind_`, `qtd_`,
+  `dat_`, `dth_`, `cod_`, `id_`, `num_`, `per_`, `tp_`) +
   `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake` +
   `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de
   nome (`cpf|cnpj` → `mascarar_cpf`, `email` → `tokenizar_email`,

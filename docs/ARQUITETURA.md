@@ -245,7 +245,10 @@ estado por *merge* — criar a integração B não apaga os modelos da A.
 
 ### O que cada modelo faz
 
-- **Tipagem leve & renome** das colunas selecionadas na integração.
+- **Tipagem leve & renome** das colunas selecionadas na integração, seguindo a
+  [convenção de nomenclatura da Bronze](./CONVENCAO_NOMENCLATURA_BRONZE.md)
+  (prefixo por tipo — `des_`, `vlr_`, `ind_`, `dat_`, `dth_`, `cod_`, `id_`,
+  etc. — implementado em `server/bronzeNaming.ts`).
 - **Marca d'água:** `dt_ingestao_lake` (de `_airbyte_extracted_at`) e
   `_dbt_loaded_at`.
 - **LGPD Art. 46** por heurística de nome de coluna — `dbt/macros/lgpd.sql`:

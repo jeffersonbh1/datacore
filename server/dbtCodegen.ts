@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { resolveDbtProjectDir } from './dbtRunner';
+import { buildColumnRenameMap } from './bronzeNaming';
 
 const execFileP = promisify(execFile);
 
@@ -100,6 +101,20 @@ export function silverModelName(sistema: string, table: string): string {
   return `silver_${sistemaSlug(sistema)}_${sanitizeIdent(table)}`;
 }
 
+/** Nome-base da chave primária (do stream Airbyte, ex. "public.usuarios.id" -> "id"). */
+function primaryKeyBaseNames(t: IntegrationTableSpec): string[] {
+  return (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
+}
+
+/** Resolve os nomes da PK para o nome PADRONIZADO (ver server/bronzeNaming.ts):
+ *  se a tabela tem `columns` (o caso normal), a PK vira o alias que a
+ *  projeção da Bronze de fato gera — dedup/incremental têm que apontar para a
+ *  coluna que existe, não para o nome original do source. Sem `columns`
+ *  (passthrough `select *`, sem renome possível), mantém o nome original. */
+function resolvePrimaryKey(t: IntegrationTableSpec, renameMap: Map<string, string> | null): string[] {
+  return primaryKeyBaseNames(t).map((k) => (renameMap ? renameMap.get(k) ?? k : k));
+}
+
 type PiiMacro = 'mascarar_cpf' | 'tokenizar_email' | 'hash_sha256';
 
 function piiMacroFor(column: string): PiiMacro | null {
@@ -161,9 +176,13 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   const sys = sistemaSlug(spec.sistema);
   const srcName = sanitizeIdent(t.name);
   const modelAlias = `bronze_${sys}_${srcName}`;
-  const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
-  const incremental = t.loadType === 'incremental' && pk.length > 0;
   const cols = t.columns && t.columns.length > 0;
+  // Padronização de nomes (server/bronzeNaming.ts): só é possível renomear
+  // quando a lista de colunas é conhecida — sem ela a projeção é `select *`
+  // (passthrough) e os nomes originais do source são preservados.
+  const renameMap = cols ? buildColumnRenameMap(t.columns!, t.name) : null;
+  const pk = resolvePrimaryKey(t, renameMap);
+  const incremental = t.loadType === 'incremental' && pk.length > 0;
 
   const cfg: string[] = [
     `    materialized = '${incremental ? 'incremental' : 'table'}'`,
@@ -179,13 +198,20 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   }
 
   let projection: string;
+  let renameComment = '';
   if (cols) {
+    const renamed: string[] = [];
     projection = t
       .columns!.map((c) => {
+        const novo = renameMap!.get(c)!;
+        if (novo !== c) renamed.push(`${c} -> ${novo}`);
         const macro = spec.applyLgpd ? piiMacroFor(c) : null;
-        return macro ? `        {{ ${macro}('${c}') }} as ${c},` : `        ${c},`;
+        return macro ? `        {{ ${macro}('${c}') }} as ${novo},` : `        ${c} as ${novo},`;
       })
       .join('\n');
+    if (renamed.length > 0) {
+      renameComment = `\n-- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):\n${renamed.map((r) => `--   ${r}`).join('\n')}`;
+    }
   } else {
     projection = '        *,';
   }
@@ -222,7 +248,7 @@ ${cfg.join('\n')}
 -- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Bronze, tabela ${t.name}.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('${SOURCE_NAME}', '${srcName}')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)${renameComment}
 
 with fonte as (
     select * from {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
@@ -385,7 +411,11 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   const bronzeManifest = readJsonManifest<BronzeManifest>(projectDir, BRONZE_MANIFEST_FILE);
   const sysModels = bronzeManifest[sys] || {};
   for (const t of spec.tables) {
-    const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
+    // Mesmo mapa de renome usado em renderBronzeSql — os testes do
+    // _properties.yml precisam apontar para a coluna PADRONIZADA (é essa que
+    // existe na tabela gerada), não para o nome original do source.
+    const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
+    const pk = resolvePrimaryKey(t, renameMap);
     sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk };
   }
   bronzeManifest[sys] = sysModels;
@@ -405,7 +435,10 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   const silverManifest = readJsonManifest<BronzeManifest>(projectDir, SILVER_MANIFEST_FILE);
   const silverSysModels = silverManifest[sys] || {};
   for (const t of spec.tables) {
-    const pk = (t.primaryKey || []).map((k) => k.split('.').pop() as string).filter(Boolean);
+    // Silver é passthrough do Bronze (renderSilverSql): herda os mesmos nomes
+    // de coluna já padronizados, então a PK do teste é a mesma da Bronze.
+    const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
+    const pk = resolvePrimaryKey(t, renameMap);
     silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk };
   }
   silverManifest[sys] = silverSysModels;

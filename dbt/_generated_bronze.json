@@ -3,13 +3,13 @@
     "bronze_salesforce_dbt_execucoes": {
       "table": "dbt_execucoes",
       "pk": [
-        "id"
+        "id_dbt_execucao"
       ]
     },
     "bronze_salesforce_dbt_modelos": {
       "table": "dbt_modelos",
       "pk": [
-        "id"
+        "id_dbt_modelo"
       ]
     },
     "bronze_salesforce_dbt_ultima_execucao": {
@@ -19,49 +19,49 @@
     "bronze_salesforce_destinos": {
       "table": "destinos",
       "pk": [
-        "id"
+        "id_destino"
       ]
     },
     "bronze_salesforce_empresas": {
       "table": "empresas",
       "pk": [
-        "id"
+        "id_empresa"
       ]
     },
     "bronze_salesforce_integracoes": {
       "table": "integracoes",
       "pk": [
-        "id"
+        "id_integracao"
       ]
     },
     "bronze_salesforce_origens": {
       "table": "origens",
       "pk": [
-        "id"
+        "id_origem"
       ]
     },
     "bronze_salesforce_pipeline_runs": {
       "table": "pipeline_runs",
       "pk": [
-        "id"
+        "id_pipeline_run"
       ]
     },
     "bronze_salesforce_pipelines": {
       "table": "pipelines",
       "pk": [
-        "id"
+        "id_pipeline"
       ]
     },
     "bronze_salesforce_tabelas_carregadas": {
       "table": "tabelas_carregadas",
       "pk": [
-        "id"
+        "id_tabela_carregada"
       ]
     },
     "bronze_salesforce_usuarios": {
       "table": "usuarios",
       "pk": [
-        "id"
+        "id_usuario"
       ]
     }
   }
