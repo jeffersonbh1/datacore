@@ -6,17 +6,50 @@
         "id_dbt_execucao"
       ],
       "columns": [
-        "id_modelo",
-        "dth_criado",
-        "des_log",
-        "dth_finalizado",
-        "des_disparado_por",
-        "id_dbt_execucao",
-        "des_sucesso",
-        "dth_iniciado",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "id_modelo",
+          "source": "modelo_id"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_log",
+          "source": "log"
+        },
+        {
+          "name": "dth_finalizado",
+          "source": "finalizado_em"
+        },
+        {
+          "name": "des_disparado_por",
+          "source": "disparado_por"
+        },
+        {
+          "name": "id_dbt_execucao",
+          "source": "id"
+        },
+        {
+          "name": "des_sucesso",
+          "source": "sucesso"
+        },
+        {
+          "name": "dth_iniciado",
+          "source": "iniciado_em"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_dbt_modelos": {
@@ -25,29 +58,80 @@
         "id_dbt_modelo"
       ],
       "columns": [
-        "dth_atualizado",
-        "dth_criado",
-        "des_tabela_origem",
-        "des_camada",
-        "des_nome",
-        "id_dbt_modelo",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_tabela_origem",
+          "source": "tabela_origem"
+        },
+        {
+          "name": "des_camada",
+          "source": "camada"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_dbt_modelo",
+          "source": "id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_dbt_ultima_execucao": {
       "table": "dbt_ultima_execucao",
       "pk": [],
       "columns": [
-        "id_modelo",
-        "id_execucao",
-        "dth_finalizado",
-        "des_disparado_por",
-        "des_sucesso",
-        "dth_iniciado",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "id_modelo",
+          "source": "modelo_id"
+        },
+        {
+          "name": "id_execucao",
+          "source": "execucao_id"
+        },
+        {
+          "name": "dth_finalizado",
+          "source": "finalizado_em"
+        },
+        {
+          "name": "des_disparado_por",
+          "source": "disparado_por"
+        },
+        {
+          "name": "des_sucesso",
+          "source": "sucesso"
+        },
+        {
+          "name": "dth_iniciado",
+          "source": "iniciado_em"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_destinos": {
@@ -56,17 +140,50 @@
         "id_destino"
       ],
       "columns": [
-        "tp_destino",
-        "dth_criado",
-        "des_modo_escrita",
-        "des_configuracao",
-        "des_nome",
-        "id_empresa",
-        "id_airbyte_destino",
-        "id_destino",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "tp_destino",
+          "source": "tipo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_modo_escrita",
+          "source": "modo_escrita"
+        },
+        {
+          "name": "des_configuracao",
+          "source": "configuracao"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "id_airbyte_destino",
+          "source": "airbyte_destination_id"
+        },
+        {
+          "name": "id_destino",
+          "source": "id"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_empresas": {
@@ -75,16 +192,46 @@
         "id_empresa"
       ],
       "columns": [
-        "dth_atualizado",
-        "dth_criado",
-        "id_airbyte_workspace",
-        "des_nome",
-        "des_plano",
-        "id_empresa",
-        "des_slug",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "id_airbyte_workspace",
+          "source": "airbyte_workspace_id"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "des_plano",
+          "source": "plano"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id"
+        },
+        {
+          "name": "des_slug",
+          "source": "slug"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_integracoes": {
@@ -93,26 +240,86 @@
         "id_integracao"
       ],
       "columns": [
-        "des_frequencia_sync",
-        "des_nome",
-        "id_destino",
-        "des_tabelas_selecionadas",
-        "des_dia_mensal",
-        "dat_execucao_unica",
-        "dth_criado",
-        "des_horarios_execucao",
-        "des_resumo_agendamento",
-        "id_origem",
-        "des_aplicar_sanitizacao_lgpd",
-        "des_table_sync_configs",
-        "id_airbyte_connection",
-        "id_pipeline",
-        "id_empresa",
-        "id_integracao",
-        "des_dias_semana",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "des_frequencia_sync",
+          "source": "frequencia_sync"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_destino",
+          "source": "destino_id"
+        },
+        {
+          "name": "des_tabelas_selecionadas",
+          "source": "tabelas_selecionadas"
+        },
+        {
+          "name": "des_dia_mensal",
+          "source": "dia_mensal"
+        },
+        {
+          "name": "dat_execucao_unica",
+          "source": "data_execucao_unica"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_horarios_execucao",
+          "source": "horarios_execucao"
+        },
+        {
+          "name": "des_resumo_agendamento",
+          "source": "resumo_agendamento"
+        },
+        {
+          "name": "id_origem",
+          "source": "origem_id"
+        },
+        {
+          "name": "des_aplicar_sanitizacao_lgpd",
+          "source": "aplicar_sanitizacao_lgpd"
+        },
+        {
+          "name": "des_table_sync_configs",
+          "source": "table_sync_configs"
+        },
+        {
+          "name": "id_airbyte_connection",
+          "source": "airbyte_connection_id"
+        },
+        {
+          "name": "id_pipeline",
+          "source": "pipeline_id"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "id_integracao",
+          "source": "id"
+        },
+        {
+          "name": "des_dias_semana",
+          "source": "dias_semana"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_origens": {
@@ -121,16 +328,46 @@
         "id_origem"
       ],
       "columns": [
-        "tp_origem",
-        "dth_criado",
-        "des_configuracao",
-        "id_airbyte_origem",
-        "des_nome",
-        "id_empresa",
-        "id_origem",
-        "des_status",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "tp_origem",
+          "source": "tipo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_configuracao",
+          "source": "configuracao"
+        },
+        {
+          "name": "id_airbyte_origem",
+          "source": "airbyte_source_id"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "id_origem",
+          "source": "id"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_pipeline_runs": {
@@ -139,22 +376,70 @@
         "id_pipeline_run"
       ],
       "columns": [
-        "des_registros_sincronizacao",
-        "dth_bronze_construcao",
-        "dth_iniciado",
-        "des_duracao_ms",
-        "id_airbyte_job",
-        "dth_criado",
-        "dth_finalizado",
-        "id_pipeline",
-        "id_empresa",
-        "des_bronze_status",
-        "id_pipeline_run",
-        "des_bronze_erro",
-        "des_status",
-        "des_bytes_sincronizacao",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "des_registros_sincronizacao",
+          "source": "records_synced"
+        },
+        {
+          "name": "dth_bronze_construcao",
+          "source": "bronze_built_em"
+        },
+        {
+          "name": "dth_iniciado",
+          "source": "iniciado_em"
+        },
+        {
+          "name": "des_duracao_ms",
+          "source": "duration_ms"
+        },
+        {
+          "name": "id_airbyte_job",
+          "source": "airbyte_job_id"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "dth_finalizado",
+          "source": "finalizado_em"
+        },
+        {
+          "name": "id_pipeline",
+          "source": "pipeline_id"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "des_bronze_status",
+          "source": "bronze_status"
+        },
+        {
+          "name": "id_pipeline_run",
+          "source": "id"
+        },
+        {
+          "name": "des_bronze_erro",
+          "source": "bronze_error"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "des_bytes_sincronizacao",
+          "source": "bytes_synced"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_pipelines": {
@@ -163,18 +448,54 @@
         "id_pipeline"
       ],
       "columns": [
-        "dth_atualizado",
-        "dth_criado",
-        "des_criado_por",
-        "tp_pipeline",
-        "des_camadas",
-        "des_nome",
-        "id_empresa",
-        "id_integracao",
-        "id_pipeline",
-        "des_layout_overrides",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_criado_por",
+          "source": "criado_por"
+        },
+        {
+          "name": "tp_pipeline",
+          "source": "categoria"
+        },
+        {
+          "name": "des_camadas",
+          "source": "camadas"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "id_integracao",
+          "source": "integracao_id"
+        },
+        {
+          "name": "id_pipeline",
+          "source": "id"
+        },
+        {
+          "name": "des_layout_overrides",
+          "source": "layout_overrides"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_tabelas_carregadas": {
@@ -183,17 +504,50 @@
         "id_tabela_carregada"
       ],
       "columns": [
-        "dth_atualizado",
-        "id_connection",
-        "des_nome_tabela",
-        "des_namespace",
-        "des_integracao_nome",
-        "id_tabela_carregada",
-        "des_coluna_atualizacao",
-        "dth_registrado",
-        "tp_carga",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "id_connection",
+          "source": "connection_id"
+        },
+        {
+          "name": "des_nome_tabela",
+          "source": "nome_tabela"
+        },
+        {
+          "name": "des_namespace",
+          "source": "namespace"
+        },
+        {
+          "name": "des_integracao_nome",
+          "source": "integracao_nome"
+        },
+        {
+          "name": "id_tabela_carregada",
+          "source": "id"
+        },
+        {
+          "name": "des_coluna_atualizacao",
+          "source": "coluna_atualizacao"
+        },
+        {
+          "name": "dth_registrado",
+          "source": "registrado_em"
+        },
+        {
+          "name": "tp_carga",
+          "source": "tipo_carga"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     },
     "bronze_salesforce_usuarios": {
@@ -202,23 +556,74 @@
         "id_usuario"
       ],
       "columns": [
-        "des_senha_hash",
-        "ind_visualizar_pii_bruto",
-        "dat_alteracao",
-        "dth_ultimo_acesso",
-        "des_nome",
-        "id_auth_usuario",
-        "des_mfa_habilitado",
-        "dat_criacao",
-        "des_departamento",
-        "id_empresa",
-        "des_avatar_iniciais",
-        "id_usuario",
-        "ind_cadastro_ativo",
-        "des_email",
-        "des_papel",
-        "dt_ingestao_lake",
-        "_dbt_loaded_at"
+        {
+          "name": "des_senha_hash",
+          "source": "senha_hash"
+        },
+        {
+          "name": "ind_visualizar_pii_bruto",
+          "source": "pode_visualizar_pii_bruto"
+        },
+        {
+          "name": "dat_alteracao",
+          "source": "dt_alteracao"
+        },
+        {
+          "name": "dth_ultimo_acesso",
+          "source": "ultimo_acesso_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_auth_usuario",
+          "source": "auth_user_id"
+        },
+        {
+          "name": "des_mfa_habilitado",
+          "source": "mfa_habilitado"
+        },
+        {
+          "name": "dat_criacao",
+          "source": "dt_criacao"
+        },
+        {
+          "name": "des_departamento",
+          "source": "departamento"
+        },
+        {
+          "name": "id_empresa",
+          "source": "id_empresa"
+        },
+        {
+          "name": "des_avatar_iniciais",
+          "source": "avatar_iniciais"
+        },
+        {
+          "name": "id_usuario",
+          "source": "id"
+        },
+        {
+          "name": "ind_cadastro_ativo",
+          "source": "ind_cadastro_ativo"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "des_papel",
+          "source": "papel"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
       ]
     }
   }

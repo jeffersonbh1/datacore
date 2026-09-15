@@ -115,16 +115,30 @@ function resolvePrimaryKey(t: IntegrationTableSpec, renameMap: Map<string, strin
   return primaryKeyBaseNames(t).map((k) => (renameMap ? renameMap.get(k) ?? k : k));
 }
 
+/** Uma coluna documentada no _properties.yml: nome final (padronizado) +
+ *  origem (nome no source, ou uma nota para as colunas de marca d'água que
+ *  não vêm 1:1 de uma coluna do source). */
+export interface ColumnDoc {
+  name: string;
+  source: string;
+}
+
 /** As duas colunas de marca d'água que `renderBronzeSql` sempre acrescenta,
- *  fora da lista de colunas de negócio (ver ali). */
-const WATERMARK_COLUMNS = ['dt_ingestao_lake', '_dbt_loaded_at'];
+ *  fora da lista de colunas de negócio (ver ali), com a nota de origem de
+ *  cada uma para o _properties.yml. */
+const WATERMARK_COLUMNS: ColumnDoc[] = [
+  { name: 'dt_ingestao_lake', source: '_airbyte_extracted_at (marca d\'água do Airbyte)' },
+  { name: '_dbt_loaded_at', source: 'current_timestamp() — hora deste build do dbt' },
+];
 
 /** Todas as colunas do modelo gerado, na mesma ordem da projeção: as de
- *  negócio (já padronizadas — ver server/bronzeNaming.ts) seguidas das de
- *  marca d'água. Usado para documentar o schema inteiro no _properties.yml. */
-function resolveAllColumns(t: IntegrationTableSpec, renameMap: Map<string, string> | null): string[] {
-  const business = t.columns && t.columns.length > 0
-    ? t.columns.map((c) => (renameMap ? renameMap.get(c) ?? c : c))
+ *  negócio (já padronizadas — ver server/bronzeNaming.ts — com o nome
+ *  original do source anotado) seguidas das de marca d'água. Usado para
+ *  documentar o schema inteiro (o MAPEAMENTO origem -> padronizado de cada
+ *  campo) no _properties.yml. */
+function resolveColumnDocs(t: IntegrationTableSpec, renameMap: Map<string, string> | null): ColumnDoc[] {
+  const business: ColumnDoc[] = t.columns && t.columns.length > 0
+    ? t.columns.map((c) => ({ name: renameMap ? renameMap.get(c) ?? c : c, source: c }))
     : [];
   return [...business, ...WATERMARK_COLUMNS];
 }
@@ -323,27 +337,29 @@ SELECT * FROM {{ ref('${bronzeRef}') }}
 
 // --- _properties.yml por sistema ------------------------------------------------
 
-/** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK, todas as colunas
- *  (já padronizadas — mesmos nomes que saem na projeção do .sql) }. Acumula por sistema. */
-type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: string[] }>>;
+/** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK, o MAPEAMENTO
+ *  completo origem -> padronizado de toda coluna do modelo }. Acumula por sistema. */
+type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>>;
 
 type Layer = 'Bronze' | 'Silver';
 
-/** Lista TODAS as colunas do modelo em `columns:` — não só a PK — para o
- *  _properties.yml documentar o schema inteiro. A(s) coluna(s) de PK mantêm
- *  os data_tests de unicidade/not-null; as demais entram só com `name`. */
-function columnsBlock(pk: string[], columns: string[]): string {
+/** Lista TODAS as colunas do modelo em `columns:` — não só a PK — com a
+ *  origem de cada uma em `description` (o mapeamento origem -> padronizado
+ *  que o _properties.yml deve documentar). A(s) coluna(s) de PK mantêm os
+ *  data_tests de unicidade/not-null; as demais só ganham a descrição. */
+function columnsBlock(pk: string[], columns: ColumnDoc[]): string {
   if (columns.length === 0) return '';
   const pkSet = new Set(pk);
-  const lines = columns.map((c) => {
-    if (!pkSet.has(c)) return `      - name: ${c}`;
+  const lines = columns.map(({ name, source }) => {
+    const desc = `        description: "Origem: ${source}."`;
+    if (!pkSet.has(name)) return `      - name: ${name}\n${desc}`;
     const tests = pk.length === 1 ? '[unique, not_null]' : '[not_null]';
-    return `      - name: ${c}\n        data_tests: ${tests}`;
+    return `      - name: ${name}\n${desc}\n        data_tests: ${tests}`;
   });
   return `\n    columns:\n${lines.join('\n')}`;
 }
 
-function layerModelBlock(layer: Layer, name: string, table: string, pk: string[], columns: string[]): string {
+function layerModelBlock(layer: Layer, name: string, table: string, pk: string[], columns: ColumnDoc[]): string {
   const cols = columnsBlock(pk, columns);
   if (pk.length > 1) {
     return `  - name: ${name}
@@ -363,7 +379,7 @@ function renderSistemaPropertiesYml(
   manifestFile: string,
   sistema: string,
   sys: string,
-  models: Record<string, { table: string; pk: string[]; columns: string[] }>,
+  models: Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>,
 ): string {
   const blocks = Object.keys(models)
     .sort()
@@ -452,7 +468,7 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // existe na tabela gerada), não para o nome original do source.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    const columns = resolveAllColumns(t, renameMap);
+    const columns = resolveColumnDocs(t, renameMap);
     sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   bronzeManifest[sys] = sysModels;
@@ -476,7 +492,7 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // de coluna já padronizados, então a PK do teste é a mesma da Bronze.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    const columns = resolveAllColumns(t, renameMap);
+    const columns = resolveColumnDocs(t, renameMap);
     silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   silverManifest[sys] = silverSysModels;
