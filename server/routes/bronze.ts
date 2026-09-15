@@ -31,7 +31,7 @@ export interface TableResult {
 
 export interface BuildBronzeOutput {
   results: TableResult[];
-  dbt: Pick<RunDbtResult, 'ok' | 'select' | 'target' | 'models' | 'error'> & { stderrTail?: string };
+  dbt: Pick<RunDbtResult, 'ok' | 'select' | 'target' | 'models' | 'error'> & { stderrTail?: string; stdoutTail?: string };
 }
 
 function statusFromDbt(status: string): 'ok' | 'error' {
@@ -69,12 +69,15 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
 
   // Falha total (compilação/parse/conexão): não mascara, reporta o erro por tabela.
   if (!dbtRun.ok && dbtRun.models.length === 0) {
-    const detail = dbtRun.error || dbtRun.stderrTail || `dbt build saiu com código ${dbtRun.exitCode}`;
+    // dbt manda a maior parte dos erros de parse/compilação para o STDOUT (o
+    // stderr costuma vir vazio nesse caso) — sem isso aqui, o chamador só via
+    // a mensagem genérica "dbt build reportou falhas" e nada mais.
+    const detail = dbtRun.error || dbtRun.stderrTail || dbtRun.stdoutTail || `dbt build saiu com código ${dbtRun.exitCode}`;
     return {
       results: tables.map((table) => ({ table, status: 'error' as const, error: detail })),
       dbt: {
         ok: false, select: dbtRun.select, target: dbtRun.target,
-        models: dbtRun.models, error: dbtRun.error, stderrTail: dbtRun.stderrTail,
+        models: dbtRun.models, error: dbtRun.error, stderrTail: dbtRun.stderrTail, stdoutTail: dbtRun.stdoutTail,
       },
     };
   }
@@ -109,6 +112,7 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
       models: dbtRun.models,
       error: dbtRun.error,
       stderrTail: dbtRun.ok ? undefined : dbtRun.stderrTail,
+      stdoutTail: dbtRun.ok ? undefined : dbtRun.stdoutTail,
     },
   };
 }
