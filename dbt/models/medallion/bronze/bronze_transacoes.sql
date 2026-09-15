@@ -26,48 +26,48 @@
   ========================================================================
 */
 
-with raw_source as (
+WITH raw_source AS (
 
-    select * from {{ ref('stg_transacoes') }}
+    SELECT * FROM {{ ref('stg_transacoes') }}
 
     {% if is_incremental() %}
       -- Micro-batch: só linhas ingeridas depois do último carregamento.
-      where dt_ingestao_lake > (select max(dt_ingestao_lake) from {{ this }})
+      WHERE dt_ingestao_lake > (SELECT max(dt_ingestao_lake) FROM {{ this }})
     {% endif %}
 
 ),
 
-sanitizado as (
+sanitizado AS (
 
-    select
-        cast(id_transacao as string)                             as id_transacao,
+    SELECT
+        cast(id_transacao AS STRING)                             AS id_transacao,
 
-        dt_evento_origem                                         as dt_geracao_origem,
+        dt_evento_origem                                         AS dt_geracao_origem,
         dt_ingestao_lake,
-        current_timestamp()                                      as _dbt_loaded_at,
+        current_timestamp()                                      AS _dbt_loaded_at,
 
-        {{ cast_decimal('valor_bruto') }}                        as valor_transacao,
-        trim(upper(coalesce(status_bruto, 'PENDENTE')))          as status_transacao,
+        {{ cast_decimal('valor_bruto') }}                        AS valor_transacao,
+        trim(upper(COALESCE(status_bruto, 'PENDENTE')))          AS status_transacao,
 
         -- Conformidade LGPD (Art. 46): redação, hash e pseudonimização.
-        {{ mascarar_cpf('cpf_titular') }}                        as cpf_titular_mascarado,
-        {{ hash_sha256('numero_cartao') }}                       as numero_cartao_hash,
-        {{ tokenizar_email('email_comprador') }}                 as email_comprador_tokenizado
+        {{ mascarar_cpf('cpf_titular') }}                        AS cpf_titular_mascarado,
+        {{ hash_sha256('numero_cartao') }}                       AS numero_cartao_hash,
+        {{ tokenizar_email('email_comprador') }}                 AS email_comprador_tokenizado
 
-    from raw_source
+    FROM raw_source
 
 ),
 
-deduplicado as (
+deduplicado AS (
 
     -- CDC: mantém a versão mais recente de cada id_transacao.
-    select *
-    from sanitizado
-    qualify row_number() over (
-        partition by id_transacao
-        order by dt_geracao_origem desc, dt_ingestao_lake desc
+    SELECT *
+    FROM sanitizado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_transacao
+        ORDER BY dt_geracao_origem DESC, dt_ingestao_lake DESC
     ) = 1
 
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

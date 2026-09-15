@@ -206,7 +206,7 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
         const novo = renameMap!.get(c)!;
         if (novo !== c) renamed.push(`${c} -> ${novo}`);
         const macro = spec.applyLgpd ? piiMacroFor(c) : null;
-        return macro ? `        {{ ${macro}('${c}') }} as ${novo},` : `        ${c} as ${novo},`;
+        return macro ? `        {{ ${macro}('${c}') }} AS ${novo},` : `        ${c} AS ${novo},`;
       })
       .join('\n');
     if (renamed.length > 0) {
@@ -219,26 +219,26 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   const incrementalFilter = incremental
     ? `
     {% if is_incremental() %}
-    where _airbyte_extracted_at > (select max(dt_ingestao_lake) from {{ this }})
+    WHERE _airbyte_extracted_at > (SELECT max(dt_ingestao_lake) FROM {{ this }})
     {% endif %}`
     : '';
 
   const dedup =
     pk.length > 0
       ? `
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by ${pk.join(', ')}
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY ${pk.join(', ')}
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado
 `
       : `
-select * from tipado
+SELECT * FROM tipado
 `;
 
   return `{{ config(
@@ -250,16 +250,16 @@ ${cfg.join('\n')}
 -- Origem: source('${SOURCE_NAME}', '${srcName}')  (dataset via DBT_RAW_DATASET)
 -- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)${renameComment}
 
-with fonte as (
-    select * from {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
+WITH fonte AS (
+    SELECT * FROM {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
 ),
 
-tipado as (
-    select
+tipado AS (
+    SELECT
 ${projection}
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 ${dedup}`;
 }
@@ -289,7 +289,7 @@ function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
 -- Origem: ref('${bronzeRef}')
 -- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
 
-select * from {{ ref('${bronzeRef}') }}
+SELECT * FROM {{ ref('${bronzeRef}') }}
 `;
 }
 

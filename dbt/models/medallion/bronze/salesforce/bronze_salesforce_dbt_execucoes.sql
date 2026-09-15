@@ -18,33 +18,33 @@
 --   iniciado_em -> dth_iniciado
 --   status -> des_status
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'dbt_execucoes') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'dbt_execucoes') }}
 ),
 
-tipado as (
-    select
-        modelo_id as id_modelo,
-        criado_em as dth_criado,
-        log as des_log,
-        finalizado_em as dth_finalizado,
-        disparado_por as des_disparado_por,
-        id as id_dbt_execucao,
-        sucesso as des_sucesso,
-        iniciado_em as dth_iniciado,
-        status as des_status,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        modelo_id AS id_modelo,
+        criado_em AS dth_criado,
+        log AS des_log,
+        finalizado_em AS dth_finalizado,
+        disparado_por AS des_disparado_por,
+        id AS id_dbt_execucao,
+        sucesso AS des_sucesso,
+        iniciado_em AS dth_iniciado,
+        status AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_dbt_execucao
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_dbt_execucao
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

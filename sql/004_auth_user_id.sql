@@ -12,10 +12,10 @@
 -- depois de confirmar que o login novo funciona de ponta a ponta.
 -- =============================================================================
 
-alter table usuarios
-  add column if not exists auth_user_id uuid unique references auth.users(id) on delete cascade;
+ALTER TABLE usuarios
+  ADD COLUMN IF NOT EXISTS auth_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE;
 
-comment on column usuarios.auth_user_id is
+COMMENT ON COLUMN usuarios.auth_user_id IS
   'Identidade real no Supabase Auth (auth.users). Senha e sessão vivem só ali agora — usuarios.senha_hash está obsoleta, o app não lê nem escreve mais nela (mantida só por ser NOT NULL no schema atual).';
 
-create index if not exists idx_usuarios_auth_user_id on usuarios(auth_user_id);
+CREATE INDEX IF NOT EXISTS idx_usuarios_auth_user_id ON usuarios(auth_user_id);

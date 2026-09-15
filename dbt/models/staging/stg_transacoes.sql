@@ -7,25 +7,25 @@
   EXEMPLO — desligado no gateway (DBT_DEMO_ENABLED=false).
 */
 
-with fonte as (
-    select * from {{ source('datacore', 'transacoes') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore', 'transacoes') }}
 ),
 
-renomeado as (
-    select
-        cast(id_transacao as string)                as id_transacao,
-        valor                                       as valor_bruto,
-        status                                      as status_bruto,
+renomeado AS (
+    SELECT
+        cast(id_transacao AS STRING)                AS id_transacao,
+        valor                                       AS valor_bruto,
+        status                                      AS status_bruto,
         cpf_titular,
         numero_cartao,
         email_comprador,
 
         -- Timestamp do evento na origem (usado na ordenação da deduplicação CDC).
-        cast(data_transacao as timestamp)           as dt_evento_origem,
+        cast(data_transacao AS TIMESTAMP)           AS dt_evento_origem,
         -- Timestamp em que o Airbyte extraiu a linha (marca d'água do incremental).
-        cast(_airbyte_extracted_at as timestamp)    as dt_ingestao_lake,
-        _airbyte_raw_id                             as _raw_id
-    from fonte
+        cast(_airbyte_extracted_at AS TIMESTAMP)    AS dt_ingestao_lake,
+        _airbyte_raw_id                             AS _raw_id
+    FROM fonte
 )
 
-select * from renomeado
+SELECT * FROM renomeado

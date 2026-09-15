@@ -22,38 +22,38 @@
 --   status -> des_status
 --   bytes_synced -> des_bytes_sincronizacao
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'pipeline_runs') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'pipeline_runs') }}
 ),
 
-tipado as (
-    select
-        records_synced as des_registros_sincronizacao,
-        bronze_built_em as dth_bronze_construcao,
-        iniciado_em as dth_iniciado,
-        duration_ms as des_duracao_ms,
-        airbyte_job_id as id_airbyte_job,
-        criado_em as dth_criado,
-        finalizado_em as dth_finalizado,
-        pipeline_id as id_pipeline,
-        id_empresa as id_empresa,
-        bronze_status as des_bronze_status,
-        id as id_pipeline_run,
-        bronze_error as des_bronze_erro,
-        status as des_status,
-        bytes_synced as des_bytes_sincronizacao,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        records_synced AS des_registros_sincronizacao,
+        bronze_built_em AS dth_bronze_construcao,
+        iniciado_em AS dth_iniciado,
+        duration_ms AS des_duracao_ms,
+        airbyte_job_id AS id_airbyte_job,
+        criado_em AS dth_criado,
+        finalizado_em AS dth_finalizado,
+        pipeline_id AS id_pipeline,
+        id_empresa AS id_empresa,
+        bronze_status AS des_bronze_status,
+        id AS id_pipeline_run,
+        bronze_error AS des_bronze_erro,
+        status AS des_status,
+        bytes_synced AS des_bytes_sincronizacao,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_pipeline_run
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_pipeline_run
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado

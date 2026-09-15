@@ -12,24 +12,24 @@
 -- em src/lib/pipelineBuilder.ts — nunca um número inventado.
 -- =============================================================================
 
-create table if not exists pipeline_runs (
-  id bigint generated always as identity primary key,
-  pipeline_id bigint not null references pipelines(id) on delete cascade,
-  id_empresa bigint not null references empresas(id) on delete cascade,
-  airbyte_job_id bigint not null,
-  status text not null
-    check (status in ('pending', 'running', 'incomplete', 'failed', 'succeeded', 'cancelled')),
-  records_synced bigint,
-  bytes_synced bigint,
-  duration_ms integer,
-  iniciado_em timestamptz not null,
-  finalizado_em timestamptz,
-  criado_em timestamptz not null default now(),
-  unique (pipeline_id, airbyte_job_id)
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  pipeline_id BIGINT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+  id_empresa BIGINT NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+  airbyte_job_id BIGINT NOT NULL,
+  status TEXT NOT NULL
+    CHECK (status IN ('pending', 'running', 'incomplete', 'failed', 'succeeded', 'cancelled')),
+  records_synced BIGINT,
+  bytes_synced BIGINT,
+  duration_ms INTEGER,
+  iniciado_em TIMESTAMPTZ NOT NULL,
+  finalizado_em TIMESTAMPTZ,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (pipeline_id, airbyte_job_id)
 );
 
-comment on table pipeline_runs is
+COMMENT ON TABLE pipeline_runs IS
   'Uma linha por job de sync real do Airbyte. Fonte de verdade das métricas de execução exibidas em Pipelines & Fluxos / Studio — nunca campos estáticos no objeto Pipeline.';
 
-create index if not exists idx_pipeline_runs_pipeline on pipeline_runs(pipeline_id, iniciado_em desc);
-create index if not exists idx_pipeline_runs_empresa on pipeline_runs(id_empresa);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline ON pipeline_runs(pipeline_id, iniciado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_empresa ON pipeline_runs(id_empresa);

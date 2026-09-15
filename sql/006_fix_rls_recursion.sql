@@ -11,64 +11,64 @@
 -- Rode este script no SQL Editor do Supabase AGORA, antes de testar login de novo.
 -- =============================================================================
 
-create or replace function public.is_admin() returns boolean
-language sql security definer stable
-set search_path = public
-as $$
-  select exists (
-    select 1 from usuarios where auth_user_id = auth.uid() and papel = 'admin'
+CREATE OR REPLACE FUNCTION public.is_admin() RETURNS BOOLEAN
+LANGUAGE SQL SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM usuarios WHERE auth_user_id = auth.uid() AND papel = 'admin'
   );
 $$;
 
-create or replace function public.my_empresa_id() returns bigint
-language sql security definer stable
-set search_path = public
-as $$
-  select id_empresa from usuarios where auth_user_id = auth.uid();
+CREATE OR REPLACE FUNCTION public.my_empresa_id() RETURNS BIGINT
+LANGUAGE SQL SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
+  SELECT id_empresa FROM usuarios WHERE auth_user_id = auth.uid();
 $$;
 
-drop policy if exists "usuarios_select_own_or_admin" on usuarios;
-create policy "usuarios_select_own_or_admin" on usuarios
-  for select
-  using (auth_user_id = auth.uid() or public.is_admin());
+DROP POLICY IF EXISTS "usuarios_select_own_or_admin" ON usuarios;
+CREATE POLICY "usuarios_select_own_or_admin" ON usuarios
+  FOR SELECT
+  USING (auth_user_id = auth.uid() OR public.is_admin());
 
-drop policy if exists "empresas_select_own_or_admin" on empresas;
-create policy "empresas_select_own_or_admin" on empresas
-  for select
-  using (id = public.my_empresa_id() or public.is_admin());
+DROP POLICY IF EXISTS "empresas_select_own_or_admin" ON empresas;
+CREATE POLICY "empresas_select_own_or_admin" ON empresas
+  FOR SELECT
+  USING (id = public.my_empresa_id() OR public.is_admin());
 
-drop policy if exists "empresas_write_admin_only" on empresas;
-create policy "empresas_write_admin_only" on empresas
-  for all
-  using (public.is_admin())
-  with check (public.is_admin());
+DROP POLICY IF EXISTS "empresas_write_admin_only" ON empresas;
+CREATE POLICY "empresas_write_admin_only" ON empresas
+  FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
-drop policy if exists "origens_tenant_isolation" on origens;
-create policy "origens_tenant_isolation" on origens
-  for all
-  using (id_empresa = public.my_empresa_id())
-  with check (id_empresa = public.my_empresa_id());
+DROP POLICY IF EXISTS "origens_tenant_isolation" ON origens;
+CREATE POLICY "origens_tenant_isolation" ON origens
+  FOR ALL
+  USING (id_empresa = public.my_empresa_id())
+  WITH CHECK (id_empresa = public.my_empresa_id());
 
-drop policy if exists "destinos_tenant_isolation" on destinos;
-create policy "destinos_tenant_isolation" on destinos
-  for all
-  using (id_empresa = public.my_empresa_id())
-  with check (id_empresa = public.my_empresa_id());
+DROP POLICY IF EXISTS "destinos_tenant_isolation" ON destinos;
+CREATE POLICY "destinos_tenant_isolation" ON destinos
+  FOR ALL
+  USING (id_empresa = public.my_empresa_id())
+  WITH CHECK (id_empresa = public.my_empresa_id());
 
-drop policy if exists "integracoes_tenant_isolation" on integracoes;
-create policy "integracoes_tenant_isolation" on integracoes
-  for all
-  using (id_empresa = public.my_empresa_id())
-  with check (id_empresa = public.my_empresa_id());
+DROP POLICY IF EXISTS "integracoes_tenant_isolation" ON integracoes;
+CREATE POLICY "integracoes_tenant_isolation" ON integracoes
+  FOR ALL
+  USING (id_empresa = public.my_empresa_id())
+  WITH CHECK (id_empresa = public.my_empresa_id());
 
-drop policy if exists "pipelines_tenant_isolation" on pipelines;
-create policy "pipelines_tenant_isolation" on pipelines
-  for all
-  using (id_empresa = public.my_empresa_id())
-  with check (id_empresa = public.my_empresa_id());
+DROP POLICY IF EXISTS "pipelines_tenant_isolation" ON pipelines;
+CREATE POLICY "pipelines_tenant_isolation" ON pipelines
+  FOR ALL
+  USING (id_empresa = public.my_empresa_id())
+  WITH CHECK (id_empresa = public.my_empresa_id());
 
-drop policy if exists "pipeline_runs_tenant_isolation" on pipeline_runs;
-create policy "pipeline_runs_tenant_isolation" on pipeline_runs
-  for all
-  using (id_empresa = public.my_empresa_id())
-  with check (id_empresa = public.my_empresa_id());
+DROP POLICY IF EXISTS "pipeline_runs_tenant_isolation" ON pipeline_runs;
+CREATE POLICY "pipeline_runs_tenant_isolation" ON pipeline_runs
+  FOR ALL
+  USING (id_empresa = public.my_empresa_id())
+  WITH CHECK (id_empresa = public.my_empresa_id());

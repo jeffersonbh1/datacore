@@ -11,11 +11,11 @@
 -- Rode este script no SQL Editor do Supabase (mesmo projeto de 001..009).
 -- =============================================================================
 
-alter table pipeline_runs
-  add column if not exists bronze_tables jsonb,
-  add column if not exists silver_tables jsonb;
+ALTER TABLE pipeline_runs
+  ADD COLUMN IF NOT EXISTS bronze_tables JSONB,
+  ADD COLUMN IF NOT EXISTS silver_tables JSONB;
 
-comment on column pipeline_runs.bronze_tables is
+COMMENT ON COLUMN pipeline_runs.bronze_tables IS
   'Detalhe por tabela da construção da Bronze deste job: [{"table":"clientes","status":"ok","rowsAffected":123,"error":null}, ...]. Null até a primeira tentativa.';
-comment on column pipeline_runs.silver_tables is
+COMMENT ON COLUMN pipeline_runs.silver_tables IS
   'Mesma coisa, para a Silver.';

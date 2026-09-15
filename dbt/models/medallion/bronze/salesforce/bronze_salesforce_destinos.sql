@@ -17,33 +17,33 @@
 --   id -> id_destino
 --   status -> des_status
 
-with fonte as (
-    select * from {{ source('datacore_raw', 'destinos') }}
+WITH fonte AS (
+    SELECT * FROM {{ source('datacore_raw', 'destinos') }}
 ),
 
-tipado as (
-    select
-        tipo as tp_destino,
-        criado_em as dth_criado,
-        modo_escrita as des_modo_escrita,
-        configuracao as des_configuracao,
-        nome as des_nome,
-        id_empresa as id_empresa,
-        airbyte_destination_id as id_airbyte_destino,
-        id as id_destino,
-        status as des_status,
-        cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
-        current_timestamp() as _dbt_loaded_at
-    from fonte
+tipado AS (
+    SELECT
+        tipo AS tp_destino,
+        criado_em AS dth_criado,
+        modo_escrita AS des_modo_escrita,
+        configuracao AS des_configuracao,
+        nome AS des_nome,
+        id_empresa AS id_empresa,
+        airbyte_destination_id AS id_airbyte_destino,
+        id AS id_destino,
+        status AS des_status,
+        cast(_airbyte_extracted_at AS TIMESTAMP) AS dt_ingestao_lake,
+        current_timestamp() AS _dbt_loaded_at
+    FROM fonte
 )
 
-, deduplicado as (
-    select *
-    from tipado
-    qualify row_number() over (
-        partition by id_destino
-        order by dt_ingestao_lake desc
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_destino
+        ORDER BY dt_ingestao_lake DESC
     ) = 1
 )
 
-select * from deduplicado
+SELECT * FROM deduplicado
