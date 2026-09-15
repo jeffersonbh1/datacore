@@ -7,52 +7,52 @@ models:
   - name: silver_salesforce_dbt_execucoes
     description: "Silver gerado — tabela dbt_execucoes."
     columns:
-      - name: id
+      - name: id_dbt_execucao
         data_tests: [unique, not_null]
   - name: silver_salesforce_dbt_modelos
     description: "Silver gerado — tabela dbt_modelos."
     columns:
-      - name: id
+      - name: id_dbt_modelo
         data_tests: [unique, not_null]
   - name: silver_salesforce_dbt_ultima_execucao
     description: "Silver gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
   - name: silver_salesforce_destinos
     description: "Silver gerado — tabela destinos."
     columns:
-      - name: id
+      - name: id_destino
         data_tests: [unique, not_null]
   - name: silver_salesforce_empresas
     description: "Silver gerado — tabela empresas."
     columns:
-      - name: id
+      - name: id_empresa
         data_tests: [unique, not_null]
   - name: silver_salesforce_integracoes
     description: "Silver gerado — tabela integracoes."
     columns:
-      - name: id
+      - name: id_integracao
         data_tests: [unique, not_null]
   - name: silver_salesforce_origens
     description: "Silver gerado — tabela origens."
     columns:
-      - name: id
+      - name: id_origem
         data_tests: [unique, not_null]
   - name: silver_salesforce_pipeline_runs
     description: "Silver gerado — tabela pipeline_runs."
     columns:
-      - name: id
+      - name: id_pipeline_run
         data_tests: [unique, not_null]
   - name: silver_salesforce_pipelines
     description: "Silver gerado — tabela pipelines."
     columns:
-      - name: id
+      - name: id_pipeline
         data_tests: [unique, not_null]
   - name: silver_salesforce_tabelas_carregadas
     description: "Silver gerado — tabela tabelas_carregadas."
     columns:
-      - name: id
+      - name: id_tabela_carregada
         data_tests: [unique, not_null]
   - name: silver_salesforce_usuarios
     description: "Silver gerado — tabela usuarios."
     columns:
-      - name: id
+      - name: id_usuario
         data_tests: [unique, not_null]

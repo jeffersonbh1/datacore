@@ -7,6 +7,13 @@
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'dbt_modelos')  (dataset via DBT_RAW_DATASET)
 -- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_dbt_modelos  (renome + LGPD Art. 46 + dedup CDC)
+-- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
+--   atualizado_em -> dth_atualizado
+--   criado_em -> dth_criado
+--   tabela_origem -> des_tabela_origem
+--   camada -> des_camada
+--   nome -> des_nome
+--   id -> id_dbt_modelo
 
 with fonte as (
     select * from {{ source('datacore_raw', 'dbt_modelos') }}
@@ -14,12 +21,12 @@ with fonte as (
 
 tipado as (
     select
-        atualizado_em,
-        criado_em,
-        tabela_origem,
-        camada,
-        nome,
-        id,
+        atualizado_em as dth_atualizado,
+        criado_em as dth_criado,
+        tabela_origem as des_tabela_origem,
+        camada as des_camada,
+        nome as des_nome,
+        id as id_dbt_modelo,
         cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake,
         current_timestamp() as _dbt_loaded_at
     from fonte
@@ -29,7 +36,7 @@ tipado as (
     select *
     from tipado
     qualify row_number() over (
-        partition by id
+        partition by id_dbt_modelo
         order by dt_ingestao_lake desc
     ) = 1
 )
