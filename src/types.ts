@@ -38,8 +38,9 @@ export interface CanvasNode {
     dbtModelName?: string;
     dbtMaterialization?: 'view' | 'table' | 'incremental' | 'ephemeral';
     /** Bronze/Silver nodes only, BigQuery destinations only — inputs for the real
-     *  "Construir Camada Bronze/Silver" actions. Bronze nodes carry one table each;
-     *  the single Silver node carries every table selected in the integration. */
+     *  "Construir Camada Bronze/Silver" actions. One Bronze node and one Silver
+     *  node per table (see buildPipelineFromIntegration), each carrying just its
+     *  own table in `tables`. */
     bigquery?: {
       projectId: string;
       rawDataset: string;

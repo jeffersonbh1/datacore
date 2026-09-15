@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Activity, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown,
-  ChevronRight, ExternalLink, AlertCircle, Database, Boxes, Layers, FileText, X
+  ChevronRight, ExternalLink, AlertCircle, Database, Boxes, Layers, FileText, X, Play, History
 } from 'lucide-react';
-import { Pipeline } from '../../types';
+import { Pipeline, CanvasNode } from '../../types';
 import { PipelineRunSummary, TableBuildResult, isGeneralLayerFailure } from '../../lib/pipelineBuilder';
-import { fetchPipelineRunsForPipeline, upsertPipelineRuns } from '../../lib/supabase';
-import { fetchConnectionJobs } from '../../lib/airbyteGateway';
+import {
+  fetchPipelineRunsForPipeline, upsertPipelineRuns, updatePipelineRunLayerStatus,
+  insertTableRebuildAttempt, fetchTableRebuildHistory, TableRebuildAttempt,
+} from '../../lib/supabase';
+import { fetchConnectionJobs, buildBronzeLayer, buildSilverLayer } from '../../lib/airbyteGateway';
+
+type Layer = 'bronze' | 'silver';
 
 interface ExecutionsViewProps {
   pipelines: Pipeline[];
@@ -113,12 +118,20 @@ function LayerStatusBadge({ status }: { status: 'not_applicable' | 'running' | '
 
 function LayerTablesList({
   label,
+  layer,
   tables,
   onOpenLog,
+  onRetry,
+  isRetrying,
+  canRetry,
 }: {
   label: string;
+  layer: Layer;
   tables: TableBuildResult[] | null;
   onOpenLog: (layer: string, result: TableBuildResult) => void;
+  onRetry: (layer: Layer, table: TableBuildResult) => void;
+  isRetrying: (layer: Layer, table: string) => boolean;
+  canRetry: boolean;
 }) {
   return (
     <div className="min-w-0">
@@ -127,32 +140,46 @@ function LayerTablesList({
         <p className="text-[11px] text-slate-400">Sem detalhe disponível para este run.</p>
       ) : (
         <ul className="space-y-1">
-          {tables.map(t => (
-            <li
-              key={t.table}
-              className="flex items-center justify-between gap-2 text-[11px] bg-white border border-slate-200 rounded px-2 py-1"
-            >
-              <span className="flex items-center gap-1.5 min-w-0">
-                {t.status === 'ok'
-                  ? <CheckCircle className="w-3 h-3 text-emerald-600 shrink-0" />
-                  : <XCircle className="w-3 h-3 text-rose-600 shrink-0" />}
-                <span className="truncate text-slate-700">{t.table}</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <span className="font-mono text-slate-500">
-                  {t.rowsAffected != null ? t.rowsAffected.toLocaleString('pt-BR') : '—'}
+          {tables.map(t => {
+            const retrying = isRetrying(layer, t.table);
+            return (
+              <li
+                key={t.table}
+                className="flex items-center justify-between gap-2 text-[11px] bg-white border border-slate-200 rounded px-2 py-1"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {t.status === 'ok'
+                    ? <CheckCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+                    : <XCircle className="w-3 h-3 text-rose-600 shrink-0" />}
+                  <span className="truncate text-slate-700">{t.table}</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onOpenLog(label, t)}
-                  title={`Ver log de "${t.table}"`}
-                  className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] font-medium border border-slate-200 transition cursor-pointer"
-                >
-                  <FileText className="w-3 h-3" /> Log
-                </button>
-              </span>
-            </li>
-          ))}
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="font-mono text-slate-500">
+                    {t.rowsAffected != null ? t.rowsAffected.toLocaleString('pt-BR') : '—'}
+                  </span>
+                  {t.status === 'error' && canRetry && (
+                    <button
+                      type="button"
+                      onClick={() => onRetry(layer, t)}
+                      disabled={retrying}
+                      title={`Executar novamente só "${t.table}"`}
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-medium border border-indigo-200 transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <Play className={`w-3 h-3 ${retrying ? 'animate-pulse' : ''}`} /> {retrying ? 'Executando...' : 'Executar'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLog(label, t)}
+                    title={`Ver log de "${t.table}"`}
+                    className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] font-medium border border-slate-200 transition cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3" /> Log
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -208,8 +235,96 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
   // por vez, em vez do histórico inteiro numa lista só.
   const [runsPageByPipeline, setRunsPageByPipeline] = useState<Record<string, number>>({});
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
-  const [logModal, setLogModal] = useState<{ layer: string; result: TableBuildResult } | null>(null);
+  const [logModal, setLogModal] = useState<{
+    layer: string; result: TableBuildResult; pipelineId: string; pipelineDbId: number;
+  } | null>(null);
+  const [logHistory, setLogHistory] = useState<{ loading: boolean; items: TableRebuildAttempt[]; error: string | null }>({
+    loading: false, items: [], error: null,
+  });
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Chave "<pipelineId>:<airbyteJobId>:<layer>:<table>" da tabela sendo
+  // reexecutada agora — controla o botão "Executar" individualmente por linha.
+  const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!logModal) {
+      setLogHistory({ loading: false, items: [], error: null });
+      return;
+    }
+    let cancelled = false;
+    setLogHistory({ loading: true, items: [], error: null });
+    fetchTableRebuildHistory(logModal.pipelineDbId, logModal.layer.toLowerCase() as Layer, logModal.result.table)
+      .then(items => { if (!cancelled) setLogHistory({ loading: false, items, error: null }); })
+      .catch(err => {
+        if (cancelled) return;
+        setLogHistory({ loading: false, items: [], error: err instanceof Error ? err.message : 'Falha ao carregar histórico.' });
+      });
+    return () => { cancelled = true; };
+  }, [logModal]);
+
+  const handleRetryTable = useCallback(async (pipeline: Pipeline, run: PipelineRunSummary, layer: Layer, table: TableBuildResult) => {
+    const key = `${pipeline.id}:${run.airbyteJobId}:${layer}:${table.table}`;
+    if (retryingKeys[key] || !pipeline.dbId) return;
+
+    const node = pipeline.nodes.find((n: CanvasNode) => n.type === layer && n.title === table.table);
+    const bq = node?.config.bigquery;
+    if (!bq) {
+      setFetchError(`Não encontrei a configuração BigQuery do nó "${table.table}" (${layer}) no Studio — abra o pipeline lá antes de tentar de novo.`);
+      return;
+    }
+
+    setRetryingKeys(prev => ({ ...prev, [key]: true }));
+    let result: TableBuildResult;
+    try {
+      const { results } = layer === 'bronze'
+        ? await buildBronzeLayer({ projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset, tables: [table.table], sistema: bq.sistema, location: bq.location })
+        : await buildSilverLayer({ projectId: bq.projectId, rawDataset: bq.rawDataset, bronzeDataset: bq.bronzeDataset, silverDataset: bq.silverDataset, tables: [table.table], sistema: bq.sistema, location: bq.location });
+      const r = results[0];
+      result = { table: table.table, status: r?.status === 'ok' ? 'ok' : 'error', rowsAffected: r?.rowsAffected ?? null, error: r?.status === 'ok' ? null : (r?.error || 'dbt build não retornou resultado para esta tabela.') };
+    } catch (err) {
+      result = { table: table.table, status: 'error', rowsAffected: null, error: err instanceof Error ? err.message : 'Falha ao executar o dbt build.' };
+    }
+
+    // Mescla só esta tabela no array já existente do run (as demais tabelas
+    // desta camada não são retocadas) e recalcula o status geral da camada —
+    // mantém a linha do run consistente, sem criar um run novo.
+    const existing = (layer === 'bronze' ? run.bronzeTables : run.silverTables) || [];
+    const merged = existing.some(t => t.table === table.table)
+      ? existing.map(t => (t.table === table.table ? result : t))
+      : [...existing, result];
+    const overallStatus: 'built' | 'failed' = merged.every(t => t.status === 'ok') ? 'built' : 'failed';
+    const failedOnes = merged.filter(t => t.status === 'error');
+    const aggregateError = failedOnes.length ? failedOnes.map(t => `${t.table}: ${t.error}`).join(' | ') : undefined;
+
+    try {
+      await updatePipelineRunLayerStatus(pipeline.dbId, run.airbyteJobId, layer, overallStatus, aggregateError, merged);
+    } catch (err) {
+      console.error('Erro ao persistir status da camada após reexecução manual:', err);
+    }
+    if (idEmpresa) {
+      try {
+        await insertTableRebuildAttempt(idEmpresa, pipeline.dbId, layer, table.table, result);
+      } catch (err) {
+        console.error('Erro ao registrar histórico de reexecução manual:', err);
+      }
+    }
+
+    setRunsByPipeline(prev => ({
+      ...prev,
+      [pipeline.id]: (prev[pipeline.id] || []).map(r => r.airbyteJobId !== run.airbyteJobId ? r : {
+        ...r,
+        ...(layer === 'bronze'
+          ? { bronzeStatus: overallStatus, bronzeError: aggregateError || null, bronzeTables: merged }
+          : { silverStatus: overallStatus, silverError: aggregateError || null, silverTables: merged }),
+      }),
+    }));
+    setRetryingKeys(prev => { const next = { ...prev }; delete next[key]; return next; });
+    // Se o log desta mesma tabela estiver aberto, atualiza a lista empilhada na hora.
+    setLogModal(prev => (prev && prev.pipelineId === pipeline.id && prev.layer.toLowerCase() === layer && prev.result.table === table.table)
+      ? { ...prev, result }
+      : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryingKeys, idEmpresa]);
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -428,8 +543,24 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
                                           </div>
                                         )}
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                          <LayerTablesList label="Bronze" tables={run.bronzeTables} onOpenLog={(layer, result) => setLogModal({ layer, result })} />
-                                          <LayerTablesList label="Silver" tables={run.silverTables} onOpenLog={(layer, result) => setLogModal({ layer, result })} />
+                                          <LayerTablesList
+                                            label="Bronze"
+                                            layer="bronze"
+                                            tables={run.bronzeTables}
+                                            onOpenLog={(layer, result) => setLogModal({ layer, result, pipelineId: pipeline.id, pipelineDbId: pipeline.dbId! })}
+                                            onRetry={(layer, table) => handleRetryTable(pipeline, run, layer, table)}
+                                            isRetrying={(layer, table) => Boolean(retryingKeys[`${pipeline.id}:${run.airbyteJobId}:${layer}:${table}`])}
+                                            canRetry={Boolean(pipeline.dbId)}
+                                          />
+                                          <LayerTablesList
+                                            label="Silver"
+                                            layer="silver"
+                                            tables={run.silverTables}
+                                            onOpenLog={(layer, result) => setLogModal({ layer, result, pipelineId: pipeline.id, pipelineDbId: pipeline.dbId! })}
+                                            onRetry={(layer, table) => handleRetryTable(pipeline, run, layer, table)}
+                                            isRetrying={(layer, table) => Boolean(retryingKeys[`${pipeline.id}:${run.airbyteJobId}:${layer}:${table}`])}
+                                            canRetry={Boolean(pipeline.dbId)}
+                                          />
                                         </div>
                                       </td>
                                     </tr>
@@ -494,28 +625,64 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
               </button>
             </div>
 
-            <div className="p-4 space-y-3 text-xs">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="font-medium">Status:</span>
-                  {logModal.result.status === 'ok'
-                    ? <span className="flex items-center gap-1 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> OK</span>
-                    : <span className="flex items-center gap-1 text-rose-700"><XCircle className="w-3.5 h-3.5" /> Erro</span>}
-                </span>
-                <span className="text-slate-600">
-                  <span className="font-medium">Registros:</span>{' '}
-                  <span className="font-mono">{logModal.result.rowsAffected != null ? logModal.result.rowsAffected.toLocaleString('pt-BR') : '—'}</span>
-                </span>
-              </div>
-
+            <div className="p-4 space-y-4 text-xs max-h-[70vh] overflow-y-auto">
               <div>
-                <p className="font-medium text-slate-700 mb-1">Log</p>
+                <p className="font-medium text-slate-700 mb-1.5">Resultado atual</p>
+                <div className="flex items-center gap-4 mb-1.5">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span className="font-medium">Status:</span>
+                    {logModal.result.status === 'ok'
+                      ? <span className="flex items-center gap-1 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> OK</span>
+                      : <span className="flex items-center gap-1 text-rose-700"><XCircle className="w-3.5 h-3.5" /> Erro</span>}
+                  </span>
+                  <span className="text-slate-600">
+                    <span className="font-medium">Registros:</span>{' '}
+                    <span className="font-mono">{logModal.result.rowsAffected != null ? logModal.result.rowsAffected.toLocaleString('pt-BR') : '—'}</span>
+                  </span>
+                </div>
                 {logModal.result.error ? (
                   <pre className="bg-slate-950 text-slate-200 rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words max-h-64 overflow-y-auto select-text">
                     {logModal.result.error}
                   </pre>
                 ) : (
                   <p className="text-slate-400 text-[11px]">Sem erros registrados para esta tabela.</p>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 pt-3">
+                <p className="font-medium text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-slate-400" />
+                  Histórico de reexecuções manuais
+                </p>
+                {logHistory.loading ? (
+                  <p className="text-slate-400 text-[11px] flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Carregando...</p>
+                ) : logHistory.error ? (
+                  <p className="text-rose-600 text-[11px]">{logHistory.error}</p>
+                ) : logHistory.items.length === 0 ? (
+                  <p className="text-slate-400 text-[11px]">Nenhuma reexecução manual desta tabela ainda — use o botão "Executar" na lista pra tentar de novo.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {logHistory.items.map(item => (
+                      <li key={item.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="flex items-center gap-1.5">
+                            {item.status === 'ok'
+                              ? <CheckCircle className="w-3 h-3 text-emerald-600" />
+                              : <XCircle className="w-3 h-3 text-rose-600" />}
+                            <span className="font-mono text-slate-500">{formatDateTime(item.executadoEm)}</span>
+                          </span>
+                          <span className="font-mono text-slate-500">
+                            {item.rowsAffected != null ? `${item.rowsAffected.toLocaleString('pt-BR')} regs` : '—'}
+                          </span>
+                        </div>
+                        {item.error && (
+                          <pre className="bg-slate-950 text-slate-200 rounded p-2 text-[10px] leading-relaxed whitespace-pre-wrap break-words max-h-40 overflow-y-auto select-text">
+                            {item.error}
+                          </pre>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </div>

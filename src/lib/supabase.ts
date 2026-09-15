@@ -748,3 +748,66 @@ export async function updatePipelineRunLayerStatus(
     .eq('airbyte_job_id', airbyteJobId);
   if (error) throw new Error(`Erro ao atualizar status da camada ${layer}: ${error.message}`);
 }
+
+/** Uma tentativa de reexecução manual de uma tabela (ver dbt_table_rebuilds, sql/011). */
+export interface TableRebuildAttempt {
+  id: number;
+  status: 'ok' | 'error';
+  rowsAffected: number | null;
+  error: string | null;
+  executadoEm: string;
+}
+
+/**
+ * Registra UMA tentativa de reexecução manual de uma tabela específica da
+ * Bronze/Silver (botão "Executar" em Execuções, ExecutionsView.tsx) — sempre
+ * um INSERT, nunca update, pra empilhar o histórico em vez de perder tentativas
+ * anteriores quando a mesma tabela falha de novo. O status "atual" da tabela
+ * (mostrado na linha do run) é responsabilidade de updatePipelineRunLayerStatus,
+ * chamado separadamente pelo mesmo botão.
+ */
+export async function insertTableRebuildAttempt(
+  idEmpresa: number,
+  pipelineDbId: number,
+  layer: 'bronze' | 'silver',
+  table: string,
+  result: { status: 'ok' | 'error'; rowsAffected: number | null; error: string | null }
+): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('dbt_table_rebuilds').insert({
+    pipeline_id: pipelineDbId,
+    id_empresa: idEmpresa,
+    layer,
+    table_name: table,
+    status: result.status,
+    rows_affected: result.rowsAffected,
+    error: result.error,
+  });
+  if (error) throw new Error(`Erro ao registrar reexecução da tabela "${table}": ${error.message}`);
+}
+
+/** Histórico empilhado (mais recente primeiro) de reexecuções manuais de uma tabela. */
+export async function fetchTableRebuildHistory(
+  pipelineDbId: number,
+  layer: 'bronze' | 'silver',
+  table: string,
+  limit = 20
+): Promise<TableRebuildAttempt[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('dbt_table_rebuilds')
+    .select('id, status, rows_affected, error, executado_em')
+    .eq('pipeline_id', pipelineDbId)
+    .eq('layer', layer)
+    .eq('table_name', table)
+    .order('executado_em', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Erro ao buscar histórico de reexecuções: ${error.message}`);
+  return (data || []).map(row => ({
+    id: Number(row.id),
+    status: row.status as 'ok' | 'error',
+    rowsAffected: row.rows_affected != null ? Number(row.rows_affected) : null,
+    error: (row.error as string) || null,
+    executadoEm: String(row.executado_em),
+  }));
+}
