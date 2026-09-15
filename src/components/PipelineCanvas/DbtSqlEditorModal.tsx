@@ -295,9 +295,23 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   const defaultMaterialization = node.config.dbtMaterialization || 
     (layer === 'bronze' ? 'incremental' : 'table');
 
+  // Bronze/Silver + BigQuery nodes são apoiados por um arquivo real em
+  // dbt/models/medallion/<camada>/<sistema>/<camada>_<sistema>_<tabela>.sql —
+  // o mesmo que `dbt build` executa. Para a camada Gold e nós sem destino
+  // BigQuery ainda não existe codegen real: o editor mostra um rascunho de
+  // demonstração, guardado só na config do node (node.config.dbtSql).
+  const bqTables = node.config.bigquery?.tables || [];
+  const sistema = node.config.bigquery?.sistema || '';
+  const isRealDbtModel = (layer === 'bronze' || layer === 'silver') && bqTables.length > 0 && !!sistema;
+
   const [modelName, setModelName] = useState(defaultModelName);
   const [materialization, setMaterialization] = useState(defaultMaterialization);
+  // Nós com arquivo dbt real (isRealDbtModel) NUNCA partem do template de
+  // demonstração — ele só existe para não confundir com o conteúdo de fato
+  // gravado em disco enquanto o fetch real está em curso ou falhou (ver
+  // bloqueio de leitura/gravação mais abaixo).
   const [sqlCode, setSqlCode] = useState<string>(() => {
+    if (isRealDbtModel) return '';
     if (node.config.dbtSql) return node.config.dbtSql;
     return generateAutomaticDbtSql(node, layer, upstreamNode, defaultMaterialization);
   });
@@ -307,18 +321,16 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
   const [isCompiling, setIsCompiling] = useState(false);
   const [compileStatus, setCompileStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isDirty, setIsDirty] = useState(false);
-
-  // Bronze/Silver + BigQuery nodes são apoiados por um arquivo real em
-  // dbt/models/medallion/<camada>/<sistema>/<camada>_<sistema>_<tabela>.sql —
-  // o mesmo que `dbt build` executa. Para a camada Gold e nós sem destino
-  // BigQuery ainda não existe codegen real: o editor mostra um rascunho de
-  // demonstração, guardado só na config do node (node.config.dbtSql).
-  const bqTables = node.config.bigquery?.tables || [];
-  const sistema = node.config.bigquery?.sistema || '';
-  const isRealDbtModel = (layer === 'bronze' || layer === 'silver') && bqTables.length > 0 && !!sistema;
   const [selectedTable, setSelectedTable] = useState<string>(bqTables[0] || '');
   const [isLoadingSql, setIsLoadingSql] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Só true depois que o arquivo real termina de carregar com sucesso — nunca
+  // assumido por padrão, para o editor/Salvar ficarem bloqueados enquanto o
+  // conteúdo em tela não é garantidamente o do arquivo (ver renderização do
+  // Editor SQL abaixo, que usa isso pra não deixar sobrescrever o .sql real
+  // com lixo em caso de falha de carga).
+  const [realSqlLoaded, setRealSqlLoaded] = useState(false);
+  const [loadRetryToken, setLoadRetryToken] = useState(0);
   const [isSavingSql, setIsSavingSql] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -328,15 +340,18 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
     let cancelled = false;
     setIsLoadingSql(true);
     setLoadError(null);
+    setRealSqlLoaded(false);
     getBronzeModelSql(sistema, selectedTable, layer === 'silver' ? 'silver' : 'bronze')
       .then(({ name, sql }) => {
         if (cancelled) return;
         setModelName(name);
         setSqlCode(sql);
         setIsDirty(false);
+        setRealSqlLoaded(true);
       })
       .catch((err) => {
         if (cancelled) return;
+        setSqlCode('');
         setLoadError(err instanceof Error ? err.message : 'Falha ao carregar o modelo dbt.');
       })
       .finally(() => {
@@ -344,7 +359,7 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable, sistema, isRealDbtModel, layer]);
+  }, [selectedTable, sistema, isRealDbtModel, layer, loadRetryToken]);
 
   // Auto-compilation simulation
   const getCompiledSql = (sourceCode: string): string => {
@@ -630,9 +645,10 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
                 setActiveTab('compiled');
                 if (!compileStatus) handleRunCompile();
               }}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
-                activeTab === 'compiled' 
-                  ? 'bg-indigo-600 text-white shadow-xs' 
+              disabled={isRealDbtModel && !realSqlLoaded}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                activeTab === 'compiled'
+                  ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -644,9 +660,10 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               type="button"
               id="tab-dbt-schema"
               onClick={() => setActiveTab('schema')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
-                activeTab === 'schema' 
-                  ? 'bg-teal-600 text-white shadow-xs' 
+              disabled={isRealDbtModel && !realSqlLoaded}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                activeTab === 'schema'
+                  ? 'bg-teal-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -839,7 +856,36 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
         {/* Main Workspace Area */}
         <div className="flex-1 flex overflow-hidden">
           {/* TAB 1: Real-time dbt SQL Editor */}
-          {activeTab === 'editor' && (
+          {activeTab === 'editor' && isRealDbtModel && !realSqlLoaded && (
+            // Modelo com arquivo real, mas ainda carregando ou a leitura falhou:
+            // nunca mostra o textarea nesse estado — evita editar/salvar por cima
+            // de um conteúdo que não é garantidamente o do arquivo .sql real.
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-slate-950 p-6 text-center">
+              {loadError ? (
+                <>
+                  <AlertCircle className="w-8 h-8 text-rose-400" />
+                  <div className="text-sm text-rose-300 font-medium">Não foi possível carregar o arquivo .sql real</div>
+                  <div className="text-xs text-slate-400 max-w-md">{loadError}</div>
+                  <button
+                    type="button"
+                    id="btn-dbt-retry-load"
+                    onClick={() => setLoadRetryToken((t) => t + 1)}
+                    className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Tentar novamente</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-6 h-6 text-slate-400 animate-spin" />
+                  <div className="text-sm text-slate-400">Carregando models/medallion/{layer}/{sistema}/{modelName}.sql…</div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'editor' && (!isRealDbtModel || realSqlLoaded) && (
             <div className="flex-1 flex overflow-hidden bg-slate-950">
               {/* Line Numbers Gutter */}
               <div className="w-12 py-4 bg-slate-900/70 border-r border-slate-800 text-right pr-3 select-none text-slate-600 font-mono text-xs leading-relaxed hidden sm:block">
@@ -948,9 +994,9 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
               type="button"
               id="btn-dbt-save"
               onClick={handleSave}
-              disabled={!canEdit || isLoadingSql || isSavingSql}
+              disabled={!canEdit || isLoadingSql || isSavingSql || (isRealDbtModel && !realSqlLoaded)}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition shadow-md cursor-pointer ${
-                canEdit && !isLoadingSql && !isSavingSql
+                canEdit && !isLoadingSql && !isSavingSql && (!isRealDbtModel || realSqlLoaded)
                   ? 'bg-gradient-to-r from-[#FF694B] to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-orange-950'
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
