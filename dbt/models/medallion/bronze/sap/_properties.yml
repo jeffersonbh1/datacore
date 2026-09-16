@@ -8,25 +8,33 @@ models:
     description: "Bronze gerado — tabela dbt_execucoes."
     columns:
       - name: id_modelo
-        description: "Origem: modelo_id."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_log
-        description: "Origem: log."
+        description: ""
       - name: dth_finalizado
-        description: "Origem: finalizado_em."
+        description: ""
       - name: des_disparado_por
-        description: "Origem: disparado_por."
+        description: ""
       - name: id_dbt_execucao
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_sucesso
-        description: "Origem: sucesso."
+        description: ""
       - name: dth_iniciado
-        description: "Origem: iniciado_em."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""

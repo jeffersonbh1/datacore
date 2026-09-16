@@ -572,6 +572,7 @@ export default function App() {
                 onUpdateRequestStatus={handleUpdateLgpdRequestStatus}
                 canConfigureLGPDRules={permissions.canConfigureLGPDRules}
                 canViewRawPII={permissions.canViewRawPII}
+                pipelines={pipelines}
               />
             )}
 

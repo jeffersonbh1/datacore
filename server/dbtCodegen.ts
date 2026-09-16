@@ -57,7 +57,7 @@ const SOURCE_NAME = 'datacore_raw';
 const SOURCES_FILE = '_datacore_raw__sources.yml';
 const SOURCES_MANIFEST_FILE = '_generated_sources.json';
 const PROPERTIES_FILE = '_properties.yml';
-const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
+export const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
 const SILVER_MANIFEST_FILE = '_generated_silver.json';
 
 // Windows + OneDrive às vezes seguram um handle e devolvem EPERM/EBUSY momentâneo.
@@ -131,21 +131,38 @@ const WATERMARK_COLUMNS: ColumnDoc[] = [
   { name: '_dbt_loaded_at', source: 'current_timestamp() — hora deste build do dbt' },
 ];
 
+/** Colunas de controle que o Airbyte grava em toda tabela raw (Destination v2)
+ *  — não entram na projeção de negócio da Bronze (`renderBronzeSql` não as
+ *  seleciona), mas o Dicionário de Dados do Hub de Governança & LGPD lê o
+ *  schema ao vivo da Raw e precisa poder documentá-las também. Só fazem
+ *  sentido na Bronze (a Silver é passthrough da Bronze — não tem essas
+ *  colunas nem indiretamente), documentadas sob o próprio nome raw.  */
+const AIRBYTE_CONTROL_COLUMNS: ColumnDoc[] = [
+  { name: '_airbyte_raw_id', source: '_airbyte_raw_id' },
+  { name: '_airbyte_extracted_at', source: '_airbyte_extracted_at' },
+  { name: '_airbyte_meta', source: '_airbyte_meta' },
+  { name: '_airbyte_generation_id', source: '_airbyte_generation_id' },
+];
+
 /** Todas as colunas do modelo gerado, na mesma ordem da projeção: as de
  *  negócio (já padronizadas — ver server/bronzeNaming.ts — com o nome
- *  original do source anotado) seguidas das de marca d'água. Usado para
- *  documentar o schema inteiro (o MAPEAMENTO origem -> padronizado de cada
- *  campo) no _properties.yml. */
-function resolveColumnDocs(t: IntegrationTableSpec, renameMap: Map<string, string> | null): ColumnDoc[] {
+ *  original do source anotado) seguidas das de marca d'água e, só na Bronze,
+ *  das colunas de controle do Airbyte. Usado para documentar o schema inteiro
+ *  (o MAPEAMENTO origem -> padronizado de cada campo) no _properties.yml. */
+function resolveColumnDocs(t: IntegrationTableSpec, renameMap: Map<string, string> | null, layer: Layer): ColumnDoc[] {
   const business: ColumnDoc[] = t.columns && t.columns.length > 0
     ? t.columns.map((c) => ({ name: renameMap ? renameMap.get(c) ?? c : c, source: c }))
     : [];
-  return [...business, ...WATERMARK_COLUMNS];
+  const control = layer === 'Bronze' ? AIRBYTE_CONTROL_COLUMNS : [];
+  return [...business, ...WATERMARK_COLUMNS, ...control];
 }
 
 type PiiMacro = 'mascarar_cpf' | 'tokenizar_email' | 'hash_sha256';
 
-function piiMacroFor(column: string): PiiMacro | null {
+/** Heurística de nome usada tanto para decidir a máscara LGPD da Bronze quanto
+ *  para sinalizar "dado pessoal" no catálogo Raw (server/routes/rawCatalog.ts) —
+ *  mesma regra, uma fonte só. */
+export function piiMacroFor(column: string): PiiMacro | null {
   const c = column.toLowerCase();
   if (/(^|_)(cpf|cnpj|documento|doc|num_doc)(_|$)/.test(c)) return 'mascarar_cpf';
   if (/(e_?mail)/.test(c)) return 'tokenizar_email';
@@ -339,7 +356,7 @@ SELECT * FROM {{ ref('${bronzeRef}') }}
 
 /** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK, o MAPEAMENTO
  *  completo origem -> padronizado de toda coluna do modelo }. Acumula por sistema. */
-type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>>;
+export type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>>;
 
 type Layer = 'Bronze' | 'Silver';
 
@@ -350,8 +367,8 @@ type Layer = 'Bronze' | 'Silver';
 function columnsBlock(pk: string[], columns: ColumnDoc[]): string {
   if (columns.length === 0) return '';
   const pkSet = new Set(pk);
-  const lines = columns.map(({ name, source }) => {
-    const desc = `        description: "Origem: ${source}."`;
+  const lines = columns.map(({ name }) => {
+    const desc = `        description: ""`;
     if (!pkSet.has(name)) return `      - name: ${name}\n${desc}`;
     const tests = pk.length === 1 ? '[unique, not_null]' : '[not_null]';
     return `      - name: ${name}\n${desc}\n        data_tests: ${tests}`;
@@ -468,7 +485,7 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // existe na tabela gerada), não para o nome original do source.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    const columns = resolveColumnDocs(t, renameMap);
+    const columns = resolveColumnDocs(t, renameMap, 'Bronze');
     sysModels[bronzeModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   bronzeManifest[sys] = sysModels;
@@ -492,7 +509,7 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
     // de coluna já padronizados, então a PK do teste é a mesma da Bronze.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
     const pk = resolvePrimaryKey(t, renameMap);
-    const columns = resolveColumnDocs(t, renameMap);
+    const columns = resolveColumnDocs(t, renameMap, 'Silver');
     silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
   }
   silverManifest[sys] = silverSysModels;
@@ -561,3 +578,4 @@ export function writeGeneratedModelSql(name: string, sql: string): void {
   if (!path) throw new Error(`Modelo dbt "${name}" não encontrado — gere o modelo da integração antes de editá-lo.`);
   retrySync(() => writeFileSync(path, sql, 'utf8'));
 }
+

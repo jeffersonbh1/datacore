@@ -1,25 +1,28 @@
 import React, { useState } from 'react';
-import { 
-  ShieldCheck, Lock, UserCheck, FileText, CheckCircle, AlertTriangle, 
+import {
+  ShieldCheck, Lock, UserCheck, FileText, CheckCircle, AlertTriangle,
   Search, Download, Trash2, Eye, Key, Database, RefreshCw, ExternalLink,
-  ChevronRight, Calendar, ArrowRight, ShieldAlert, Sparkles, X
+  ChevronRight, Calendar, ArrowRight, ShieldAlert, Sparkles, X, Table2
 } from 'lucide-react';
-import { LGPDRequest } from '../../types';
+import { LGPDRequest, Pipeline } from '../../types';
+import { RawDataDictionary } from './RawDataDictionary';
 
 interface LgpdHubProps {
   requests: LGPDRequest[];
   onUpdateRequestStatus: (requestId: string, newStatus: LGPDRequest['status']) => void;
   canConfigureLGPDRules: boolean;
   canViewRawPII: boolean;
+  pipelines: Pipeline[];
 }
 
 export const LgpdHub: React.FC<LgpdHubProps> = ({
   requests,
   onUpdateRequestStatus,
   canConfigureLGPDRules,
-  canViewRawPII
+  canViewRawPII,
+  pipelines
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'dsr' | 'catalog' | 'audit' | 'basis'>('dsr');
+  const [activeSubTab, setActiveSubTab] = useState<'dsr' | 'catalog' | 'rawdict' | 'audit' | 'basis'>('dsr');
   const [searchTitular, setSearchTitular] = useState('');
   const [selectedRequest, setSelectedRequest] = useState<LGPDRequest | null>(null);
   const [showExportCertificate, setShowExportCertificate] = useState(false);
@@ -131,6 +134,18 @@ export const LgpdHub: React.FC<LgpdHubProps> = ({
           >
             <Database className="w-4 h-4" />
             Inventário de PII & Mascaramento
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('rawdict')}
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'rawdict'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Table2 className="w-4 h-4" />
+            Dicionário de Dados (Raw)
           </button>
 
           <button
@@ -327,6 +342,11 @@ export const LgpdHub: React.FC<LgpdHubProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 2.5: Raw Data Dictionary — filtro de tabela raw, colunas + qualidade + PII, descrições editáveis */}
+      {activeSubTab === 'rawdict' && (
+        <RawDataDictionary pipelines={pipelines} canEdit={canConfigureLGPDRules} />
       )}
 
       {/* SUB-TAB 3: Legal Basis */}

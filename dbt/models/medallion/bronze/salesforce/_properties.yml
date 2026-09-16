@@ -8,312 +8,400 @@ models:
     description: "Bronze gerado — tabela dbt_execucoes."
     columns:
       - name: id_modelo
-        description: "Origem: modelo_id."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_log
-        description: "Origem: log."
+        description: ""
       - name: dth_finalizado
-        description: "Origem: finalizado_em."
+        description: ""
       - name: des_disparado_por
-        description: "Origem: disparado_por."
+        description: ""
       - name: id_dbt_execucao
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_sucesso
-        description: "Origem: sucesso."
+        description: ""
       - name: dth_iniciado
-        description: "Origem: iniciado_em."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_dbt_modelos
     description: "Bronze gerado — tabela dbt_modelos."
     columns:
       - name: dth_atualizado
-        description: "Origem: atualizado_em."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_tabela_origem
-        description: "Origem: tabela_origem."
+        description: ""
       - name: des_camada
-        description: "Origem: camada."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_dbt_modelo
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_dbt_ultima_execucao
     description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
     columns:
       - name: id_modelo
-        description: "Origem: modelo_id."
+        description: ""
       - name: id_execucao
-        description: "Origem: execucao_id."
+        description: ""
       - name: dth_finalizado
-        description: "Origem: finalizado_em."
+        description: ""
       - name: des_disparado_por
-        description: "Origem: disparado_por."
+        description: ""
       - name: des_sucesso
-        description: "Origem: sucesso."
+        description: ""
       - name: dth_iniciado
-        description: "Origem: iniciado_em."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_destinos
     description: "Bronze gerado — tabela destinos."
     columns:
       - name: tp_destino
-        description: "Origem: tipo."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_modo_escrita
-        description: "Origem: modo_escrita."
+        description: ""
       - name: des_configuracao
-        description: "Origem: configuracao."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: id_airbyte_destino
-        description: "Origem: airbyte_destination_id."
+        description: ""
       - name: id_destino
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_empresas
     description: "Bronze gerado — tabela empresas."
     columns:
       - name: dth_atualizado
-        description: "Origem: atualizado_em."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: id_airbyte_workspace
-        description: "Origem: airbyte_workspace_id."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: des_plano
-        description: "Origem: plano."
+        description: ""
       - name: id_empresa
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_slug
-        description: "Origem: slug."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_integracoes
     description: "Bronze gerado — tabela integracoes."
     columns:
       - name: des_frequencia_sync
-        description: "Origem: frequencia_sync."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_destino
-        description: "Origem: destino_id."
+        description: ""
       - name: des_tabelas_selecionadas
-        description: "Origem: tabelas_selecionadas."
+        description: ""
       - name: des_dia_mensal
-        description: "Origem: dia_mensal."
+        description: ""
       - name: dat_execucao_unica
-        description: "Origem: data_execucao_unica."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_horarios_execucao
-        description: "Origem: horarios_execucao."
+        description: ""
       - name: des_resumo_agendamento
-        description: "Origem: resumo_agendamento."
+        description: ""
       - name: id_origem
-        description: "Origem: origem_id."
+        description: ""
       - name: des_aplicar_sanitizacao_lgpd
-        description: "Origem: aplicar_sanitizacao_lgpd."
+        description: ""
       - name: des_table_sync_configs
-        description: "Origem: table_sync_configs."
+        description: ""
       - name: id_airbyte_connection
-        description: "Origem: airbyte_connection_id."
+        description: ""
       - name: id_pipeline
-        description: "Origem: pipeline_id."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: id_integracao
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_dias_semana
-        description: "Origem: dias_semana."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_origens
     description: "Bronze gerado — tabela origens."
     columns:
       - name: tp_origem
-        description: "Origem: tipo."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_configuracao
-        description: "Origem: configuracao."
+        description: ""
       - name: id_airbyte_origem
-        description: "Origem: airbyte_source_id."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: id_origem
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_pipeline_runs
     description: "Bronze gerado — tabela pipeline_runs."
     columns:
       - name: des_registros_sincronizacao
-        description: "Origem: records_synced."
+        description: ""
       - name: dth_bronze_construcao
-        description: "Origem: bronze_built_em."
+        description: ""
       - name: dth_iniciado
-        description: "Origem: iniciado_em."
+        description: ""
       - name: des_duracao_ms
-        description: "Origem: duration_ms."
+        description: ""
       - name: id_airbyte_job
-        description: "Origem: airbyte_job_id."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: dth_finalizado
-        description: "Origem: finalizado_em."
+        description: ""
       - name: id_pipeline
-        description: "Origem: pipeline_id."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: des_bronze_status
-        description: "Origem: bronze_status."
+        description: ""
       - name: id_pipeline_run
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_bronze_erro
-        description: "Origem: bronze_error."
+        description: ""
       - name: des_status
-        description: "Origem: status."
+        description: ""
       - name: des_bytes_sincronizacao
-        description: "Origem: bytes_synced."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_pipelines
     description: "Bronze gerado — tabela pipelines."
     columns:
       - name: dth_atualizado
-        description: "Origem: atualizado_em."
+        description: ""
       - name: dth_criado
-        description: "Origem: criado_em."
+        description: ""
       - name: des_criado_por
-        description: "Origem: criado_por."
+        description: ""
       - name: tp_pipeline
-        description: "Origem: categoria."
+        description: ""
       - name: des_camadas
-        description: "Origem: camadas."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: id_integracao
-        description: "Origem: integracao_id."
+        description: ""
       - name: id_pipeline
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_layout_overrides
-        description: "Origem: layout_overrides."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_tabelas_carregadas
     description: "Bronze gerado — tabela tabelas_carregadas."
     columns:
       - name: dth_atualizado
-        description: "Origem: atualizado_em."
+        description: ""
       - name: id_connection
-        description: "Origem: connection_id."
+        description: ""
       - name: des_nome_tabela
-        description: "Origem: nome_tabela."
+        description: ""
       - name: des_namespace
-        description: "Origem: namespace."
+        description: ""
       - name: des_integracao_nome
-        description: "Origem: integracao_nome."
+        description: ""
       - name: id_tabela_carregada
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: des_coluna_atualizacao
-        description: "Origem: coluna_atualizacao."
+        description: ""
       - name: dth_registrado
-        description: "Origem: registrado_em."
+        description: ""
       - name: tp_carga
-        description: "Origem: tipo_carga."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""
   - name: bronze_salesforce_usuarios
     description: "Bronze gerado — tabela usuarios."
     columns:
       - name: des_senha_hash
-        description: "Origem: senha_hash."
+        description: ""
       - name: ind_visualizar_pii_bruto
-        description: "Origem: pode_visualizar_pii_bruto."
+        description: ""
       - name: dat_alteracao
-        description: "Origem: dt_alteracao."
+        description: ""
       - name: dth_ultimo_acesso
-        description: "Origem: ultimo_acesso_em."
+        description: ""
       - name: des_nome
-        description: "Origem: nome."
+        description: ""
       - name: id_auth_usuario
-        description: "Origem: auth_user_id."
+        description: ""
       - name: des_mfa_habilitado
-        description: "Origem: mfa_habilitado."
+        description: ""
       - name: dat_criacao
-        description: "Origem: dt_criacao."
+        description: ""
       - name: des_departamento
-        description: "Origem: departamento."
+        description: ""
       - name: id_empresa
-        description: "Origem: id_empresa."
+        description: ""
       - name: des_avatar_iniciais
-        description: "Origem: avatar_iniciais."
+        description: ""
       - name: id_usuario
-        description: "Origem: id."
+        description: ""
         data_tests: [unique, not_null]
       - name: ind_cadastro_ativo
-        description: "Origem: ind_cadastro_ativo."
+        description: ""
       - name: des_email
-        description: "Origem: email."
+        description: ""
       - name: des_papel
-        description: "Origem: papel."
+        description: ""
       - name: dt_ingestao_lake
-        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+        description: ""
       - name: _dbt_loaded_at
-        description: "Origem: current_timestamp() — hora deste build do dbt."
+        description: ""
+      - name: _airbyte_raw_id
+        description: ""
+      - name: _airbyte_extracted_at
+        description: ""
+      - name: _airbyte_meta
+        description: ""
+      - name: _airbyte_generation_id
+        description: ""

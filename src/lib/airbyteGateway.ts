@@ -368,3 +368,57 @@ export async function saveBronzeModelSql(sistema: string, table: string, sql: st
     body: JSON.stringify({ sql }),
   });
 }
+
+export interface RawColumnInfo {
+  name: string;
+  dataType: string;
+  description: string | null;
+  isPii: boolean;
+  quality: {
+    totalRows: number;
+    nullCount: number;
+    nullPct: number;
+    distinctCount: number;
+    status: 'sem_dados' | 'completo' | 'atencao' | 'critico';
+  };
+}
+
+/**
+ * Dicionário de Dados da camada Raw (Hub de Governança & LGPD): colunas reais
+ * da tabela (ao vivo, via BigQuery INFORMATION_SCHEMA), com métricas simples
+ * de qualidade, a descrição documentada (lida do _properties.yml Bronze do
+ * sistema) e o sinalizador de dado pessoal (LGPD).
+ */
+export async function fetchRawTableColumns(payload: {
+  projectId: string;
+  rawDataset: string;
+  table: string;
+  sistema: string;
+  location?: string;
+}): Promise<{ table: string; physicalTable: string; totalRows: number; columns: RawColumnInfo[] }> {
+  const qs = new URLSearchParams({
+    projectId: payload.projectId,
+    rawDataset: payload.rawDataset,
+    table: payload.table,
+    sistema: payload.sistema,
+  });
+  if (payload.location) qs.set('location', payload.location);
+  return gatewayFetch(`/api/raw-catalog/columns?${qs.toString()}`);
+}
+
+/**
+ * Atualiza a descrição de uma coluna da camada Raw — reflete imediatamente no
+ * _properties.yml Bronze do sistema (dbt/models/medallion/bronze/<sistema>/_properties.yml),
+ * no modelo/coluna correspondente (ver server/bronzeColumnDocs.ts).
+ */
+export async function updateRawColumnDescription(
+  sistema: string,
+  table: string,
+  column: string,
+  description: string,
+): Promise<{ ok: boolean; standardizedName: string; isPii: boolean }> {
+  return gatewayFetch('/api/raw-catalog/columns', {
+    method: 'PUT',
+    body: JSON.stringify({ sistema, table, column, description }),
+  });
+}

@@ -10,6 +10,7 @@ import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { dbtModelsRouter } from './routes/dbtModels';
 import { destinationsRouter } from './routes/destinations';
+import { rawCatalogRouter } from './routes/rawCatalog';
 import { silverRouter } from './routes/silver';
 import { sourcesRouter } from './routes/sources';
 import { streamsRouter } from './routes/streams';
@@ -34,6 +35,7 @@ app.use('/api/bigquery/bronze', requireGatewayApiKey, bronzeRouter);
 app.use('/api/bigquery/bronze/auto-sync', requireGatewayApiKey, bronzeAutoSyncRouter);
 app.use('/api/bigquery/silver', requireGatewayApiKey, silverRouter);
 app.use('/api/dbt/models', requireGatewayApiKey, dbtModelsRouter);
+app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {
