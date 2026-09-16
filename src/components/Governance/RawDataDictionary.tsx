@@ -221,9 +221,9 @@ export const RawDataDictionary: React.FC<RawDataDictionaryProps> = ({ pipelines,
                   <tr>
                     <th className="p-3.5">Nome do Campo</th>
                     <th className="p-3.5">Tipo</th>
+                    <th className="p-3.5 w-[32%]">Descrição</th>
                     <th className="p-3.5">Qualidade dos Dados</th>
                     <th className="p-3.5">Dado Pessoal (LGPD)</th>
-                    <th className="p-3.5 w-[32%]">Descrição</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -235,23 +235,6 @@ export const RawDataDictionary: React.FC<RawDataDictionaryProps> = ({ pipelines,
                       <tr key={col.name} className="hover:bg-slate-50 transition align-top">
                         <td className="p-3.5 font-mono font-semibold text-slate-900">{col.name}</td>
                         <td className="p-3.5 font-mono text-slate-500">{col.dataType}</td>
-                        <td className="p-3.5">
-                          <span className={`text-[10px] px-2 py-0.5 rounded font-semibold border ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                          <div className="text-[10px] text-slate-400 mt-1">
-                            {col.quality.nullPct}% nulo · {col.quality.distinctCount.toLocaleString('pt-BR')} distintos
-                          </div>
-                        </td>
-                        <td className="p-3.5">
-                          {col.isPii ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded font-semibold bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
-                              <Lock className="w-3 h-3" /> Dado Pessoal
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">—</span>
-                          )}
-                        </td>
                         <td className="p-3.5">
                           {isEditing ? (
                             <div className="flex items-start gap-1.5">
@@ -296,6 +279,23 @@ export const RawDataDictionary: React.FC<RawDataDictionaryProps> = ({ pipelines,
                             </div>
                           )}
                           {isEditing && saveError && <p className="text-[10px] text-rose-600 mt-1">{saveError}</p>}
+                        </td>
+                        <td className="p-3.5">
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-semibold border ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            {col.quality.nullPct}% nulo · {col.quality.distinctCount.toLocaleString('pt-BR')} distintos
+                          </div>
+                        </td>
+                        <td className="p-3.5">
+                          {col.isPii ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded font-semibold bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
+                              <Lock className="w-3 h-3" /> Dado Pessoal
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">—</span>
+                          )}
                         </td>
                       </tr>
                     );

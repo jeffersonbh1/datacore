@@ -21,7 +21,7 @@ models:
         description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_sucesso
-        description: "Campo raw correspondente: \"sucesso\"."
+        description: "Campo raw correspondente: \"sucesso\". Campo booleano"
       - name: dth_iniciado
         description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
