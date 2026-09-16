@@ -55,7 +55,9 @@ substitutions:
   # para uma SA dedicada.
   _RUNTIME_SA: '489189813509-compute@developer.gserviceaccount.com'
   _SUPABASE_URL: ''
-  _AIRBYTE_BASE_URL: 'http://35.198.9.239:8000'
+  # IP estático (datacore-airbyte-vm-ip, reservado 2026-09-15) — antes era
+  # efêmero e mudava a cada stop/start da VM.
+  _AIRBYTE_BASE_URL: 'http://34.39.199.115:8000'
   _AIRBYTE_CLIENT_ID: ''
   _AIRBYTE_WORKSPACE_ID: ''
   _DBT_GCP_PROJECT: data-plataform-dev

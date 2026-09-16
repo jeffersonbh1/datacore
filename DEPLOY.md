@@ -11,7 +11,7 @@ Frontend  ── Cloud Run (serve estático do dist/)         imagem: Dockerfile
   ▼
 Gateway   ── Cloud Run (Express, server/)                imagem: Dockerfile  (+ dbt)
   ├── Supabase  (Auth admin + Postgres/RLS)   HTTPS
-  ├── Airbyte   VM 35.198.9.239:8000           HTTP  ← precisa de firewall/IP fixo
+  ├── Airbyte   VM 34.39.199.115:8000          HTTP  ← IP estático (datacore-airbyte-vm-ip)
   └── BigQuery  (camadas Bronze/Silver/Gold)  HTTPS, via service account
 ```
 
@@ -24,8 +24,8 @@ Gateway são deployados aqui.
 
 | # | Item | Estado hoje | Ação |
 |---|------|-------------|------|
-| 1 | IP do Airbyte | `.env.local` apontava para `34.95.218.184` (mudou após restart) | ✅ atualizado p/ `35.198.9.239`; ver passo 2 p/ prod |
-| 2 | IP **efêmero** da VM | muda a cada stop/start | **Reservar IP estático** OU usar VPC connector + IP interno |
+| 1 | IP do Airbyte | mudava a cada restart (`34.95.218.184` → `35.198.9.239` → ...) | ✅ `.env.local`/prod atualizados p/ `34.39.199.115` (IP estático, ver #2) |
+| 2 | IP **efêmero** da VM | mudava a cada stop/start | ✅ reservado IP estático `datacore-airbyte-vm-ip` = `34.39.199.115` (2026-09-15) |
 | 3 | Firewall da VM :8000 | provavelmente fechado p/ o Cloud Run | abrir (passo 2) |
 | 4 | Deploy do gateway | não existia cloudbuild | ✅ `cloudbuild.gateway.yaml` criado |
 | 5 | Segredos | ✅ todos em Secret Manager (passo 3) — ver nomes reais usados em produção | — |
@@ -78,14 +78,20 @@ gcloud projects add-iam-policy-binding $PROJ \
 
 O gateway (Cloud Run) precisa alcançar `:8000` da VM. Escolha **A** (rápido) ou **B** (produção).
 
-### A. IP externo + firewall aberto (rápido)
+### A. IP externo + firewall aberto (rápido) — ✅ feito em 2026-09-15
 
 ```bash
-# 1. Promover o IP efêmero atual a estático (para não mudar em restart)
-gcloud compute addresses create airbyte-ip --region=$REGION \
-  --addresses=35.198.9.239                        # falha se já não estiver livre; então:
-# gcloud compute addresses create airbyte-ip --region=$REGION
-# e reassociar o novo IP à instância (gcloud compute instances delete-access-config / add-access-config)
+# 1. IP efêmero da VM (vm-data-plataform-dev, southamerica-east1-c) mudava a
+#    cada stop/start — o IP anterior (35.198.9.239) já não estava mais
+#    disponível pra reservar quando isso foi corrigido, então foi preciso um
+#    IP novo (não dá pra "recuperar" um IP efêmero já liberado):
+gcloud compute addresses create datacore-airbyte-vm-ip --region=$REGION
+# → reservou 34.39.199.115. Depois, reassociar à instância:
+gcloud compute instances delete-access-config vm-data-plataform-dev \
+  --zone=southamerica-east1-c --access-config-name="External NAT"
+gcloud compute instances add-access-config vm-data-plataform-dev \
+  --zone=southamerica-east1-c --access-config-name="External NAT" \
+  --address=34.39.199.115 --network-tier=PREMIUM
 
 # 2. Abrir a porta. Cloud Run sem VPC connector NÃO tem faixa de IP fixa,
 #    então a origem fica 0.0.0.0/0 — aceitável só porque o Airbyte exige
@@ -93,10 +99,13 @@ gcloud compute addresses create airbyte-ip --region=$REGION \
 gcloud compute firewall-rules create allow-airbyte-api \
   --direction=INGRESS --action=ALLOW --rules=tcp:8000 \
   --source-ranges=0.0.0.0/0 --target-tags=airbyte
-gcloud compute instances add-tags <NOME_DA_VM> --zone=<ZONA> --tags=airbyte
+gcloud compute instances add-tags vm-data-plataform-dev --zone=southamerica-east1-c --tags=airbyte
 ```
 
-`_AIRBYTE_BASE_URL=http://35.198.9.239:8000`
+`_AIRBYTE_BASE_URL=http://34.39.199.115:8000` — atualizar em `.env.local` (local) e no
+serviço `airbyte-gateway` (prod, via `gcloud run services update --update-env-vars`,
+ver "Redeploy sem rebuildar a imagem" no passo 5) sempre que a VM ganhar um IP novo
+(não deveria mais acontecer agora que o IP é estático).
 
 ### B. VPC connector + IP interno (recomendado)
 
