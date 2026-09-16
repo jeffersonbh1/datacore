@@ -175,6 +175,12 @@ export async function createAirbyteConnection(payload: {
   streams: AirbyteConnectionStreamInput[];
   writeMode: 'append' | 'merge_upsert' | 'overwrite';
   schedule: AirbyteConnectionScheduleInput;
+  /** BigQuery dataset ("raw_..." completo) onde ESTA connection deve gravar —
+   *  omitido usa o dataset padrão já configurado no destino Airbyte. Necessário
+   *  sempre que duas integrações reusam o mesmo destino com datasets diferentes
+   *  (ver "Default Dataset ID" em AutoPipelineView), senão o Airbyte ignora o
+   *  dataset escolhido no wizard e grava tudo no dataset padrão do destino. */
+  datasetOverride?: string;
 }): Promise<AirbyteConnection> {
   return gatewayFetch<AirbyteConnection>('/api/airbyte/connections', {
     method: 'POST',

@@ -195,6 +195,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const [isLoadingExistingDestinations, setIsLoadingExistingDestinations] = useState(false);
   const [existingDestinationsError, setExistingDestinationsError] = useState<string | null>(null);
   const [hasFetchedExistingDestinations, setHasFetchedExistingDestinations] = useState(false);
+  // Dataset onde ESTA integração vai gravar — pode divergir do dataset padrão
+  // já configurado no destino Airbyte, então é sempre pedido ao usuário (mesmo
+  // reutilizando um destino existente), nunca herdado silenciosamente.
+  const [existingDestDatasetId, setExistingDestDatasetId] = useState('');
 
   useEffect(() => {
     if (hasFetchedExistingDestinations) return;
@@ -246,6 +250,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     if (!destinations.some(d => d.id === dst.destinationId)) {
       onAddDestination(mapAirbyteDestinationToConnectorConfig(dst));
     }
+    // Pré-preenche com o dataset padrão já configurado no Airbyte (só como ponto
+    // de partida) — o usuário ainda precisa confirmar/ajustar antes de avançar.
+    const cfg = dst.configuration || {};
+    const currentDatasetId = (cfg.dataset_id as string) || '';
+    setExistingDestDatasetId(currentDatasetId.replace(/^raw_/, ''));
   };
 
   const handleRequestDeleteDestination = (e: React.MouseEvent, dst: AirbyteDestination) => {
@@ -600,6 +609,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   // BigQuery's "Default Dataset ID" always carries the raw_ prefix, identifying the raw layer
   const getFullDatasetId = () => `raw_${destDatabaseOrDataset.trim()}`;
+  const getFullExistingDatasetId = () => `raw_${existingDestDatasetId.trim()}`;
 
   // Test destination connection: for BigQuery, creates (and validates) the real destination in Airbyte
   const handleTestDestination = async () => {
@@ -889,6 +899,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         setErrorMessage('Selecione um Destino já cadastrado.');
         return;
       }
+      const selectedDestType = destinations.find(d => d.id === selectedDestId)?.type;
+      if (selectedDestType === 'bigquery' && !existingDestDatasetId.trim()) {
+        setErrorMessage('Informe o Default Dataset ID desta integração para o destino selecionado.');
+        return;
+      }
     }
 
     // Auto generate integration name suggestion if empty
@@ -929,12 +944,27 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
     // Identify active source and destination
     const activeSource = sources.find(s => s.id === selectedSourceId) || sources[0];
-    const activeDest = destinations.find(d => d.id === selectedDestId) || destinations[0];
+    // originalActiveDest é o registro COMPARTILHADO do destino (destinos.UNIQUE
+    // (id_empresa, airbyte_destination_id)) — nunca grave o dataset desta
+    // integração nele (ver registrarDestino abaixo), ou a próxima integração que
+    // reusar este destino sobrescreve o dataset desta. O dataset por integração
+    // vive só em datasetOverride/integracoes.dataset_override.
+    const originalActiveDest = destinations.find(d => d.id === selectedDestId) || destinations[0];
 
-    if (!activeSource || !activeDest) {
+    if (!activeSource || !originalActiveDest) {
       setErrorMessage('Origem ou Destino inválidos.');
       return;
     }
+
+    // Destino existente: o dataset desta integração é o que o usuário informou no
+    // Passo 2 (obrigatório mesmo reutilizando o destino), não o dataset padrão
+    // herdado do Airbyte — evita gravar/gerar Bronze no dataset errado.
+    const datasetOverride = destMode === 'existing' && originalActiveDest.type === 'bigquery' && existingDestDatasetId.trim()
+      ? getFullExistingDatasetId()
+      : undefined;
+    const activeDest = datasetOverride
+      ? { ...originalActiveDest, databaseOrDataset: datasetOverride }
+      : originalActiveDest;
 
     setIsCreating(true);
 
@@ -977,6 +1007,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
           streams,
           writeMode: destWriteMode,
           schedule: { frequency: 'once', executionTimes: [] },
+          // Sem isso o Airbyte usa o dataset padrão configurado NO DESTINO para
+          // toda connection que aponte pra ele — o "Default Dataset ID" do
+          // wizard nunca mudaria o que é fisicamente gravado no BigQuery.
+          datasetOverride,
         });
         airbyteConnectionId = created.connectionId;
 
@@ -1025,6 +1059,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       scheduleSummary,
       applyLgpdSanitization,
       airbyteConnectionId,
+      datasetOverride,
       status: 'active',
       pipelineId: '', // set below once we know the pipeline's stable id
       createdAt: new Date().toISOString().split('T')[0],
@@ -1046,7 +1081,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     if (idEmpresa) {
       try {
         const origemDbId = await registrarOrigem(idEmpresa, activeSource);
-        const destinoDbId = await registrarDestino(idEmpresa, activeDest);
+        // originalActiveDest (não activeDest): grava o dataset REAL/compartilhado
+        // do destino Airbyte, nunca o override desta integração — ver comentário
+        // acima de originalActiveDest.
+        const destinoDbId = await registrarDestino(idEmpresa, originalActiveDest);
         const integracaoDbId = await registrarIntegracao(idEmpresa, newIntegration, origemDbId, destinoDbId);
         await persistPipeline(idEmpresa, integracaoDbId, newPipeline);
       } catch (err) {
@@ -1116,9 +1154,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     ? { name: sourceName || 'Nova Origem', type: sourceType, host: sourceHost }
     : sources.find(s => s.id === selectedSourceId) || { name: 'Origem', type: 'postgresql' as SourceType, host: 'localhost' };
 
+  const selectedExistingDest = destinations.find(d => d.id === selectedDestId);
   const currentActiveDest = destMode === 'new'
     ? { name: destName || 'Novo Destino', type: destType, databaseOrDataset: destDatabaseOrDataset }
-    : destinations.find(d => d.id === selectedDestId) || { name: 'Destino', type: 'bigquery' as DestinationType, databaseOrDataset: 'analytics' };
+    : selectedExistingDest && selectedExistingDest.type === 'bigquery' && existingDestDatasetId.trim()
+      ? { ...selectedExistingDest, databaseOrDataset: getFullExistingDatasetId() }
+      : selectedExistingDest || { name: 'Destino', type: 'bigquery' as DestinationType, databaseOrDataset: 'analytics' };
 
   return (
     <div id="auto-pipeline-container" className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -1783,6 +1824,34 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       );
                     })}
                   </div>
+
+                  {selectedExistingDest && selectedExistingDest.type === 'bigquery' && (
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 max-w-md">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Default Dataset ID <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex">
+                        <span className="inline-flex items-center px-2.5 bg-slate-100 border border-r-0 border-slate-300 rounded-l-lg text-xs font-mono text-slate-500 whitespace-nowrap">
+                          raw_
+                        </span>
+                        <input
+                          type="text"
+                          value={existingDestDatasetId}
+                          onChange={(e) => setExistingDestDatasetId(e.target.value)}
+                          placeholder="analytics_curated"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-r-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      {existingDestDatasetId.trim() && (
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Dataset final no BigQuery para esta integração: <span className="font-mono font-semibold text-slate-700">{getFullExistingDatasetId()}</span>
+                        </p>
+                      )}
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Informe o dataset onde esta integração vai gravar as tabelas — mesmo reutilizando este destino, cada integração precisa confirmar o dataset explicitamente.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* NEW DESTINATION REGISTRATION FORM */

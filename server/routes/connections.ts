@@ -83,13 +83,16 @@ function pickSyncMode(writeMode: WriteMode, loadType: LoadType, hasPrimaryKey: b
 
 connectionsRouter.post('/', async (req, res) => {
   try {
-    const { name, sourceId, destinationId, streams: streamInputs, writeMode, schedule } = req.body as {
+    const { name, sourceId, destinationId, streams: streamInputs, writeMode, schedule, datasetOverride } = req.body as {
       name: string;
       sourceId: string;
       destinationId: string;
       streams: StreamSyncInput[];
       writeMode: WriteMode;
       schedule: ScheduleInput;
+      /** BigQuery dataset onde esta connection deve gravar — omitido usa o
+       *  dataset padrão do destino. Ver createAirbyteConnection em airbyteGateway.ts. */
+      datasetOverride?: string;
     };
 
     if (!name || !sourceId || !destinationId || !streamInputs?.length || !schedule?.frequency) {
@@ -131,6 +134,15 @@ connectionsRouter.post('/', async (req, res) => {
     // "raw_" on every destination table name (not just the raw_ dataset itself) —
     // so a table is identifiable as raw layer even outside its dataset's context.
     // Airbyte prepends this to every stream's destination table on sync.
+    //
+    // Sem namespaceDefinition/namespaceFormat, o Airbyte grava toda connection
+    // no dataset PADRÃO já configurado no destino — datasetOverride é o que
+    // permite duas integrações com a mesma origem/destino gravarem em datasets
+    // diferentes de fato (não só no cadastro do DataCore). Ver reference.airbyte.com/reference/createconnection.
+    const namespaceFields = datasetOverride
+      ? { namespaceDefinition: 'custom_format' as const, namespaceFormat: datasetOverride }
+      : {};
+
     const data = await airbyteFetch('/connections', {
       method: 'POST',
       body: JSON.stringify({
@@ -140,6 +152,7 @@ connectionsRouter.post('/', async (req, res) => {
         configurations: { streams },
         schedule: buildAirbyteSchedule(schedule),
         prefix: 'raw_',
+        ...namespaceFields,
       }),
     });
 
@@ -200,20 +213,36 @@ connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
 
 // Pauses/resumes a connection's own Airbyte schedule (independent from DataCore's
 // "integracoes.status" flag in Supabase — that flag alone does NOT stop a
-// scheduled sync from running, only this does).
+// scheduled sync from running, only this does) e/ou muda o dataset BigQuery de
+// uma connection JÁ EXISTENTE sem precisar recriá-la — mesmo mecanismo de
+// datasetOverride do POST '/' acima (ver sql/012_integracoes_dataset_override.sql).
 connectionsRouter.patch('/:connectionId', async (req, res) => {
   try {
     const { connectionId } = req.params;
-    const { status } = req.body as { status?: 'active' | 'inactive' };
+    const { status, datasetOverride } = req.body as {
+      status?: 'active' | 'inactive';
+      datasetOverride?: string;
+    };
 
-    if (status !== 'active' && status !== 'inactive') {
+    if (status !== undefined && status !== 'active' && status !== 'inactive') {
       res.status(400).json({ error: 'Campo "status" deve ser "active" ou "inactive".' });
       return;
+    }
+    if (status === undefined && !datasetOverride) {
+      res.status(400).json({ error: 'Informe "status" e/ou "datasetOverride".' });
+      return;
+    }
+
+    const patchBody: Record<string, unknown> = {};
+    if (status !== undefined) patchBody.status = status;
+    if (datasetOverride) {
+      patchBody.namespaceDefinition = 'custom_format';
+      patchBody.namespaceFormat = datasetOverride;
     }
 
     const data = await airbyteFetch(`/connections/${connectionId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(patchBody),
     });
 
     res.json(data);

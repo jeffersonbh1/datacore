@@ -37,6 +37,9 @@ interface IntegracaoRow {
   id_empresa: number;
   airbyte_connection_id: string | null;
   tabelas_selecionadas: string[];
+  // Dataset desta integração específica — ver sql/012_integracoes_dataset_override.sql.
+  // NULL = usa o dataset compartilhado do destino (destinos.configuracao.databaseOrDataset).
+  dataset_override: string | null;
   destinos: { tipo: string; configuracao: Record<string, unknown> } | null;
   origens: { nome: string | null } | { nome: string | null }[] | null;
   pipelines: { id: number } | { id: number }[] | null;
@@ -66,7 +69,7 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
     const supabase = getSupabaseAdmin();
     const { data: integracoes, error } = await supabase
       .from('integracoes')
-      .select('id, id_empresa, airbyte_connection_id, tabelas_selecionadas, destinos(tipo, configuracao), origens(nome), pipelines(id)')
+      .select('id, id_empresa, airbyte_connection_id, tabelas_selecionadas, dataset_override, destinos(tipo, configuracao), origens(nome), pipelines(id)')
       .eq('status', 'active')
       .not('airbyte_connection_id', 'is', null);
 
@@ -83,7 +86,9 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
       }
 
       const cfg = destino.configuracao as { accountOrProject?: string; databaseOrDataset?: string; warehouseOrCluster?: string };
-      const rawDataset = cfg.databaseOrDataset;
+      // dataset_override (por integração) tem prioridade sobre o dataset
+      // compartilhado do destino — ver comentário em IntegracaoRow acima.
+      const rawDataset = integ.dataset_override || cfg.databaseOrDataset;
       const projectId = cfg.accountOrProject;
       if (!rawDataset || !projectId || !rawDataset.startsWith('raw_')) {
         results.push({ integracaoId: integ.id, action: 'skipped', detail: 'destino BigQuery sem dataset raw_ configurado' });

@@ -36,6 +36,9 @@ interface IntegracaoRow {
   tabelas_selecionadas: string[] | null;
   table_sync_configs: Record<string, { loadType?: string; cursorField?: string; selectedColumns?: string[] }> | null;
   aplicar_sanitizacao_lgpd: boolean | null;
+  // Dataset desta integração específica — ver sql/012_integracoes_dataset_override.sql.
+  // NULL = usa o dataset compartilhado do destino (destinos.configuracao.databaseOrDataset).
+  dataset_override: string | null;
   origens: { airbyte_source_id: string | null; nome: string | null } | { airbyte_source_id: string | null; nome: string | null }[] | null;
   destinos: { tipo: string; configuracao: Record<string, unknown> } | { tipo: string; configuracao: Record<string, unknown> }[] | null;
 }
@@ -59,7 +62,7 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('integracoes')
-      .select('tabelas_selecionadas, table_sync_configs, aplicar_sanitizacao_lgpd, origens(airbyte_source_id, nome), destinos(tipo, configuracao)')
+      .select('tabelas_selecionadas, table_sync_configs, aplicar_sanitizacao_lgpd, dataset_override, origens(airbyte_source_id, nome), destinos(tipo, configuracao)')
       .eq('airbyte_connection_id', connectionId)
       .maybeSingle();
 
@@ -79,7 +82,9 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
 
     const cfg = destino.configuracao as { accountOrProject?: string; databaseOrDataset?: string };
     const projectId = cfg.accountOrProject;
-    const rawDataset = cfg.databaseOrDataset;
+    // dataset_override (por integração) tem prioridade sobre o dataset
+    // compartilhado do destino — ver comentário em IntegracaoRow acima.
+    const rawDataset = row.dataset_override || cfg.databaseOrDataset;
     if (!projectId || !rawDataset) {
       res.status(422).json({ error: 'Destino BigQuery sem accountOrProject/databaseOrDataset.' });
       return;

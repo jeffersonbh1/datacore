@@ -133,11 +133,20 @@ export function buildPipelineFromIntegration(
   });
   edges.push({ id: `${pipelineId}-e-src-raw`, source: sourceNodeId, target: rawNodeId, animated: true });
 
-  // BigQuery destinations only: destination.databaseOrDataset already carries the
-  // raw_ prefix (see getFullDatasetId() in AutoPipelineView.tsx) — the bronze
-  // dataset mirrors it with bronze_ instead, same base name.
+  // BigQuery destinations only: rawDataset already carries the raw_ prefix (see
+  // getFullDatasetId()/getFullExistingDatasetId() in AutoPipelineView.tsx) — the
+  // bronze dataset mirrors it with bronze_ instead, same base name.
+  //
+  // integration.datasetOverride (not destination.databaseOrDataset) is the
+  // source of truth here: destinos.configuracao é COMPARTILHADO entre todas as
+  // integrações que reusam o mesmo destino Airbyte (destinos.UNIQUE
+  // (id_empresa, airbyte_destination_id)), então destination.databaseOrDataset
+  // reflete só a última integração salva para aquele destino, não esta. Ver
+  // sql/012_integracoes_dataset_override.sql.
   const isBigQueryDestination = destination.type === 'bigquery';
-  const rawDataset = destination.databaseOrDataset;
+  const rawDataset = isBigQueryDestination && integration.datasetOverride
+    ? integration.datasetOverride
+    : destination.databaseOrDataset;
   const bronzeDataset = isBigQueryDestination ? rawDataset.replace(/^raw_/, 'bronze_') : undefined;
 
   // One Bronze node per table (not one combined node) — each fans out from Raw

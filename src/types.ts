@@ -314,6 +314,13 @@ export interface AutoIntegration {
   scheduleSummary?: string;
   applyLgpdSanitization: boolean;
   airbyteConnectionId?: string;
+  /** Dataset BigQuery ("raw_..." completo) usado só por ESTA integração — nunca
+   *  leia destination.databaseOrDataset para isso: aquela linha é compartilhada
+   *  entre todas as integrações do mesmo destino Airbyte (destinos.UNIQUE
+   *  (id_empresa, airbyte_destination_id)), então sobrescreve entre integrações
+   *  diferentes. Undefined = usa o dataset padrão do destino (comportamento
+   *  antigo, destino não-BigQuery ou destino recém-criado só para esta integração). */
+  datasetOverride?: string;
   status: 'active' | 'paused';
   pipelineId: string;
   createdAt: string;
