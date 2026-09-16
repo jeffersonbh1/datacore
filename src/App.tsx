@@ -22,7 +22,7 @@ import { RbacManager } from './components/Security/RbacManager';
 import { CadastroUsuarioView } from './components/Security/CadastroUsuarioView';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { ResetPasswordScreen } from './components/Auth/ResetPasswordScreen';
-import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
+import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2, Loader2 } from 'lucide-react';
 import {
   isSupabaseConfigured, supabase, logoutFromSupabase,
   fetchUsuarioPorAuthId, mapUsuarioRowToTeamUser,
@@ -169,6 +169,12 @@ export default function App() {
   // gateway falls back to its single shared workspace.
   const [airbyteWorkspaceId, setAirbyteWorkspaceId] = useState<string | null>(null);
 
+  // Enquanto true, a tela de Pipelines mostra um estado de carregamento em vez
+  // de "Nenhum pipeline criado ainda" — sem isso, o usuário via essa mensagem
+  // por alguns segundos toda vez que a busca real (Supabase + Airbyte) ainda
+  // estava em andamento, achando que a conta não tinha pipelines de verdade.
+  const [isLoadingEmpresaData, setIsLoadingEmpresaData] = useState(false);
+
   // Loads origens/destinos/integrações persistidos no Supabase para a empresa do
   // usuário logado, para que sobrevivam a um refresh (antes só existiam em memória).
   // Uses a ref (not state) as the guard: React.StrictMode double-invokes effects in
@@ -180,6 +186,7 @@ export default function App() {
     if (!isSupabaseConfigured() || !idEmpresa || hasLoadedEmpresaDataRef.current) return;
 
     hasLoadedEmpresaDataRef.current = true;
+    setIsLoadingEmpresaData(true);
 
     fetchEmpresaPorId(idEmpresa)
       .then(empresa => setAirbyteWorkspaceId(empresa?.airbyteWorkspaceId || null))
@@ -245,7 +252,8 @@ export default function App() {
 
         if (rebuilt.length) setPipelines(prev => [...rebuilt, ...prev]);
       })
-      .catch(err => console.error('Erro ao carregar dados persistidos da empresa:', err));
+      .catch(err => console.error('Erro ao carregar dados persistidos da empresa:', err))
+      .finally(() => setIsLoadingEmpresaData(false));
   }, [currentUser.idEmpresa]);
 
   // Derived role permissions
@@ -507,6 +515,14 @@ export default function App() {
                     canViewRawPII={permissions.canViewRawPII}
                     idEmpresa={currentUser.idEmpresa}
                   />
+                ) : isLoadingEmpresaData ? (
+                  <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
+                    <Loader2 className="w-8 h-8 text-indigo-400 mx-auto animate-spin" />
+                    <h4 className="text-base font-semibold text-slate-800">Carregando pipelines...</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Buscando as integrações e pipelines persistidos da sua empresa.
+                    </p>
+                  </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
                     <Layers className="w-10 h-10 text-slate-300 mx-auto" />
@@ -546,6 +562,7 @@ export default function App() {
             {activeTab === 'pipelines' && (
               <PipelinesOverview
                 pipelines={pipelines}
+                isLoading={isLoadingEmpresaData}
                 onSelectPipeline={handleSelectPipeline}
                 onToggleStatus={handleTogglePipelineStatus}
                 onTriggerRun={handleTriggerRun}
@@ -561,6 +578,7 @@ export default function App() {
             {activeTab === 'execucoes' && (
               <ExecutionsView
                 pipelines={pipelines}
+                isLoading={isLoadingEmpresaData}
                 onNavigateToStudio={handleNavigateToStudio}
                 idEmpresa={currentUser.idEmpresa}
               />

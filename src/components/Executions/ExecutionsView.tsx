@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Activity, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown,
-  ChevronRight, ExternalLink, AlertCircle, Database, Boxes, Layers, FileText, X, Play, History
+  ChevronRight, ExternalLink, AlertCircle, Database, Boxes, Layers, FileText, X, Play, History, Loader2
 } from 'lucide-react';
 import { Pipeline, CanvasNode } from '../../types';
 import { PipelineRunSummary, TableBuildResult, isGeneralLayerFailure } from '../../lib/pipelineBuilder';
@@ -15,6 +15,10 @@ type Layer = 'bronze' | 'silver';
 
 interface ExecutionsViewProps {
   pipelines: Pipeline[];
+  /** true enquanto os pipelines persistidos ainda estão sendo buscados
+   *  (Supabase + métricas reais do Airbyte) — evita mostrar "Nenhum pipeline
+   *  com conexão real" antes da busca real terminar. */
+  isLoading?: boolean;
   onNavigateToStudio: (pipelineId: string) => void;
   /** Necessária para reconciliar runs presos em "running"/"pending" com o
    *  status real do Airbyte (ver reconcileOpenRuns) — sem ela, a tela ainda
@@ -223,7 +227,7 @@ async function reconcileOpenRuns(
   }
 }
 
-export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNavigateToStudio, idEmpresa }) => {
+export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoading = false, onNavigateToStudio, idEmpresa }) => {
   const trackedPipelines = pipelines.filter(p => p.airbyteConnectionId);
 
   const [runsByPipeline, setRunsByPipeline] = useState<Record<string, PipelineRunSummary[]>>({});
@@ -410,7 +414,15 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, onNav
         </div>
       )}
 
-      {trackedPipelines.length === 0 ? (
+      {isLoading && trackedPipelines.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-2 shadow-sm">
+          <Loader2 className="w-8 h-8 text-indigo-400 mx-auto animate-spin" />
+          <h4 className="text-sm font-semibold text-slate-800">Carregando pipelines...</h4>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Buscando as integrações e pipelines persistidos da sua empresa.
+          </p>
+        </div>
+      ) : trackedPipelines.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-2 shadow-sm">
           <Activity className="w-10 h-10 text-slate-300 mx-auto" />
           <h4 className="text-sm font-semibold text-slate-800">Nenhum pipeline com conexão real no Airbyte</h4>

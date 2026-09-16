@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 import {
   Search, Filter, Play, Pause, ExternalLink, ShieldCheck,
   Layers, Clock, DollarSign, Database, CheckCircle, AlertTriangle,
-  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle
+  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2
 } from 'lucide-react';
 import { Pipeline, CloudProvider } from '../../types';
 
 interface PipelinesOverviewProps {
   pipelines: Pipeline[];
+  /** true enquanto os pipelines persistidos ainda estão sendo buscados
+   *  (Supabase + métricas reais do Airbyte) — evita mostrar "Nenhum pipeline
+   *  criado ainda" antes da busca real terminar. */
+  isLoading?: boolean;
   onSelectPipeline: (pipeline: Pipeline) => void;
   onToggleStatus: (pipelineId: string) => void;
   onTriggerRun: (pipelineId: string) => void;
@@ -21,6 +25,7 @@ interface PipelinesOverviewProps {
 
 export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   pipelines,
+  isLoading = false,
   onSelectPipeline,
   onToggleStatus,
   onTriggerRun,
@@ -314,7 +319,17 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           );
         })}
 
-        {filteredPipelines.length === 0 && pipelines.length === 0 && (
+        {isLoading && pipelines.length === 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3 shadow-sm">
+            <Loader2 className="w-8 h-8 text-indigo-400 mx-auto animate-spin" />
+            <h4 className="text-base font-semibold text-slate-800">Carregando pipelines...</h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Buscando as integrações e pipelines persistidos da sua empresa.
+            </p>
+          </div>
+        )}
+
+        {!isLoading && filteredPipelines.length === 0 && pipelines.length === 0 && (
           <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3 shadow-sm">
             <Database className="w-10 h-10 text-slate-300 mx-auto" />
             <h4 className="text-base font-semibold text-slate-800">Nenhum pipeline criado ainda</h4>
