@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { isMap, isSeq, parseDocument } from 'yaml';
 import { resolveDbtProjectDir } from './dbtRunner';
 import { buildColumnRenameMap } from './bronzeNaming';
 
@@ -116,19 +117,32 @@ function resolvePrimaryKey(t: IntegrationTableSpec, renameMap: Map<string, strin
 }
 
 /** Uma coluna documentada no _properties.yml: nome final (padronizado) +
- *  origem (nome no source, ou uma nota para as colunas de marca d'água que
- *  não vêm 1:1 de uma coluna do source). */
+ *  origem (nome da coluna no source) + descrição opcional explícita. Colunas
+ *  de negócio não trazem `description` — o texto é derivado de `source` em
+ *  `columnsBlock`; marca d'água e controle do Airbyte trazem descrição fixa,
+ *  já que seu texto não é um simples "veio do campo X". */
 export interface ColumnDoc {
   name: string;
   source: string;
+  description?: string;
 }
 
 /** As duas colunas de marca d'água que `renderBronzeSql` sempre acrescenta,
- *  fora da lista de colunas de negócio (ver ali), com a nota de origem de
- *  cada uma para o _properties.yml. */
+ *  fora da lista de colunas de negócio (ver ali). `source` aqui é o nome raw
+ *  de verdade quando existe um (dt_ingestao_lake vem de _airbyte_extracted_at)
+ *  — é o que permite ao Dicionário de Dados (server/bronzeColumnDocs.ts)
+ *  reconhecer essa coluna ao navegar a tabela raw. */
 const WATERMARK_COLUMNS: ColumnDoc[] = [
-  { name: 'dt_ingestao_lake', source: '_airbyte_extracted_at (marca d\'água do Airbyte)' },
-  { name: '_dbt_loaded_at', source: 'current_timestamp() — hora deste build do dbt' },
+  {
+    name: 'dt_ingestao_lake',
+    source: '_airbyte_extracted_at',
+    description: 'Data de ingestão no lake — marca d\'água do Airbyte (derivada de _airbyte_extracted_at).',
+  },
+  {
+    name: '_dbt_loaded_at',
+    source: 'current_timestamp()',
+    description: 'Data/hora em que este build do dbt foi executado (current_timestamp()).',
+  },
 ];
 
 /** Colunas de controle que o Airbyte grava em toda tabela raw (Destination v2)
@@ -136,12 +150,24 @@ const WATERMARK_COLUMNS: ColumnDoc[] = [
  *  seleciona), mas o Dicionário de Dados do Hub de Governança & LGPD lê o
  *  schema ao vivo da Raw e precisa poder documentá-las também. Só fazem
  *  sentido na Bronze (a Silver é passthrough da Bronze — não tem essas
- *  colunas nem indiretamente), documentadas sob o próprio nome raw.  */
+ *  colunas nem indiretamente), documentadas sob o próprio nome raw.
+ *  _airbyte_extracted_at fica de fora daqui — já é WATERMARK_COLUMNS acima. */
 const AIRBYTE_CONTROL_COLUMNS: ColumnDoc[] = [
-  { name: '_airbyte_raw_id', source: '_airbyte_raw_id' },
-  { name: '_airbyte_extracted_at', source: '_airbyte_extracted_at' },
-  { name: '_airbyte_meta', source: '_airbyte_meta' },
-  { name: '_airbyte_generation_id', source: '_airbyte_generation_id' },
+  {
+    name: '_airbyte_raw_id',
+    source: '_airbyte_raw_id',
+    description: 'Identificador único gerado pelo Airbyte para o registro bruto.',
+  },
+  {
+    name: '_airbyte_meta',
+    source: '_airbyte_meta',
+    description: 'Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.).',
+  },
+  {
+    name: '_airbyte_generation_id',
+    source: '_airbyte_generation_id',
+    description: 'Identificador de geração da sincronização do Airbyte (Destination v2).',
+  },
 ];
 
 /** Todas as colunas do modelo gerado, na mesma ordem da projeção: as de
@@ -360,15 +386,61 @@ export type BronzeManifest = Record<string, Record<string, { table: string; pk: 
 
 type Layer = 'Bronze' | 'Silver';
 
-/** Lista TODAS as colunas do modelo em `columns:` — não só a PK — com a
- *  origem de cada uma em `description` (o mapeamento origem -> padronizado
- *  que o _properties.yml deve documentar). A(s) coluna(s) de PK mantêm os
- *  data_tests de unicidade/not-null; as demais só ganham a descrição. */
-function columnsBlock(pk: string[], columns: ColumnDoc[]): string {
+/** Escapa para caber numa string YAML entre aspas duplas — a descrição
+ *  preservada de uma regeração anterior pode ter sido editada à mão (Hub de
+ *  Governança & LGPD) e conter aspas, barras, etc. */
+function yamlQuote(s: string): string {
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')}"`;
+}
+
+/** Descrições já presentes no _properties.yml atual (antes de sobrescrever),
+ *  por modelo -> coluna. Usado para NÃO perder uma descrição já preenchida —
+ *  seja a gerada automaticamente numa regeração anterior, seja uma editada à
+ *  mão pelo Dicionário de Dados — quando a integração é recriada/resincronizada:
+ *  a descrição só é (re)gerada na primeira vez que a coluna aparece; depois
+ *  disso, fica "mantida" através de qualquer regeração. */
+function readExistingDescriptions(path: string): Map<string, Map<string, string>> {
+  const result = new Map<string, Map<string, string>>();
+  if (!existsSync(path)) return result;
+  let doc;
+  try {
+    doc = parseDocument(readFileSync(path, 'utf8'));
+  } catch {
+    return result;
+  }
+  const models = doc.get('models');
+  if (!isSeq(models)) return result;
+  for (const model of models.items) {
+    if (!isMap(model)) continue;
+    const modelName = model.get('name');
+    if (typeof modelName !== 'string') continue;
+    const columns = model.get('columns');
+    if (!isSeq(columns)) continue;
+    const colMap = new Map<string, string>();
+    for (const col of columns.items) {
+      if (!isMap(col)) continue;
+      const colName = col.get('name');
+      const desc = col.get('description');
+      if (typeof colName === 'string' && typeof desc === 'string') colMap.set(colName, desc);
+    }
+    result.set(modelName, colMap);
+  }
+  return result;
+}
+
+/** Lista TODAS as colunas do modelo em `columns:` — não só a PK — com uma
+ *  descrição para cada uma (o mapeamento origem -> padronizado, ou a
+ *  descrição fixa das colunas de marca d'água/controle do Airbyte — ver
+ *  WATERMARK_COLUMNS/AIRBYTE_CONTROL_COLUMNS —, ou a que já existia no
+ *  arquivo antes desta regeração, com prioridade sobre as anteriores). A(s)
+ *  coluna(s) de PK mantêm os data_tests de unicidade/not-null. */
+function columnsBlock(pk: string[], columns: ColumnDoc[], existing?: Map<string, string>): string {
   if (columns.length === 0) return '';
   const pkSet = new Set(pk);
-  const lines = columns.map(({ name }) => {
-    const desc = `        description: ""`;
+  const lines = columns.map(({ name, source, description }) => {
+    const generated = description ?? `Campo raw correspondente: "${source}".`;
+    const text = existing?.get(name) ?? generated;
+    const desc = `        description: ${yamlQuote(text)}`;
     if (!pkSet.has(name)) return `      - name: ${name}\n${desc}`;
     const tests = pk.length === 1 ? '[unique, not_null]' : '[not_null]';
     return `      - name: ${name}\n${desc}\n        data_tests: ${tests}`;
@@ -376,8 +448,15 @@ function columnsBlock(pk: string[], columns: ColumnDoc[]): string {
   return `\n    columns:\n${lines.join('\n')}`;
 }
 
-function layerModelBlock(layer: Layer, name: string, table: string, pk: string[], columns: ColumnDoc[]): string {
-  const cols = columnsBlock(pk, columns);
+function layerModelBlock(
+  layer: Layer,
+  name: string,
+  table: string,
+  pk: string[],
+  columns: ColumnDoc[],
+  existing?: Map<string, string>,
+): string {
+  const cols = columnsBlock(pk, columns, existing);
   if (pk.length > 1) {
     return `  - name: ${name}
     description: "${layer} gerado — tabela ${table}."
@@ -397,16 +476,19 @@ function renderSistemaPropertiesYml(
   sistema: string,
   sys: string,
   models: Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>,
+  existingPath: string,
 ): string {
+  const existingByModel = readExistingDescriptions(existingPath);
   const blocks = Object.keys(models)
     .sort()
-    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk, models[name].columns))
+    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk, models[name].columns, existingByModel.get(name)))
     .join('\n');
   return `version: 2
 
 # _properties.yml — sistema "${sistema}" (${sys}), camada ${layer}.
 # TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
-# dbt/${manifestFile} — não editar à mão.
+# dbt/${manifestFile} — não editar à mão (descrições de coluna são
+# preservadas entre regerações — ver readExistingDescriptions).
 models:
 ${blocks}
 `;
@@ -490,7 +572,8 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   }
   bronzeManifest[sys] = sysModels;
   retrySync(() => writeFileSync(join(projectDir, BRONZE_MANIFEST_FILE), JSON.stringify(bronzeManifest, null, 2) + '\n', 'utf8'));
-  retrySync(() => writeFileSync(join(sysDir, PROPERTIES_FILE), renderSistemaPropertiesYml('Bronze', BRONZE_MANIFEST_FILE, spec.sistema, sys, sysModels), 'utf8'));
+  const bronzePropertiesPath = join(sysDir, PROPERTIES_FILE);
+  retrySync(() => writeFileSync(bronzePropertiesPath, renderSistemaPropertiesYml('Bronze', BRONZE_MANIFEST_FILE, spec.sistema, sys, sysModels, bronzePropertiesPath), 'utf8'));
 
   // 4) um modelo Silver por tabela em models/medallion/silver/<sistema>/ — mesmo
   // padrão da Bronze: passthrough do Bronze correspondente, pronto para o
@@ -514,7 +597,8 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   }
   silverManifest[sys] = silverSysModels;
   retrySync(() => writeFileSync(join(projectDir, SILVER_MANIFEST_FILE), JSON.stringify(silverManifest, null, 2) + '\n', 'utf8'));
-  retrySync(() => writeFileSync(join(silverSysDir, PROPERTIES_FILE), renderSistemaPropertiesYml('Silver', SILVER_MANIFEST_FILE, spec.sistema, sys, silverSysModels), 'utf8'));
+  const silverPropertiesPath = join(silverSysDir, PROPERTIES_FILE);
+  retrySync(() => writeFileSync(silverPropertiesPath, renderSistemaPropertiesYml('Silver', SILVER_MANIFEST_FILE, spec.sistema, sys, silverSysModels, silverPropertiesPath), 'utf8'));
   files.push(`${sys}/${PROPERTIES_FILE} (silver)`);
 
   const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();

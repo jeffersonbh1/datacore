@@ -44,7 +44,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -84,7 +84,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -126,7 +126,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -178,7 +178,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -226,7 +226,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -314,7 +314,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -362,7 +362,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -434,7 +434,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -490,7 +490,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -542,7 +542,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -618,7 +618,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",
@@ -672,7 +672,7 @@
         },
         {
           "name": "dt_ingestao_lake",
-          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+          "source": "_airbyte_extracted_at"
         },
         {
           "name": "_dbt_loaded_at",

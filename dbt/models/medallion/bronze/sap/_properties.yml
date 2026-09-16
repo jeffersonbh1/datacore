@@ -8,33 +8,35 @@ models:
     description: "Bronze gerado — tabela dbt_execucoes."
     columns:
       - name: id_modelo
-        description: ""
+        description: "Campo raw correspondente: \"modelo_id\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_log
-        description: ""
+        description: "Campo raw correspondente: \"log\"."
       - name: dth_finalizado
-        description: ""
+        description: "Campo raw correspondente: \"finalizado_em\"."
       - name: des_disparado_por
-        description: ""
+        description: "Campo raw correspondente: \"disparado_por\"."
       - name: id_dbt_execucao
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_sucesso
-        description: ""
+        description: "Campo raw correspondente: \"sucesso\"."
       - name: dth_iniciado
-        description: ""
+        description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."

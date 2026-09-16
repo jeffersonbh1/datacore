@@ -8,400 +8,422 @@ models:
     description: "Bronze gerado — tabela dbt_execucoes."
     columns:
       - name: id_modelo
-        description: ""
+        description: "Campo raw correspondente: \"modelo_id\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_log
-        description: ""
+        description: "Campo raw correspondente: \"log\"."
       - name: dth_finalizado
-        description: ""
+        description: "Campo raw correspondente: \"finalizado_em\"."
       - name: des_disparado_por
-        description: ""
+        description: "Campo raw correspondente: \"disparado_por\"."
       - name: id_dbt_execucao
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_sucesso
-        description: ""
+        description: "Campo raw correspondente: \"sucesso\"."
       - name: dth_iniciado
-        description: ""
+        description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_dbt_modelos
     description: "Bronze gerado — tabela dbt_modelos."
     columns:
       - name: dth_atualizado
-        description: ""
+        description: "Campo raw correspondente: \"atualizado_em\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_tabela_origem
-        description: ""
+        description: "Campo raw correspondente: \"tabela_origem\"."
       - name: des_camada
-        description: ""
+        description: "Campo raw correspondente: \"camada\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_dbt_modelo
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_dbt_ultima_execucao
     description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
     columns:
       - name: id_modelo
-        description: ""
+        description: "Campo raw correspondente: \"modelo_id\"."
       - name: id_execucao
-        description: ""
+        description: "Campo raw correspondente: \"execucao_id\"."
       - name: dth_finalizado
-        description: ""
+        description: "Campo raw correspondente: \"finalizado_em\"."
       - name: des_disparado_por
-        description: ""
+        description: "Campo raw correspondente: \"disparado_por\"."
       - name: des_sucesso
-        description: ""
+        description: "Campo raw correspondente: \"sucesso\"."
       - name: dth_iniciado
-        description: ""
+        description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_destinos
     description: "Bronze gerado — tabela destinos."
     columns:
       - name: tp_destino
-        description: ""
+        description: "Campo raw correspondente: \"tipo\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_modo_escrita
-        description: ""
+        description: "Campo raw correspondente: \"modo_escrita\"."
       - name: des_configuracao
-        description: ""
+        description: "Campo raw correspondente: \"configuracao\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: id_airbyte_destino
-        description: ""
+        description: "Campo raw correspondente: \"airbyte_destination_id\"."
       - name: id_destino
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_empresas
     description: "Bronze gerado — tabela empresas."
     columns:
       - name: dth_atualizado
-        description: ""
+        description: "Campo raw correspondente: \"atualizado_em\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: id_airbyte_workspace
-        description: ""
+        description: "Campo raw correspondente: \"airbyte_workspace_id\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: des_plano
-        description: ""
+        description: "Campo raw correspondente: \"plano\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_slug
-        description: ""
+        description: "Campo raw correspondente: \"slug\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_integracoes
     description: "Bronze gerado — tabela integracoes."
     columns:
       - name: des_frequencia_sync
-        description: ""
+        description: "Campo raw correspondente: \"frequencia_sync\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_destino
-        description: ""
+        description: "Campo raw correspondente: \"destino_id\"."
       - name: des_tabelas_selecionadas
-        description: ""
+        description: "Campo raw correspondente: \"tabelas_selecionadas\"."
       - name: des_dia_mensal
-        description: ""
+        description: "Campo raw correspondente: \"dia_mensal\"."
       - name: dat_execucao_unica
-        description: ""
+        description: "Campo raw correspondente: \"data_execucao_unica\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_horarios_execucao
-        description: ""
+        description: "Campo raw correspondente: \"horarios_execucao\"."
       - name: des_resumo_agendamento
-        description: ""
+        description: "Campo raw correspondente: \"resumo_agendamento\"."
       - name: id_origem
-        description: ""
+        description: "Campo raw correspondente: \"origem_id\"."
       - name: des_aplicar_sanitizacao_lgpd
-        description: ""
+        description: "Campo raw correspondente: \"aplicar_sanitizacao_lgpd\"."
       - name: des_table_sync_configs
-        description: ""
+        description: "Campo raw correspondente: \"table_sync_configs\"."
       - name: id_airbyte_connection
-        description: ""
+        description: "Campo raw correspondente: \"airbyte_connection_id\"."
       - name: id_pipeline
-        description: ""
+        description: "Campo raw correspondente: \"pipeline_id\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: id_integracao
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_dias_semana
-        description: ""
+        description: "Campo raw correspondente: \"dias_semana\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_origens
     description: "Bronze gerado — tabela origens."
     columns:
       - name: tp_origem
-        description: ""
+        description: "Campo raw correspondente: \"tipo\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_configuracao
-        description: ""
+        description: "Campo raw correspondente: \"configuracao\"."
       - name: id_airbyte_origem
-        description: ""
+        description: "Campo raw correspondente: \"airbyte_source_id\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: id_origem
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_pipeline_runs
     description: "Bronze gerado — tabela pipeline_runs."
     columns:
       - name: des_registros_sincronizacao
-        description: ""
+        description: "Campo raw correspondente: \"records_synced\"."
       - name: dth_bronze_construcao
-        description: ""
+        description: "Campo raw correspondente: \"bronze_built_em\"."
       - name: dth_iniciado
-        description: ""
+        description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_duracao_ms
-        description: ""
+        description: "Campo raw correspondente: \"duration_ms\"."
       - name: id_airbyte_job
-        description: ""
+        description: "Campo raw correspondente: \"airbyte_job_id\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: dth_finalizado
-        description: ""
+        description: "Campo raw correspondente: \"finalizado_em\"."
       - name: id_pipeline
-        description: ""
+        description: "Campo raw correspondente: \"pipeline_id\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: des_bronze_status
-        description: ""
+        description: "Campo raw correspondente: \"bronze_status\"."
       - name: id_pipeline_run
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_bronze_erro
-        description: ""
+        description: "Campo raw correspondente: \"bronze_error\"."
       - name: des_status
-        description: ""
+        description: "Campo raw correspondente: \"status\"."
       - name: des_bytes_sincronizacao
-        description: ""
+        description: "Campo raw correspondente: \"bytes_synced\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_pipelines
     description: "Bronze gerado — tabela pipelines."
     columns:
       - name: dth_atualizado
-        description: ""
+        description: "Campo raw correspondente: \"atualizado_em\"."
       - name: dth_criado
-        description: ""
+        description: "Campo raw correspondente: \"criado_em\"."
       - name: des_criado_por
-        description: ""
+        description: "Campo raw correspondente: \"criado_por\"."
       - name: tp_pipeline
-        description: ""
+        description: "Campo raw correspondente: \"categoria\"."
       - name: des_camadas
-        description: ""
+        description: "Campo raw correspondente: \"camadas\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: id_integracao
-        description: ""
+        description: "Campo raw correspondente: \"integracao_id\"."
       - name: id_pipeline
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_layout_overrides
-        description: ""
+        description: "Campo raw correspondente: \"layout_overrides\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_tabelas_carregadas
     description: "Bronze gerado — tabela tabelas_carregadas."
     columns:
       - name: dth_atualizado
-        description: ""
+        description: "Campo raw correspondente: \"atualizado_em\"."
       - name: id_connection
-        description: ""
+        description: "Campo raw correspondente: \"connection_id\"."
       - name: des_nome_tabela
-        description: ""
+        description: "Campo raw correspondente: \"nome_tabela\"."
       - name: des_namespace
-        description: ""
+        description: "Campo raw correspondente: \"namespace\"."
       - name: des_integracao_nome
-        description: ""
+        description: "Campo raw correspondente: \"integracao_nome\"."
       - name: id_tabela_carregada
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: des_coluna_atualizacao
-        description: ""
+        description: "Campo raw correspondente: \"coluna_atualizacao\"."
       - name: dth_registrado
-        description: ""
+        description: "Campo raw correspondente: \"registrado_em\"."
       - name: tp_carga
-        description: ""
+        description: "Campo raw correspondente: \"tipo_carga\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
   - name: bronze_salesforce_usuarios
     description: "Bronze gerado — tabela usuarios."
     columns:
       - name: des_senha_hash
-        description: ""
+        description: "Campo raw correspondente: \"senha_hash\"."
       - name: ind_visualizar_pii_bruto
-        description: ""
+        description: "Campo raw correspondente: \"pode_visualizar_pii_bruto\"."
       - name: dat_alteracao
-        description: ""
+        description: "Campo raw correspondente: \"dt_alteracao\"."
       - name: dth_ultimo_acesso
-        description: ""
+        description: "Campo raw correspondente: \"ultimo_acesso_em\"."
       - name: des_nome
-        description: ""
+        description: "Campo raw correspondente: \"nome\"."
       - name: id_auth_usuario
-        description: ""
+        description: "Campo raw correspondente: \"auth_user_id\"."
       - name: des_mfa_habilitado
-        description: ""
+        description: "Campo raw correspondente: \"mfa_habilitado\"."
       - name: dat_criacao
-        description: ""
+        description: "Campo raw correspondente: \"dt_criacao\"."
       - name: des_departamento
-        description: ""
+        description: "Campo raw correspondente: \"departamento\"."
       - name: id_empresa
-        description: ""
+        description: "Campo raw correspondente: \"id_empresa\"."
       - name: des_avatar_iniciais
-        description: ""
+        description: "Campo raw correspondente: \"avatar_iniciais\"."
       - name: id_usuario
-        description: ""
+        description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
       - name: ind_cadastro_ativo
-        description: ""
+        description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
       - name: des_email
-        description: ""
+        description: "Campo raw correspondente: \"email\"."
       - name: des_papel
-        description: ""
+        description: "Campo raw correspondente: \"papel\"."
       - name: dt_ingestao_lake
-        description: ""
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
+          _airbyte_extracted_at)."
       - name: _dbt_loaded_at
-        description: ""
+        description: "Data/hora em que este build do dbt foi executado
+          (current_timestamp())."
       - name: _airbyte_raw_id
-        description: ""
-      - name: _airbyte_extracted_at
-        description: ""
+        description: "Identificador único gerado pelo Airbyte para o registro bruto."
       - name: _airbyte_meta
-        description: ""
+        description: "Metadados internos do Airbyte sobre a sincronização deste registro
+          (erros por coluna, etc.)."
       - name: _airbyte_generation_id
-        description: ""
+        description: "Identificador de geração da sincronização do Airbyte (Destination
+          v2)."
