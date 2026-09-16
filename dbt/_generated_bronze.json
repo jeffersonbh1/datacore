@@ -626,5 +626,59 @@
         }
       ]
     }
+  },
+  "sap": {
+    "bronze_sap_dbt_execucoes": {
+      "table": "dbt_execucoes",
+      "pk": [
+        "id_dbt_execucao"
+      ],
+      "columns": [
+        {
+          "name": "id_modelo",
+          "source": "modelo_id"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_log",
+          "source": "log"
+        },
+        {
+          "name": "dth_finalizado",
+          "source": "finalizado_em"
+        },
+        {
+          "name": "des_disparado_por",
+          "source": "disparado_por"
+        },
+        {
+          "name": "id_dbt_execucao",
+          "source": "id"
+        },
+        {
+          "name": "des_sucesso",
+          "source": "sucesso"
+        },
+        {
+          "name": "dth_iniciado",
+          "source": "iniciado_em"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp() — hora deste build do dbt"
+        }
+      ]
+    }
   }
 }

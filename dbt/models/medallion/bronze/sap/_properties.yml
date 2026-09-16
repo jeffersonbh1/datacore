@@ -1,0 +1,32 @@
+version: 2
+
+# _properties.yml — sistema "SAP" (sap), camada Bronze.
+# TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
+# dbt/_generated_bronze.json — não editar à mão.
+models:
+  - name: bronze_sap_dbt_execucoes
+    description: "Bronze gerado — tabela dbt_execucoes."
+    columns:
+      - name: id_modelo
+        description: "Origem: modelo_id."
+      - name: dth_criado
+        description: "Origem: criado_em."
+      - name: des_log
+        description: "Origem: log."
+      - name: dth_finalizado
+        description: "Origem: finalizado_em."
+      - name: des_disparado_por
+        description: "Origem: disparado_por."
+      - name: id_dbt_execucao
+        description: "Origem: id."
+        data_tests: [unique, not_null]
+      - name: des_sucesso
+        description: "Origem: sucesso."
+      - name: dth_iniciado
+        description: "Origem: iniciado_em."
+      - name: des_status
+        description: "Origem: status."
+      - name: dt_ingestao_lake
+        description: "Origem: _airbyte_extracted_at (marca d'água do Airbyte)."
+      - name: _dbt_loaded_at
+        description: "Origem: current_timestamp() — hora deste build do dbt."
