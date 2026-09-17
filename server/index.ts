@@ -12,6 +12,7 @@ import { dbtModelsRouter } from './routes/dbtModels';
 import { destinationsRouter } from './routes/destinations';
 import { rawCatalogRouter } from './routes/rawCatalog';
 import { silverRouter } from './routes/silver';
+import { silverAutoSyncRouter } from './routes/silverAutoSync';
 import { sourcesRouter } from './routes/sources';
 import { streamsRouter } from './routes/streams';
 import { workspacesRouter } from './routes/workspaces';
@@ -34,6 +35,7 @@ app.use('/api/auth', requireGatewayApiKey, authAdminRouter);
 app.use('/api/bigquery/bronze', requireGatewayApiKey, bronzeRouter);
 app.use('/api/bigquery/bronze/auto-sync', requireGatewayApiKey, bronzeAutoSyncRouter);
 app.use('/api/bigquery/silver', requireGatewayApiKey, silverRouter);
+app.use('/api/bigquery/silver/auto-sync', requireGatewayApiKey, silverAutoSyncRouter);
 app.use('/api/dbt/models', requireGatewayApiKey, dbtModelsRouter);
 app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
 

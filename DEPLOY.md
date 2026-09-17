@@ -31,7 +31,7 @@ Gateway são deployados aqui.
 | 5 | Segredos | ✅ todos em Secret Manager (passo 3) — ver nomes reais usados em produção | — |
 | 6 | `VITE_AIRBYTE_GATEWAY_URL` | `http://localhost:8080` | setar a URL do gateway no build do frontend (passo 6) |
 | 7 | Migrações SQL | `sql/001..007` | aplicar no Supabase (passo 4) |
-| 8 | Cloud Scheduler (auto-sync Bronze) | não configurado | criar job (passo 5) |
+| 8 | Cloud Scheduler (auto-sync Bronze + Silver) | não configurado | criar os dois jobs (passo 6) |
 | 9 | dbt no gateway | imagem/CPU/timeout maiores | `--memory=1Gi --timeout=900 --max-instances=1` (já no cloudbuild) |
 | 11 | Modelos dbt gerados | escritos em `dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<t>.sql` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
 | 10 | Chave da SA BigQuery | ✅ rotacionada em 2026-09-15 (a chave anterior tinha virado uma variável de ambiente em texto puro com JWT inválido — ver passo 3) | as duas chaves antigas foram revogadas |
@@ -266,14 +266,25 @@ Ajuste no `cloudbuild.gateway.yaml` conforme a escolha.
 
 ---
 
-## 6. Cloud Scheduler — auto-sync da Bronze
+## 6. Cloud Scheduler — auto-sync da Bronze e da Silver
 
-`bronzeAutoSync` NÃO roda sozinho (Cloud Run escala a zero). Agende:
+`bronzeAutoSync`/`silverAutoSync` NÃO rodam sozinhos (Cloud Run escala a
+zero). Agende os dois — a Silver só avança depois que a Bronze do mesmo job
+já estiver `built`, então rode a dela alguns minutos depois (ou apenas com
+schedule igual, já que ela é idempotente e simplesmente pula o que ainda não
+tem Bronze pronta):
 
 ```bash
 gcloud scheduler jobs create http datacore-bronze-autosync \
   --location=$REGION --schedule="*/10 * * * *" \
   --uri="<URL_DO_GATEWAY>/api/bigquery/bronze/auto-sync" \
+  --http-method=POST \
+  --headers="Authorization=Bearer <GATEWAY_API_KEY>,Content-Type=application/json" \
+  --message-body='{}'
+
+gcloud scheduler jobs create http datacore-silver-autosync \
+  --location=$REGION --schedule="5-55/10 * * * *" \
+  --uri="<URL_DO_GATEWAY>/api/bigquery/silver/auto-sync" \
   --http-method=POST \
   --headers="Authorization=Bearer <GATEWAY_API_KEY>,Content-Type=application/json" \
   --message-body='{}'
@@ -314,6 +325,10 @@ curl -s $G/health                                   # {"status":"ok"}
 curl -s -X POST $G/api/bigquery/bronze/auto-sync \
   -H "Authorization: Bearer <GATEWAY_API_KEY>" -H 'Content-Type: application/json' -d '{}'
 # -> processed:N ; se der ECONNREFUSED/ETIMEDOUT no Airbyte => firewall/IP (passo 2)
+
+curl -s -X POST $G/api/bigquery/silver/auto-sync \
+  -H "Authorization: Bearer <GATEWAY_API_KEY>" -H 'Content-Type: application/json' -d '{}'
+# -> processed:N ; "skipped" com "Bronze ainda não construída" é normal antes do 1º ciclo da Bronze
 
 # Codegen dos modelos de uma integração
 curl -s -X POST $G/api/dbt/models \
