@@ -168,14 +168,26 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         sistema,
         location: cfg.warehouseOrCluster || undefined,
       });
-      const hasFailure = tableResults.some(r => r.status === 'error');
+      // Normaliza para o formato TableBuildResult (src/lib/pipelineBuilder.ts) que a
+      // tela Execuções espera em bronze_tables — TableResult (server/routes/bronze.ts)
+      // usa campos opcionais (undefined), o front usa `| null`. Sem isso, o detalhe por
+      // tabela nunca era gravado e a tela sempre mostrava "Sem detalhe disponível".
+      const bronzeTables = tableResults.map(r => ({
+        table: r.table,
+        status: r.status,
+        rowsAffected: r.rowsAffected ?? null,
+        error: r.error ?? null,
+      }));
+      const failed = bronzeTables.filter(r => r.status === 'error');
+      const hasFailure = failed.length > 0;
 
       await supabase
         .from('pipeline_runs')
         .update({
           bronze_status: hasFailure ? 'failed' : 'built',
           bronze_built_em: new Date().toISOString(),
-          bronze_error: hasFailure ? JSON.stringify(tableResults.filter(r => r.status === 'error')) : null,
+          bronze_error: hasFailure ? failed.map(t => `${t.table}: ${t.error}`).join(' | ') : null,
+          bronze_tables: bronzeTables,
         })
         .eq('pipeline_id', pipelineRow.id)
         .eq('airbyte_job_id', latest.jobId);
