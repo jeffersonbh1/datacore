@@ -36,6 +36,11 @@ interface AutoPipelineViewProps {
   onAddSource: (source: SourceConnectorConfig) => void;
   onAddDestination: (destination: DestinationConnectorConfig) => void;
   onCreateIntegration: (integration: AutoIntegration, generatedPipeline: Pipeline) => void;
+  /** Usado para gravar o `dbId` no pipeline em memória assim que ele é persistido no
+   *  Supabase (ver comentário sobre canPersistRun em handleCreateAutoIntegration) —
+   *  sem isso, executar a integração recém-criada nesta mesma sessão roda de verdade
+   *  no Airbyte/dbt mas não fica registrado em pipeline_runs. */
+  onUpdatePipeline: (pipeline: Pipeline) => void;
   onNavigateToStudio: (pipelineId: string) => void;
   canCreate: boolean;
 }
@@ -49,6 +54,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   onAddSource,
   onAddDestination,
   onCreateIntegration,
+  onUpdatePipeline,
   onNavigateToStudio,
   canCreate
 }) => {
@@ -1086,7 +1092,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         // acima de originalActiveDest.
         const destinoDbId = await registrarDestino(idEmpresa, originalActiveDest);
         const integracaoDbId = await registrarIntegracao(idEmpresa, newIntegration, origemDbId, destinoDbId);
-        await persistPipeline(idEmpresa, integracaoDbId, newPipeline);
+        const pipelineDbId = await persistPipeline(idEmpresa, integracaoDbId, newPipeline);
+        // Sem isto, pipeline.dbId fica undefined pelo resto desta sessão (só viria
+        // de um reload que refaz o fetch do Supabase) — e handleExecutePipeline
+        // (VisualCanvas) roda a execução de verdade mas não grava nada em
+        // pipeline_runs, deixando a tela Execuções vazia mesmo com sucesso real.
+        onUpdatePipeline({ ...newPipeline, dbId: pipelineDbId });
       } catch (err) {
         console.error('Erro ao persistir integração/pipeline no banco de dados:', err);
       }

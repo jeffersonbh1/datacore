@@ -554,6 +554,7 @@ export default function App() {
                 onAddSource={handleAddSource}
                 onAddDestination={handleAddDestination}
                 onCreateIntegration={handleCreateAutoIntegration}
+                onUpdatePipeline={handleUpdatePipeline}
                 onNavigateToStudio={handleNavigateToStudio}
                 canCreate={permissions.canCreatePipelines}
               />
