@@ -1,0 +1,588 @@
+version: 2
+
+# _properties.yml — sistema "arena fahel beach" (arena_fahel_beach), camada Silver.
+# TODOS os modelos deste sistema. GERADO por server/dbtCodegen.ts a partir de
+# dbt/_generated_silver.json — não editar à mão (descrições de coluna são
+# preservadas entre regerações — ver readExistingDescriptions).
+models:
+  - name: silver_arena_fahel_beach_agendamentos
+    description: "Silver gerado — tabela agendamentos (sem PK; sem deduplicação)."
+    columns:
+      - name: des_metodo_pagamento
+        description: "Campo raw correspondente: \"metodo_pagamento\"."
+      - name: des_telefone_cliente
+        description: "Campo raw correspondente: \"telefone_cliente\"."
+      - name: dat_agendamento
+        description: "Campo raw correspondente: \"data\"."
+      - name: des_nome_quadra
+        description: "Campo raw correspondente: \"nome_quadra\"."
+      - name: des_horario_fim
+        description: "Campo raw correspondente: \"horario_fim\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"esporte\"."
+      - name: dth_criacao
+        description: "Campo raw correspondente: \"created_at\"."
+      - name: des_nome_cliente
+        description: "Campo raw correspondente: \"nome_cliente\"."
+      - name: tp_agendamento
+        description: "Campo raw correspondente: \"tipo_agendamento\"."
+      - name: vlr_total
+        description: "Campo raw correspondente: \"valor_total\"."
+      - name: des_observacoes
+        description: "Campo raw correspondente: \"observacoes\"."
+      - name: des_horario_inicio
+        description: "Campo raw correspondente: \"horario_inicio\"."
+      - name: id_quadra
+        description: "Campo raw correspondente: \"quadra_id\"."
+      - name: des_status_pagamento
+        description: "Campo raw correspondente: \"status_pagamento\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_alunos
+    description: "Silver gerado — tabela alunos (sem PK; sem deduplicação)."
+    columns:
+      - name: des_observacoes
+        description: "Campo raw correspondente: \"observacoes\"."
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: id_professor
+        description: "Campo raw correspondente: \"professor_id\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"esporte\"."
+      - name: des_mensalidade
+        description: "Campo raw correspondente: \"mensalidade\"."
+      - name: dth_criacao
+        description: "Campo raw correspondente: \"created_at\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_aluno
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_nivel
+        description: "Campo raw correspondente: \"nivel\"."
+      - name: ind_cadastro_ativo
+        description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
+      - name: des_status
+        description: "Campo raw correspondente: \"status\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_aulas
+    description: "Silver gerado — tabela aulas (sem PK; sem deduplicação)."
+    columns:
+      - name: id_aluno
+        description: "Campo raw correspondente: \"aluno_id\"."
+      - name: id_professor
+        description: "Campo raw correspondente: \"professor_id\"."
+      - name: dth_criacao
+        description: "Campo raw correspondente: \"created_at\"."
+      - name: id_aula
+        description: "Campo raw correspondente: \"id\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_avaliacao_jogo
+    description: "Silver gerado — tabela avaliacao_jogo (sem PK; sem deduplicação)."
+    columns:
+      - name: id_jogador
+        description: "Campo raw correspondente: \"jogador_id\"."
+      - name: des_avaliacao_jogo
+        description: "Campo raw correspondente: \"observacao\"."
+      - name: tp_voter
+        description: "Campo raw correspondente: \"tipo_voter\"."
+      - name: id_pergunta
+        description: "Campo raw correspondente: \"pergunta_id\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_jogador_avaliado_nome
+        description: "Campo raw correspondente: \"jogador_avaliado_nome\"."
+      - name: id_avaliacao_jogo
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_nota
+        description: "Campo raw correspondente: \"nota\"."
+      - name: id_torcedor
+        description: "Campo raw correspondente: \"torcedor_id\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: des_avaliador_nome
+        description: "Campo raw correspondente: \"avaliador_nome\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_avaliacoes_jogadores
+    description: "Silver gerado — tabela avaliacoes_jogadores (sem PK; sem deduplicação)."
+    columns:
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_jogador_avaliado_nome
+        description: "Campo raw correspondente: \"jogador_avaliado_nome\"."
+      - name: id_avaliacao_jogadore
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_nota
+        description: "Campo raw correspondente: \"nota\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: des_avaliador_nome
+        description: "Campo raw correspondente: \"avaliador_nome\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_categorias_bar
+    description: "Silver gerado — tabela categorias_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_categoria_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_categoria_bar
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_categorias_produtos_bar
+    description: "Silver gerado — tabela categorias_produtos_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: dth_atualizado
+        description: "Campo raw correspondente: \"atualizado_em\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_status_ativo
+        description: "Campo raw correspondente: \"status_ativo\"."
+      - name: des_cor
+        description: "Campo raw correspondente: \"cor\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: des_icone
+        description: "Campo raw correspondente: \"icone\"."
+      - name: id_categoria_produto_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: ind_cadastro_ativo
+        description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
+      - name: des_categoria_produto_bar
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_compras_bar
+    description: "Silver gerado — tabela compras_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: vlr_total
+        description: "Campo raw correspondente: \"valor_total\"."
+      - name: des_observacoes
+        description: "Campo raw correspondente: \"observacoes\"."
+      - name: des_forma_pagamento
+        description: "Campo raw correspondente: \"forma_pagamento\"."
+      - name: cod_compra_bar
+        description: "Campo raw correspondente: \"codigo\"."
+      - name: dth_atualizado
+        description: "Campo raw correspondente: \"atualizado_em\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_usuario
+        description: "Campo raw correspondente: \"usuario\"."
+      - name: id_compra_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_fornecedor
+        description: "Campo raw correspondente: \"fornecedor\"."
+      - name: dat_compra
+        description: "Campo raw correspondente: \"data_compra\"."
+      - name: des_status
+        description: "Campo raw correspondente: \"status\"."
+      - name: num_nota
+        description: "Campo raw correspondente: \"numero_nota\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_esportes
+    description: "Silver gerado — tabela esportes (sem PK; sem deduplicação)."
+    columns:
+      - name: ind_ativo
+        description: "Campo raw correspondente: \"ativo\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_esporte
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_itens_compras_bar
+    description: "Silver gerado — tabela itens_compras_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome_produto
+        description: "Campo raw correspondente: \"nome_produto\"."
+      - name: des_custo_anterior
+        description: "Campo raw correspondente: \"custo_anterior\"."
+      - name: des_novo_custo_medio
+        description: "Campo raw correspondente: \"novo_custo_medio\"."
+      - name: des_custo_unitario
+        description: "Campo raw correspondente: \"custo_unitario\"."
+      - name: des_unidade
+        description: "Campo raw correspondente: \"unidade\"."
+      - name: id_item_compra_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: id_produto
+        description: "Campo raw correspondente: \"produto_id\"."
+      - name: qtd_item_compra_bar
+        description: "Campo raw correspondente: \"quantidade\"."
+      - name: id_compra
+        description: "Campo raw correspondente: \"compra_id\"."
+      - name: des_custo_total
+        description: "Campo raw correspondente: \"custo_total\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_itens_vendas_bar
+    description: "Silver gerado — tabela itens_vendas_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: vlr_unitario
+        description: "Campo raw correspondente: \"preco_unitario\"."
+      - name: id_vendas
+        description: "Campo raw correspondente: \"vendas_id\"."
+      - name: des_nome_produto
+        description: "Campo raw correspondente: \"nome_produto\"."
+      - name: vlr_total
+        description: "Campo raw correspondente: \"preco_total\"."
+      - name: id_item_venda_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: id_produto
+        description: "Campo raw correspondente: \"produto_id\"."
+      - name: dth_adicionado
+        description: "Campo raw correspondente: \"adicionado_em\"."
+      - name: qtd_item_venda_bar
+        description: "Campo raw correspondente: \"quantidade\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_jogadores
+    description: "Silver gerado — tabela jogadores (sem PK; sem deduplicação)."
+    columns:
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_posicao
+        description: "Campo raw correspondente: \"posicao\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"esporte\"."
+      - name: vlr_jogadore
+        description: "Campo raw correspondente: \"valor\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_jogadore
+        description: "Campo raw correspondente: \"id\"."
+      - name: ind_pago
+        description: "Campo raw correspondente: \"pago\"."
+      - name: des_email
+        description: "Campo raw correspondente: \"email\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_jogadores_racha
+    description: "Silver gerado — tabela jogadores_racha (sem PK; sem deduplicação)."
+    columns:
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: vlr_jogadore_racha
+        description: "Campo raw correspondente: \"valor\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_jogadore_racha
+        description: "Campo raw correspondente: \"id\"."
+      - name: ind_pago
+        description: "Campo raw correspondente: \"pago\"."
+      - name: des_email
+        description: "Campo raw correspondente: \"email\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_movimentacoes_estoque
+    description: "Silver gerado — tabela movimentacoes_estoque (sem PK; sem deduplicação)."
+    columns:
+      - name: vlr_total
+        description: "Campo raw correspondente: \"valor_total\"."
+      - name: des_nome_usuario
+        description: "Campo raw correspondente: \"nome_usuario\"."
+      - name: vlr_custo_unitario
+        description: "Campo raw correspondente: \"preco_custo_unitario\"."
+      - name: tp_movimentacao_estoque
+        description: "Campo raw correspondente: \"tipo\"."
+      - name: des_motivo
+        description: "Campo raw correspondente: \"motivo\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome_produto
+        description: "Campo raw correspondente: \"nome_produto\"."
+      - name: des_usuario
+        description: "Campo raw correspondente: \"usuario\"."
+      - name: id_movimentacao_estoque
+        description: "Campo raw correspondente: \"id\"."
+      - name: id_produto
+        description: "Campo raw correspondente: \"produto_id\"."
+      - name: qtd_movimentacao_estoque
+        description: "Campo raw correspondente: \"quantidade\"."
+      - name: id_compra
+        description: "Campo raw correspondente: \"compra_id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_perguntas_avaliacao
+    description: "Silver gerado — tabela perguntas_avaliacao (sem PK; sem deduplicação)."
+    columns:
+      - name: ind_ativo
+        description: "Campo raw correspondente: \"ativo\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_subtitulo
+        description: "Campo raw correspondente: \"subtitulo\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"esporte\"."
+      - name: des_titulo
+        description: "Campo raw correspondente: \"titulo\"."
+      - name: des_icone
+        description: "Campo raw correspondente: \"icone\"."
+      - name: id_pergunta_avaliacao
+        description: "Campo raw correspondente: \"id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_produtos_bar
+    description: "Silver gerado — tabela produtos_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: vlr_ultimo_compra
+        description: "Campo raw correspondente: \"ultimo_preco_compra\"."
+      - name: ind_ativo
+        description: "Campo raw correspondente: \"ativo\"."
+      - name: des_status_ativo
+        description: "Campo raw correspondente: \"status_ativo\"."
+      - name: tp_produto_bar
+        description: "Campo raw correspondente: \"categoria\"."
+      - name: des_total_comprado_acumulado
+        description: "Campo raw correspondente: \"total_comprado_acumulado\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: des_unidade
+        description: "Campo raw correspondente: \"unidade\"."
+      - name: des_produto_bar
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: vlr_produto_bar
+        description: "Campo raw correspondente: \"preco\"."
+      - name: des_estoque
+        description: "Campo raw correspondente: \"estoque\"."
+      - name: des_url_imagem
+        description: "Campo raw correspondente: \"url_imagem\"."
+      - name: dth_atualizado
+        description: "Campo raw correspondente: \"atualizado_em\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_estoque_minimo
+        description: "Campo raw correspondente: \"estoque_minimo\"."
+      - name: id_produto_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: vlr_custo
+        description: "Campo raw correspondente: \"preco_custo\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_professores
+    description: "Silver gerado — tabela professores (sem PK; sem deduplicação)."
+    columns:
+      - name: des_observacoes
+        description: "Campo raw correspondente: \"observacoes\"."
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: vlr_aula
+        description: "Campo raw correspondente: \"preco_aula\"."
+      - name: des_esporte
+        description: "Campo raw correspondente: \"esporte\"."
+      - name: dth_criacao
+        description: "Campo raw correspondente: \"created_at\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_professore
+        description: "Campo raw correspondente: \"id\"."
+      - name: ind_cadastro_ativo
+        description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
+      - name: des_email
+        description: "Campo raw correspondente: \"email\"."
+      - name: des_status
+        description: "Campo raw correspondente: \"status\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_quadras
+    description: "Silver gerado — tabela quadras (sem PK; sem deduplicação)."
+    columns:
+      - name: tp_quadra
+        description: "Campo raw correspondente: \"tipo\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: vlr_por_hora
+        description: "Campo raw correspondente: \"preco_por_hora\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_quadra
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_status
+        description: "Campo raw correspondente: \"status\"."
+      - name: des_quadra
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_tipos_aluguel
+    description: "Silver gerado — tabela tipos_aluguel (sem PK; sem deduplicação)."
+    columns:
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_tipo_aluguel
+        description: "Campo raw correspondente: \"id\"."
+      - name: ind_padrao
+        description: "Campo raw correspondente: \"is_default\"."
+      - name: des_tipo_aluguel
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_tipos_quadra
+    description: "Silver gerado — tabela tipos_quadra (sem PK; sem deduplicação)."
+    columns:
+      - name: ind_ativo
+        description: "Campo raw correspondente: \"ativo\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_tipo_quadra
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_tipo_quadra
+        description: "Campo raw correspondente: \"descricao\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_torcedores
+    description: "Silver gerado — tabela torcedores (sem PK; sem deduplicação)."
+    columns:
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_time_favorito
+        description: "Campo raw correspondente: \"time_favorito\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_torcedore
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_email
+        description: "Campo raw correspondente: \"email\"."
+      - name: id_agendamento
+        description: "Campo raw correspondente: \"agendamento_id\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_usuarios
+    description: "Silver gerado — tabela usuarios (sem PK; sem deduplicação)."
+    columns:
+      - name: des_senha
+        description: "Campo raw correspondente: \"senha\"."
+      - name: des_telefone
+        description: "Campo raw correspondente: \"telefone\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_nome
+        description: "Campo raw correspondente: \"nome\"."
+      - name: id_usuario
+        description: "Campo raw correspondente: \"id\"."
+      - name: des_login
+        description: "Campo raw correspondente: \"login\"."
+      - name: des_email
+        description: "Campo raw correspondente: \"email\"."
+      - name: des_perfil
+        description: "Campo raw correspondente: \"perfil\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
+  - name: silver_arena_fahel_beach_vendas_bar
+    description: "Silver gerado — tabela vendas_bar (sem PK; sem deduplicação)."
+    columns:
+      - name: cod_venda_bar
+        description: "Campo raw correspondente: \"codigo\"."
+      - name: des_telefone_cliente
+        description: "Campo raw correspondente: \"telefone_cliente\"."
+      - name: des_localizacao
+        description: "Campo raw correspondente: \"localizacao\"."
+      - name: dat_venda_bar
+        description: "Campo raw correspondente: \"data\"."
+      - name: des_desconto
+        description: "Campo raw correspondente: \"desconto\"."
+      - name: dth_fechado
+        description: "Campo raw correspondente: \"fechado_em\"."
+      - name: des_origem_venda
+        description: "Campo raw correspondente: \"origem_venda\"."
+      - name: vlr_final
+        description: "Campo raw correspondente: \"valor_final\"."
+      - name: des_nome_cliente
+        description: "Campo raw correspondente: \"nome_cliente\"."
+      - name: dth_aberto
+        description: "Campo raw correspondente: \"aberto_em\"."
+      - name: vlr_total
+        description: "Campo raw correspondente: \"valor_total\"."
+      - name: des_observacoes
+        description: "Campo raw correspondente: \"observacoes\"."
+      - name: des_forma_pagamento
+        description: "Campo raw correspondente: \"forma_pagamento\"."
+      - name: dth_criado
+        description: "Campo raw correspondente: \"criado_em\"."
+      - name: des_status_pagamento
+        description: "Campo raw correspondente: \"status_pagamento\"."
+      - name: id_venda_bar
+        description: "Campo raw correspondente: \"id\"."
+      - name: id_comanda
+        description: "Campo raw correspondente: \"comanda_id\"."
+      - name: des_status
+        description: "Campo raw correspondente: \"status\"."
+      - name: dt_ingestao_lake
+        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dbt_loaded_at
+        description: "Data/hora em que este build do dbt foi executado (current_timestamp())."

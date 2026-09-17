@@ -680,5 +680,1560 @@
         }
       ]
     }
+  },
+  "arena_fahel_beach": {
+    "bronze_arena_fahel_beach_agendamentos": {
+      "table": "agendamentos",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_metodo_pagamento",
+          "source": "metodo_pagamento"
+        },
+        {
+          "name": "des_telefone_cliente",
+          "source": "telefone_cliente"
+        },
+        {
+          "name": "dat_agendamento",
+          "source": "data"
+        },
+        {
+          "name": "des_nome_quadra",
+          "source": "nome_quadra"
+        },
+        {
+          "name": "des_horario_fim",
+          "source": "horario_fim"
+        },
+        {
+          "name": "des_esporte",
+          "source": "esporte"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "des_nome_cliente",
+          "source": "nome_cliente"
+        },
+        {
+          "name": "tp_agendamento",
+          "source": "tipo_agendamento"
+        },
+        {
+          "name": "vlr_total",
+          "source": "valor_total"
+        },
+        {
+          "name": "des_observacoes",
+          "source": "observacoes"
+        },
+        {
+          "name": "des_horario_inicio",
+          "source": "horario_inicio"
+        },
+        {
+          "name": "id_quadra",
+          "source": "quadra_id"
+        },
+        {
+          "name": "des_status_pagamento",
+          "source": "status_pagamento"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_alunos": {
+      "table": "alunos",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_observacoes",
+          "source": "observacoes"
+        },
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "id_professor",
+          "source": "professor_id"
+        },
+        {
+          "name": "des_esporte",
+          "source": "esporte"
+        },
+        {
+          "name": "des_mensalidade",
+          "source": "mensalidade"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_aluno",
+          "source": "id"
+        },
+        {
+          "name": "des_nivel",
+          "source": "nivel"
+        },
+        {
+          "name": "ind_cadastro_ativo",
+          "source": "ind_cadastro_ativo"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_aulas": {
+      "table": "aulas",
+      "pk": [],
+      "columns": [
+        {
+          "name": "id_aluno",
+          "source": "aluno_id"
+        },
+        {
+          "name": "id_professor",
+          "source": "professor_id"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "id_aula",
+          "source": "id"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_avaliacao_jogo": {
+      "table": "avaliacao_jogo",
+      "pk": [],
+      "columns": [
+        {
+          "name": "id_jogador",
+          "source": "jogador_id"
+        },
+        {
+          "name": "des_avaliacao_jogo",
+          "source": "observacao"
+        },
+        {
+          "name": "tp_voter",
+          "source": "tipo_voter"
+        },
+        {
+          "name": "id_pergunta",
+          "source": "pergunta_id"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_jogador_avaliado_nome",
+          "source": "jogador_avaliado_nome"
+        },
+        {
+          "name": "id_avaliacao_jogo",
+          "source": "id"
+        },
+        {
+          "name": "des_nota",
+          "source": "nota"
+        },
+        {
+          "name": "id_torcedor",
+          "source": "torcedor_id"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "des_avaliador_nome",
+          "source": "avaliador_nome"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_avaliacoes_jogadores": {
+      "table": "avaliacoes_jogadores",
+      "pk": [],
+      "columns": [
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_jogador_avaliado_nome",
+          "source": "jogador_avaliado_nome"
+        },
+        {
+          "name": "id_avaliacao_jogadore",
+          "source": "id"
+        },
+        {
+          "name": "des_nota",
+          "source": "nota"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "des_avaliador_nome",
+          "source": "avaliador_nome"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_categorias_bar": {
+      "table": "categorias_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_categoria_bar",
+          "source": "id"
+        },
+        {
+          "name": "des_categoria_bar",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_categorias_produtos_bar": {
+      "table": "categorias_produtos_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_status_ativo",
+          "source": "status_ativo"
+        },
+        {
+          "name": "des_cor",
+          "source": "cor"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "des_icone",
+          "source": "icone"
+        },
+        {
+          "name": "id_categoria_produto_bar",
+          "source": "id"
+        },
+        {
+          "name": "ind_cadastro_ativo",
+          "source": "ind_cadastro_ativo"
+        },
+        {
+          "name": "des_categoria_produto_bar",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_compras_bar": {
+      "table": "compras_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "vlr_total",
+          "source": "valor_total"
+        },
+        {
+          "name": "des_observacoes",
+          "source": "observacoes"
+        },
+        {
+          "name": "des_forma_pagamento",
+          "source": "forma_pagamento"
+        },
+        {
+          "name": "cod_compra_bar",
+          "source": "codigo"
+        },
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_usuario",
+          "source": "usuario"
+        },
+        {
+          "name": "id_compra_bar",
+          "source": "id"
+        },
+        {
+          "name": "des_fornecedor",
+          "source": "fornecedor"
+        },
+        {
+          "name": "dat_compra",
+          "source": "data_compra"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "num_nota",
+          "source": "numero_nota"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_esportes": {
+      "table": "esportes",
+      "pk": [],
+      "columns": [
+        {
+          "name": "ind_ativo",
+          "source": "ativo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_esporte",
+          "source": "id"
+        },
+        {
+          "name": "des_esporte",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_itens_compras_bar": {
+      "table": "itens_compras_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome_produto",
+          "source": "nome_produto"
+        },
+        {
+          "name": "des_custo_anterior",
+          "source": "custo_anterior"
+        },
+        {
+          "name": "des_novo_custo_medio",
+          "source": "novo_custo_medio"
+        },
+        {
+          "name": "des_custo_unitario",
+          "source": "custo_unitario"
+        },
+        {
+          "name": "des_unidade",
+          "source": "unidade"
+        },
+        {
+          "name": "id_item_compra_bar",
+          "source": "id"
+        },
+        {
+          "name": "id_produto",
+          "source": "produto_id"
+        },
+        {
+          "name": "qtd_item_compra_bar",
+          "source": "quantidade"
+        },
+        {
+          "name": "id_compra",
+          "source": "compra_id"
+        },
+        {
+          "name": "des_custo_total",
+          "source": "custo_total"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_itens_vendas_bar": {
+      "table": "itens_vendas_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "vlr_unitario",
+          "source": "preco_unitario"
+        },
+        {
+          "name": "id_vendas",
+          "source": "vendas_id"
+        },
+        {
+          "name": "des_nome_produto",
+          "source": "nome_produto"
+        },
+        {
+          "name": "vlr_total",
+          "source": "preco_total"
+        },
+        {
+          "name": "id_item_venda_bar",
+          "source": "id"
+        },
+        {
+          "name": "id_produto",
+          "source": "produto_id"
+        },
+        {
+          "name": "dth_adicionado",
+          "source": "adicionado_em"
+        },
+        {
+          "name": "qtd_item_venda_bar",
+          "source": "quantidade"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_jogadores": {
+      "table": "jogadores",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_posicao",
+          "source": "posicao"
+        },
+        {
+          "name": "des_esporte",
+          "source": "esporte"
+        },
+        {
+          "name": "vlr_jogadore",
+          "source": "valor"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_jogadore",
+          "source": "id"
+        },
+        {
+          "name": "ind_pago",
+          "source": "pago"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_jogadores_racha": {
+      "table": "jogadores_racha",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "vlr_jogadore_racha",
+          "source": "valor"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_jogadore_racha",
+          "source": "id"
+        },
+        {
+          "name": "ind_pago",
+          "source": "pago"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_movimentacoes_estoque": {
+      "table": "movimentacoes_estoque",
+      "pk": [],
+      "columns": [
+        {
+          "name": "vlr_total",
+          "source": "valor_total"
+        },
+        {
+          "name": "des_nome_usuario",
+          "source": "nome_usuario"
+        },
+        {
+          "name": "vlr_custo_unitario",
+          "source": "preco_custo_unitario"
+        },
+        {
+          "name": "tp_movimentacao_estoque",
+          "source": "tipo"
+        },
+        {
+          "name": "des_motivo",
+          "source": "motivo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome_produto",
+          "source": "nome_produto"
+        },
+        {
+          "name": "des_usuario",
+          "source": "usuario"
+        },
+        {
+          "name": "id_movimentacao_estoque",
+          "source": "id"
+        },
+        {
+          "name": "id_produto",
+          "source": "produto_id"
+        },
+        {
+          "name": "qtd_movimentacao_estoque",
+          "source": "quantidade"
+        },
+        {
+          "name": "id_compra",
+          "source": "compra_id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_perguntas_avaliacao": {
+      "table": "perguntas_avaliacao",
+      "pk": [],
+      "columns": [
+        {
+          "name": "ind_ativo",
+          "source": "ativo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_subtitulo",
+          "source": "subtitulo"
+        },
+        {
+          "name": "des_esporte",
+          "source": "esporte"
+        },
+        {
+          "name": "des_titulo",
+          "source": "titulo"
+        },
+        {
+          "name": "des_icone",
+          "source": "icone"
+        },
+        {
+          "name": "id_pergunta_avaliacao",
+          "source": "id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_produtos_bar": {
+      "table": "produtos_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "vlr_ultimo_compra",
+          "source": "ultimo_preco_compra"
+        },
+        {
+          "name": "ind_ativo",
+          "source": "ativo"
+        },
+        {
+          "name": "des_status_ativo",
+          "source": "status_ativo"
+        },
+        {
+          "name": "tp_produto_bar",
+          "source": "categoria"
+        },
+        {
+          "name": "des_total_comprado_acumulado",
+          "source": "total_comprado_acumulado"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "des_unidade",
+          "source": "unidade"
+        },
+        {
+          "name": "des_produto_bar",
+          "source": "descricao"
+        },
+        {
+          "name": "vlr_produto_bar",
+          "source": "preco"
+        },
+        {
+          "name": "des_estoque",
+          "source": "estoque"
+        },
+        {
+          "name": "des_url_imagem",
+          "source": "url_imagem"
+        },
+        {
+          "name": "dth_atualizado",
+          "source": "atualizado_em"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_estoque_minimo",
+          "source": "estoque_minimo"
+        },
+        {
+          "name": "id_produto_bar",
+          "source": "id"
+        },
+        {
+          "name": "vlr_custo",
+          "source": "preco_custo"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_professores": {
+      "table": "professores",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_observacoes",
+          "source": "observacoes"
+        },
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "vlr_aula",
+          "source": "preco_aula"
+        },
+        {
+          "name": "des_esporte",
+          "source": "esporte"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_professore",
+          "source": "id"
+        },
+        {
+          "name": "ind_cadastro_ativo",
+          "source": "ind_cadastro_ativo"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_quadras": {
+      "table": "quadras",
+      "pk": [],
+      "columns": [
+        {
+          "name": "tp_quadra",
+          "source": "tipo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "vlr_por_hora",
+          "source": "preco_por_hora"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_quadra",
+          "source": "id"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "des_quadra",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_tipos_aluguel": {
+      "table": "tipos_aluguel",
+      "pk": [],
+      "columns": [
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_tipo_aluguel",
+          "source": "id"
+        },
+        {
+          "name": "ind_padrao",
+          "source": "is_default"
+        },
+        {
+          "name": "des_tipo_aluguel",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_tipos_quadra": {
+      "table": "tipos_quadra",
+      "pk": [],
+      "columns": [
+        {
+          "name": "ind_ativo",
+          "source": "ativo"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_tipo_quadra",
+          "source": "id"
+        },
+        {
+          "name": "des_tipo_quadra",
+          "source": "descricao"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_torcedores": {
+      "table": "torcedores",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_time_favorito",
+          "source": "time_favorito"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_torcedore",
+          "source": "id"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "id_agendamento",
+          "source": "agendamento_id"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_usuarios": {
+      "table": "usuarios",
+      "pk": [],
+      "columns": [
+        {
+          "name": "des_senha",
+          "source": "senha"
+        },
+        {
+          "name": "des_telefone",
+          "source": "telefone"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_nome",
+          "source": "nome"
+        },
+        {
+          "name": "id_usuario",
+          "source": "id"
+        },
+        {
+          "name": "des_login",
+          "source": "login"
+        },
+        {
+          "name": "des_email",
+          "source": "email"
+        },
+        {
+          "name": "des_perfil",
+          "source": "perfil"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    },
+    "bronze_arena_fahel_beach_vendas_bar": {
+      "table": "vendas_bar",
+      "pk": [],
+      "columns": [
+        {
+          "name": "cod_venda_bar",
+          "source": "codigo"
+        },
+        {
+          "name": "des_telefone_cliente",
+          "source": "telefone_cliente"
+        },
+        {
+          "name": "des_localizacao",
+          "source": "localizacao"
+        },
+        {
+          "name": "dat_venda_bar",
+          "source": "data"
+        },
+        {
+          "name": "des_desconto",
+          "source": "desconto"
+        },
+        {
+          "name": "dth_fechado",
+          "source": "fechado_em"
+        },
+        {
+          "name": "des_origem_venda",
+          "source": "origem_venda"
+        },
+        {
+          "name": "vlr_final",
+          "source": "valor_final"
+        },
+        {
+          "name": "des_nome_cliente",
+          "source": "nome_cliente"
+        },
+        {
+          "name": "dth_aberto",
+          "source": "aberto_em"
+        },
+        {
+          "name": "vlr_total",
+          "source": "valor_total"
+        },
+        {
+          "name": "des_observacoes",
+          "source": "observacoes"
+        },
+        {
+          "name": "des_forma_pagamento",
+          "source": "forma_pagamento"
+        },
+        {
+          "name": "dth_criado",
+          "source": "criado_em"
+        },
+        {
+          "name": "des_status_pagamento",
+          "source": "status_pagamento"
+        },
+        {
+          "name": "id_venda_bar",
+          "source": "id"
+        },
+        {
+          "name": "id_comanda",
+          "source": "comanda_id"
+        },
+        {
+          "name": "des_status",
+          "source": "status"
+        },
+        {
+          "name": "dt_ingestao_lake",
+          "source": "_airbyte_extracted_at",
+          "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
+    }
   }
 }

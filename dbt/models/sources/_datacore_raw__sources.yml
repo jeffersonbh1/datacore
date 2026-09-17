@@ -10,6 +10,38 @@ sources:
     schema: "{{ env_var('DBT_RAW_DATASET', 'raw') }}"
     loader: airbyte
     tables:
+      - name: agendamentos
+        identifier: raw_agendamentos
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: alunos
+        identifier: raw_alunos
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: aulas
+        identifier: raw_aulas
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: avaliacao_jogo
+        identifier: raw_avaliacao_jogo
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: avaliacoes_jogadores
+        identifier: raw_avaliacoes_jogadores
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: categorias_bar
+        identifier: raw_categorias_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: categorias_produtos_bar
+        identifier: raw_categorias_produtos_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: compras_bar
+        identifier: raw_compras_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: dbt_execucoes
         identifier: raw_dbt_execucoes
         config:
@@ -30,12 +62,40 @@ sources:
         identifier: raw_empresas
         config:
           loaded_at_field: _airbyte_extracted_at
+      - name: esportes
+        identifier: raw_esportes
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: integracoes
         identifier: raw_integracoes
         config:
           loaded_at_field: _airbyte_extracted_at
+      - name: itens_compras_bar
+        identifier: raw_itens_compras_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: itens_vendas_bar
+        identifier: raw_itens_vendas_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: jogadores
+        identifier: raw_jogadores
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: jogadores_racha
+        identifier: raw_jogadores_racha
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: movimentacoes_estoque
+        identifier: raw_movimentacoes_estoque
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: origens
         identifier: raw_origens
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: perguntas_avaliacao
+        identifier: raw_perguntas_avaliacao
         config:
           loaded_at_field: _airbyte_extracted_at
       - name: pipeline_runs
@@ -46,11 +106,39 @@ sources:
         identifier: raw_pipelines
         config:
           loaded_at_field: _airbyte_extracted_at
+      - name: produtos_bar
+        identifier: raw_produtos_bar
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: professores
+        identifier: raw_professores
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: quadras
+        identifier: raw_quadras
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: tabelas_carregadas
         identifier: raw_tabelas_carregadas
         config:
           loaded_at_field: _airbyte_extracted_at
+      - name: tipos_aluguel
+        identifier: raw_tipos_aluguel
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: tipos_quadra
+        identifier: raw_tipos_quadra
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: torcedores
+        identifier: raw_torcedores
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: usuarios
         identifier: raw_usuarios
+        config:
+          loaded_at_field: _airbyte_extracted_at
+      - name: vendas_bar
+        identifier: raw_vendas_bar
         config:
           loaded_at_field: _airbyte_extracted_at

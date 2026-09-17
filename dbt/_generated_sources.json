@@ -31,5 +31,71 @@
   },
   "pipelines": {
     "identifier": "raw_pipelines"
+  },
+  "agendamentos": {
+    "identifier": "raw_agendamentos"
+  },
+  "alunos": {
+    "identifier": "raw_alunos"
+  },
+  "aulas": {
+    "identifier": "raw_aulas"
+  },
+  "avaliacao_jogo": {
+    "identifier": "raw_avaliacao_jogo"
+  },
+  "avaliacoes_jogadores": {
+    "identifier": "raw_avaliacoes_jogadores"
+  },
+  "categorias_bar": {
+    "identifier": "raw_categorias_bar"
+  },
+  "categorias_produtos_bar": {
+    "identifier": "raw_categorias_produtos_bar"
+  },
+  "compras_bar": {
+    "identifier": "raw_compras_bar"
+  },
+  "esportes": {
+    "identifier": "raw_esportes"
+  },
+  "itens_compras_bar": {
+    "identifier": "raw_itens_compras_bar"
+  },
+  "itens_vendas_bar": {
+    "identifier": "raw_itens_vendas_bar"
+  },
+  "jogadores": {
+    "identifier": "raw_jogadores"
+  },
+  "jogadores_racha": {
+    "identifier": "raw_jogadores_racha"
+  },
+  "movimentacoes_estoque": {
+    "identifier": "raw_movimentacoes_estoque"
+  },
+  "perguntas_avaliacao": {
+    "identifier": "raw_perguntas_avaliacao"
+  },
+  "produtos_bar": {
+    "identifier": "raw_produtos_bar"
+  },
+  "professores": {
+    "identifier": "raw_professores"
+  },
+  "quadras": {
+    "identifier": "raw_quadras"
+  },
+  "tipos_aluguel": {
+    "identifier": "raw_tipos_aluguel"
+  },
+  "tipos_quadra": {
+    "identifier": "raw_tipos_quadra"
+  },
+  "torcedores": {
+    "identifier": "raw_torcedores"
+  },
+  "vendas_bar": {
+    "identifier": "raw_vendas_bar"
   }
 }
