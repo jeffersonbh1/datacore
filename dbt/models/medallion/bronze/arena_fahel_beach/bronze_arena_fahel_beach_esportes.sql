@@ -30,4 +30,13 @@ tipado AS (
     FROM fonte
 )
 
-SELECT * FROM tipado
+, deduplicado AS (
+    SELECT *
+    FROM tipado
+    QUALIFY row_number() OVER (
+        PARTITION BY id_esporte
+        ORDER BY dt_ingestao_lake DESC
+    ) = 1
+)
+
+SELECT * FROM deduplicado

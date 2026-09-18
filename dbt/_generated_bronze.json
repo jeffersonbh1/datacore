@@ -684,7 +684,9 @@
   "arena_fahel_beach": {
     "bronze_arena_fahel_beach_agendamentos": {
       "table": "agendamentos",
-      "pk": [],
+      "pk": [
+        "id_agendamento"
+      ],
       "columns": [
         {
           "name": "des_metodo_pagamento",
@@ -775,7 +777,9 @@
     },
     "bronze_arena_fahel_beach_alunos": {
       "table": "alunos",
-      "pk": [],
+      "pk": [
+        "id_aluno"
+      ],
       "columns": [
         {
           "name": "des_observacoes",
@@ -850,7 +854,9 @@
     },
     "bronze_arena_fahel_beach_aulas": {
       "table": "aulas",
-      "pk": [],
+      "pk": [
+        "id_aula"
+      ],
       "columns": [
         {
           "name": "id_aluno",
@@ -901,7 +907,9 @@
     },
     "bronze_arena_fahel_beach_avaliacao_jogo": {
       "table": "avaliacao_jogo",
-      "pk": [],
+      "pk": [
+        "id_avaliacao_jogo"
+      ],
       "columns": [
         {
           "name": "id_jogador",
@@ -976,7 +984,9 @@
     },
     "bronze_arena_fahel_beach_avaliacoes_jogadores": {
       "table": "avaliacoes_jogadores",
-      "pk": [],
+      "pk": [
+        "id_avaliacao_jogadore"
+      ],
       "columns": [
         {
           "name": "dth_criado",
@@ -1031,7 +1041,9 @@
     },
     "bronze_arena_fahel_beach_categorias_bar": {
       "table": "categorias_bar",
-      "pk": [],
+      "pk": [
+        "id_categoria_bar"
+      ],
       "columns": [
         {
           "name": "dth_criado",
@@ -1078,7 +1090,9 @@
     },
     "bronze_arena_fahel_beach_categorias_produtos_bar": {
       "table": "categorias_produtos_bar",
-      "pk": [],
+      "pk": [
+        "id_categoria_produto_bar"
+      ],
       "columns": [
         {
           "name": "dth_atualizado",
@@ -1145,7 +1159,9 @@
     },
     "bronze_arena_fahel_beach_compras_bar": {
       "table": "compras_bar",
-      "pk": [],
+      "pk": [
+        "id_compra_bar"
+      ],
       "columns": [
         {
           "name": "vlr_total",
@@ -1224,7 +1240,9 @@
     },
     "bronze_arena_fahel_beach_esportes": {
       "table": "esportes",
-      "pk": [],
+      "pk": [
+        "id_esporte"
+      ],
       "columns": [
         {
           "name": "ind_ativo",
@@ -1275,7 +1293,9 @@
     },
     "bronze_arena_fahel_beach_itens_compras_bar": {
       "table": "itens_compras_bar",
-      "pk": [],
+      "pk": [
+        "id_item_compra_bar"
+      ],
       "columns": [
         {
           "name": "dth_criado",
@@ -1350,7 +1370,9 @@
     },
     "bronze_arena_fahel_beach_itens_vendas_bar": {
       "table": "itens_vendas_bar",
-      "pk": [],
+      "pk": [
+        "id_item_venda_bar"
+      ],
       "columns": [
         {
           "name": "vlr_unitario",
@@ -1413,7 +1435,9 @@
     },
     "bronze_arena_fahel_beach_jogadores": {
       "table": "jogadores",
-      "pk": [],
+      "pk": [
+        "id_jogadore"
+      ],
       "columns": [
         {
           "name": "des_telefone",
@@ -1484,7 +1508,9 @@
     },
     "bronze_arena_fahel_beach_jogadores_racha": {
       "table": "jogadores_racha",
-      "pk": [],
+      "pk": [
+        "id_jogadore_racha"
+      ],
       "columns": [
         {
           "name": "des_telefone",
@@ -1547,7 +1573,9 @@
     },
     "bronze_arena_fahel_beach_movimentacoes_estoque": {
       "table": "movimentacoes_estoque",
-      "pk": [],
+      "pk": [
+        "id_movimentacao_estoque"
+      ],
       "columns": [
         {
           "name": "vlr_total",
@@ -1626,7 +1654,9 @@
     },
     "bronze_arena_fahel_beach_perguntas_avaliacao": {
       "table": "perguntas_avaliacao",
-      "pk": [],
+      "pk": [
+        "id_pergunta_avaliacao"
+      ],
       "columns": [
         {
           "name": "ind_ativo",
@@ -1685,7 +1715,9 @@
     },
     "bronze_arena_fahel_beach_produtos_bar": {
       "table": "produtos_bar",
-      "pk": [],
+      "pk": [
+        "id_produto_bar"
+      ],
       "columns": [
         {
           "name": "vlr_ultimo_compra",
@@ -1780,7 +1812,9 @@
     },
     "bronze_arena_fahel_beach_professores": {
       "table": "professores",
-      "pk": [],
+      "pk": [
+        "id_professore"
+      ],
       "columns": [
         {
           "name": "des_observacoes",
@@ -1851,7 +1885,9 @@
     },
     "bronze_arena_fahel_beach_quadras": {
       "table": "quadras",
-      "pk": [],
+      "pk": [
+        "id_quadra"
+      ],
       "columns": [
         {
           "name": "tp_quadra",
@@ -1910,7 +1946,9 @@
     },
     "bronze_arena_fahel_beach_tipos_aluguel": {
       "table": "tipos_aluguel",
-      "pk": [],
+      "pk": [
+        "id_tipo_aluguel"
+      ],
       "columns": [
         {
           "name": "dth_criado",
@@ -1961,7 +1999,9 @@
     },
     "bronze_arena_fahel_beach_tipos_quadra": {
       "table": "tipos_quadra",
-      "pk": [],
+      "pk": [
+        "id_tipo_quadra"
+      ],
       "columns": [
         {
           "name": "ind_ativo",
@@ -2012,7 +2052,9 @@
     },
     "bronze_arena_fahel_beach_torcedores": {
       "table": "torcedores",
-      "pk": [],
+      "pk": [
+        "id_torcedore"
+      ],
       "columns": [
         {
           "name": "des_telefone",
@@ -2071,7 +2113,9 @@
     },
     "bronze_arena_fahel_beach_usuarios": {
       "table": "usuarios",
-      "pk": [],
+      "pk": [
+        "id_usuario"
+      ],
       "columns": [
         {
           "name": "des_senha",
@@ -2134,7 +2178,9 @@
     },
     "bronze_arena_fahel_beach_vendas_bar": {
       "table": "vendas_bar",
-      "pk": [],
+      "pk": [
+        "id_venda_bar"
+      ],
       "columns": [
         {
           "name": "cod_venda_bar",
