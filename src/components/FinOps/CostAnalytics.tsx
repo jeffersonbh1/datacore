@@ -119,7 +119,19 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
   const totalMonthly = (report?.totalMonthlyCostUsd || 0) - appliedSavings;
   const costPerMillion = recordsSynced30d > 0 ? (report?.totalMonthlyCostUsd || 0) / (recordsSynced30d / 1_000_000) : null;
 
-  const sortedResources = [...(report?.resources || [])].sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
+  // Agrupado por produto GCP (Compute Engine, Cloud Run, BigQuery...) — mesmo
+  // agrupamento do relatório nativo do Console de Billing ("Mês atual,
+  // Agrupar por Produto"), só que com os números que já calculamos (uso real
+  // medido × preço de lista), não a fatura oficial (ver nota de rodapé).
+  interface ProductGroup { category: GcpResourceCost['category']; monthlyCostUsd: number; items: GcpResourceCost[] }
+  const productGroupsMap = new Map<GcpResourceCost['category'], ProductGroup>();
+  for (const res of report?.resources || []) {
+    const group = productGroupsMap.get(res.category) || { category: res.category, monthlyCostUsd: 0, items: [] };
+    group.monthlyCostUsd += res.monthlyCostUsd;
+    group.items.push(res);
+    productGroupsMap.set(res.category, group);
+  }
+  const productGroups = [...productGroupsMap.values()].sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
   const maxDailyTotal = Math.max(
     1,
     ...(report?.dailyTrend || []).map(d => d.computeUsd + d.cloudRunUsd + d.bigqueryUsd),
@@ -293,28 +305,31 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Distribuição por Recurso</h3>
-                <p className="text-xs text-slate-500">Custo mensal estimado de cada recurso real do projeto</p>
+                <h3 className="text-sm font-semibold text-slate-900">Mês Atual, Agrupado por Produto</h3>
+                <p className="text-xs text-slate-500">Mesmo agrupamento do relatório do Console de Billing — custo mensal estimado por produto GCP</p>
               </div>
 
               <div className="space-y-3.5">
-                {sortedResources.map((res) => {
-                  const pct = report.totalMonthlyCostUsd > 0 ? Math.round((res.monthlyCostUsd / report.totalMonthlyCostUsd) * 1000) / 10 : 0;
+                {productGroups.map((group) => {
+                  const pct = report.totalMonthlyCostUsd > 0 ? Math.round((group.monthlyCostUsd / report.totalMonthlyCostUsd) * 1000) / 10 : 0;
                   return (
-                    <div key={res.id} className="space-y-1">
+                    <div key={group.category} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-700 font-medium truncate pr-2" title={res.label}>{res.label}</span>
+                        <span className="text-slate-700 font-medium truncate pr-2">{CATEGORY_LABEL[group.category]}</span>
                         <span className="font-mono text-slate-600 font-semibold shrink-0">
-                          ${res.monthlyCostUsd.toFixed(2)} ({pct}%)
+                          ${group.monthlyCostUsd.toFixed(2)} ({pct}%)
                         </span>
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${Math.max(pct, res.monthlyCostUsd > 0 ? 1 : 0)}%`, backgroundColor: CATEGORY_COLOR[res.category] }}
+                          style={{ width: `${Math.max(pct, group.monthlyCostUsd > 0 ? 1 : 0)}%`, backgroundColor: CATEGORY_COLOR[group.category] }}
                         />
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-snug">{res.detail}</p>
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        {group.items.length > 1 ? `${group.items.length} recursos: ` : ''}
+                        {group.items.map(r => r.label.replace(`${CATEGORY_LABEL[group.category]} — `, '')).join(', ')}
+                      </p>
                     </div>
                   );
                 })}
