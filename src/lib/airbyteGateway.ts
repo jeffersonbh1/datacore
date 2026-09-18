@@ -406,6 +406,36 @@ export async function fetchRawTableColumns(payload: {
   return gatewayFetch(`/api/raw-catalog/columns?${qs.toString()}`);
 }
 
+export interface RawTableCount {
+  table: string;
+  status: 'ok' | 'error';
+  rowsAffected: number | null;
+  error: string | null;
+}
+
+/**
+ * Contagem de linhas AO VIVO de uma ou mais tabelas raw_<table> no BigQuery —
+ * usado pela tela Execuções para listar as tabelas da Raw junto com Bronze e
+ * Silver. Ao contrário do detalhe de Bronze/Silver (que é um retrato de CADA
+ * execução, gravado em pipeline_runs), a Raw é sincronizada pelo Airbyte, não
+ * pelo dbt, então não existe um retrato por run — a contagem é sempre o
+ * estado atual da tabela.
+ */
+export async function fetchRawTableCounts(payload: {
+  projectId: string;
+  rawDataset: string;
+  tables: string[];
+  location?: string;
+}): Promise<{ counts: RawTableCount[] }> {
+  const qs = new URLSearchParams({
+    projectId: payload.projectId,
+    rawDataset: payload.rawDataset,
+    tables: payload.tables.join(','),
+  });
+  if (payload.location) qs.set('location', payload.location);
+  return gatewayFetch(`/api/raw-catalog/row-counts?${qs.toString()}`);
+}
+
 /**
  * Atualiza a descrição de uma coluna da camada Raw — reflete imediatamente no
  * _properties.yml Bronze do sistema (dbt/models/medallion/bronze/<sistema>/_properties.yml),

@@ -9,7 +9,7 @@ import {
   fetchPipelineRunsForPipeline, upsertPipelineRuns, updatePipelineRunLayerStatus,
   insertTableRebuildAttempt, fetchTableRebuildHistory, TableRebuildAttempt,
 } from '../../lib/supabase';
-import { fetchConnectionJobs, buildBronzeLayer, buildSilverLayer } from '../../lib/airbyteGateway';
+import { fetchConnectionJobs, buildBronzeLayer, buildSilverLayer, fetchRawTableCounts } from '../../lib/airbyteGateway';
 
 type Layer = 'bronze' | 'silver';
 
@@ -191,6 +191,89 @@ function LayerTablesList({
 }
 
 /**
+ * Nomes das tabelas desta integração, para listar sob a Raw — o Airbyte já as
+ * sincroniza todas num único job (a API pública só devolve status agregado do
+ * job, não por stream/tabela — ver GET /jobs/{jobId}), então a lista vem dos
+ * nós Bronze (1:1 com as tabelas selecionadas na wizard), com fallback pra
+ * Silver caso um pipeline não tenha nós Bronze por algum motivo.
+ */
+function getPipelineTableNames(pipeline: Pipeline): string[] {
+  const bronzeTitles = pipeline.nodes.filter(n => n.type === 'bronze').map(n => n.title);
+  if (bronzeTitles.length > 0) return bronzeTitles;
+  return pipeline.nodes.filter(n => n.type === 'silver').map(n => n.title);
+}
+
+/**
+ * Lista de tabelas da Raw para um pipeline — sem botão "Executar" (ao
+ * contrário de Bronze/Silver): reexecutar a Raw significa disparar a conexão
+ * inteira no Airbyte de novo, não uma tabela isolada. A contagem de registros
+ * vem de um SELECT COUNT(*) ao vivo no BigQuery (fetchRawTableCounts) — a Raw
+ * é sincronizada pelo Airbyte, não pelo dbt, então não existe um retrato por
+ * execução como bronze_tables/silver_tables; por isso o mesmo resultado
+ * aparece em qualquer run expandido deste pipeline (é sempre "agora").
+ */
+function RawTablesList({
+  tables,
+  loading,
+  error,
+  onOpenLog,
+}: {
+  tables: TableBuildResult[] | null;
+  loading: boolean;
+  error: string | null;
+  onOpenLog: (layer: string, result: TableBuildResult) => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Raw</p>
+      {loading ? (
+        <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+          <RefreshCw className="w-3 h-3 animate-spin" /> Consultando contagens no BigQuery...
+        </p>
+      ) : error ? (
+        <p className="text-[11px] text-rose-600">{error}</p>
+      ) : !tables || tables.length === 0 ? (
+        <p className="text-[11px] text-slate-400">Sem tabelas configuradas para este pipeline.</p>
+      ) : (
+        <>
+          <ul className="space-y-1">
+            {tables.map(t => (
+              <li
+                key={t.table}
+                className="flex items-center justify-between gap-2 text-[11px] bg-white border border-slate-200 rounded px-2 py-1"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {t.status === 'ok'
+                    ? <CheckCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+                    : <XCircle className="w-3 h-3 text-rose-600 shrink-0" />}
+                  <span className="truncate text-slate-700">{t.table}</span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="font-mono text-slate-500">
+                    {t.rowsAffected != null ? t.rowsAffected.toLocaleString('pt-BR') : '—'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenLog('Raw', t)}
+                    title={`Ver detalhe de "${t.table}"`}
+                    className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] font-medium border border-slate-200 transition cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3" /> Log
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            Contagem atual da tabela no BigQuery — não é um retrato desta execução específica.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * Auto-cura runs presos em 'pending'/'running' no nosso banco: consulta o
  * Airbyte de verdade e, se o job já terminou lá, grava o resultado real em
  * pipeline_runs antes de exibir. Existe porque a atualização "ao vivo" feita
@@ -249,9 +332,19 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
   // Chave "<pipelineId>:<airbyteJobId>:<layer>:<table>" da tabela sendo
   // reexecutada agora — controla o botão "Executar" individualmente por linha.
   const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>({});
+  // Contagens ao vivo das tabelas Raw por pipeline (não por run — ver RawTablesList).
+  const [rawTablesByPipeline, setRawTablesByPipeline] = useState<Record<string, {
+    loading: boolean; tables: TableBuildResult[]; error: string | null;
+  }>>({});
 
   useEffect(() => {
     if (!logModal) {
+      setLogHistory({ loading: false, items: [], error: null });
+      return;
+    }
+    // A Raw não tem reexecução manual por tabela (dbt_table_rebuilds só aceita
+    // layer 'bronze'/'silver' — ver sql/011) — nada a buscar.
+    if (logModal.layer.toLowerCase() === 'raw') {
       setLogHistory({ loading: false, items: [], error: null });
       return;
     }
@@ -265,6 +358,28 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
       });
     return () => { cancelled = true; };
   }, [logModal]);
+
+  const loadRawTables = useCallback(async (pipeline: Pipeline) => {
+    if (rawTablesByPipeline[pipeline.id] && (rawTablesByPipeline[pipeline.id].loading || rawTablesByPipeline[pipeline.id].tables.length > 0)) {
+      return; // já carregado ou carregando — a contagem é a mesma pra qualquer run deste pipeline.
+    }
+    const bronzeNode = pipeline.nodes.find(n => n.type === 'bronze' && n.config.bigquery);
+    const bq = bronzeNode?.config.bigquery;
+    const tables = getPipelineTableNames(pipeline);
+    if (!bq || tables.length === 0) return; // destino não-BigQuery, ou sem tabelas configuradas.
+
+    setRawTablesByPipeline(prev => ({ ...prev, [pipeline.id]: { loading: true, tables: [], error: null } }));
+    try {
+      const { counts } = await fetchRawTableCounts({ projectId: bq.projectId, rawDataset: bq.rawDataset, tables, location: bq.location });
+      setRawTablesByPipeline(prev => ({ ...prev, [pipeline.id]: { loading: false, tables: counts, error: null } }));
+    } catch (err) {
+      setRawTablesByPipeline(prev => ({
+        ...prev,
+        [pipeline.id]: { loading: false, tables: [], error: err instanceof Error ? err.message : 'Falha ao consultar contagens da Raw.' },
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawTablesByPipeline]);
 
   const handleRetryTable = useCallback(async (pipeline: Pipeline, run: PipelineRunSummary, layer: Layer, table: TableBuildResult) => {
     const key = `${pipeline.id}:${run.airbyteJobId}:${layer}:${table.table}`;
@@ -516,7 +631,10 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
                                 <React.Fragment key={run.airbyteJobId}>
                                   <tr
                                     className="border-t border-slate-200/70 hover:bg-slate-50/60 cursor-pointer"
-                                    onClick={() => setExpandedRunKey(isRunExpanded ? null : runKey)}
+                                    onClick={() => {
+                                      setExpandedRunKey(isRunExpanded ? null : runKey);
+                                      if (!isRunExpanded) loadRawTables(pipeline);
+                                    }}
                                   >
                                     <td className="py-1.5 pr-1">
                                       {isRunExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
@@ -554,7 +672,13 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
                                             </span>
                                           </div>
                                         )}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                          <RawTablesList
+                                            tables={rawTablesByPipeline[pipeline.id]?.tables ?? null}
+                                            loading={Boolean(rawTablesByPipeline[pipeline.id]?.loading)}
+                                            error={rawTablesByPipeline[pipeline.id]?.error ?? null}
+                                            onOpenLog={(layer, result) => setLogModal({ layer, result, pipelineId: pipeline.id, pipelineDbId: pipeline.dbId! })}
+                                          />
                                           <LayerTablesList
                                             label="Bronze"
                                             layer="bronze"
@@ -666,7 +790,12 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
                   <History className="w-3.5 h-3.5 text-slate-400" />
                   Histórico de reexecuções manuais
                 </p>
-                {logHistory.loading ? (
+                {logModal.layer.toLowerCase() === 'raw' ? (
+                  <p className="text-slate-400 text-[11px]">
+                    Não se aplica à Raw — a sincronização é sempre da conexão inteira no Airbyte, não de uma tabela isolada.
+                    Para atualizar, dispare uma nova sincronização pelo Studio.
+                  </p>
+                ) : logHistory.loading ? (
                   <p className="text-slate-400 text-[11px] flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Carregando...</p>
                 ) : logHistory.error ? (
                   <p className="text-rose-600 text-[11px]">{logHistory.error}</p>

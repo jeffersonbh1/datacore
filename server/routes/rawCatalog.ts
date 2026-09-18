@@ -132,6 +132,67 @@ rawCatalogRouter.get('/columns', async (req, res) => {
   }
 });
 
+export interface RawTableCount {
+  table: string;
+  status: 'ok' | 'error';
+  rowsAffected: number | null;
+  error: string | null;
+}
+
+// -----------------------------------------------------------------------------
+// Contagem de linhas por tabela da Raw, para a tela "Execuções" (mesma lista
+// que Bronze/Silver já mostram, via TableBuildResult). Diferente de
+// bronze_tables/silver_tables (sql/010), que gravam um retrato por RUN, esta
+// contagem é sempre AO VIVO — a Raw é sincronizada pelo Airbyte, não pelo
+// nosso servidor, então não temos um hook de gravação por execução; SELECT
+// COUNT(*) reflete o estado atual da tabela no BigQuery, igual ao Dicionário
+// de Dados acima.
+// -----------------------------------------------------------------------------
+rawCatalogRouter.get('/row-counts', async (req, res) => {
+  try {
+    const projectId = String(req.query.projectId || '');
+    const rawDataset = String(req.query.rawDataset || '');
+    const tablesParam = String(req.query.tables || '');
+    const location = req.query.location ? String(req.query.location) : undefined;
+    const tables = tablesParam.split(',').map((t) => t.trim()).filter(Boolean);
+
+    if (!projectId || !rawDataset || tables.length === 0) {
+      res.status(400).json({ error: 'Parâmetros "projectId", "rawDataset" e "tables" (lista separada por vírgula) são obrigatórios.' });
+      return;
+    }
+    if (!/^[A-Za-z0-9_-]+$/.test(projectId) || !/^[A-Za-z0-9_-]+$/.test(rawDataset) || tables.some((t) => !/^[A-Za-z0-9_.-]+$/.test(t))) {
+      res.status(400).json({ error: 'projectId/rawDataset/tables inválidos.' });
+      return;
+    }
+
+    const bigquery = getBigQueryClient();
+    const counts: RawTableCount[] = await Promise.all(
+      tables.map(async (table): Promise<RawTableCount> => {
+        const physicalTable = `raw_${table}`;
+        try {
+          const [rows] = await bigquery.query({
+            query: `SELECT COUNT(*) AS total_rows FROM \`${projectId}.${rawDataset}.${physicalTable}\``,
+            location,
+          });
+          const totalRows = Number((rows?.[0] as { total_rows?: number })?.total_rows ?? 0);
+          return { table, status: 'ok', rowsAffected: totalRows, error: null };
+        } catch (err) {
+          return {
+            table,
+            status: 'error',
+            rowsAffected: null,
+            error: err instanceof Error ? err.message : `Falha ao consultar "${physicalTable}".`,
+          };
+        }
+      }),
+    );
+
+    res.json({ counts });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao consultar contagens da Raw.' });
+  }
+});
+
 rawCatalogRouter.put('/columns', (req, res) => {
   try {
     const { sistema, table, column, description } = req.body as {
