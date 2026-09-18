@@ -149,22 +149,37 @@ export interface LGPDRequest {
   auditNotes: string;
 }
 
-export interface FinOpsMetric {
+/** Uma linha de custo real (server/routes/costs.ts::GcpResourceCost). */
+export interface GcpResourceCost {
+  id: string;
+  category: 'compute' | 'cloud_run' | 'bigquery' | 'artifact_registry' | 'secret_manager' | 'other';
+  label: string;
+  detail: string;
+  monthlyCostUsd: number;
+  basis: string;
+}
+
+/** Recomendação real gerada no servidor a partir de uso medido (server/routes/costs.ts::CostRecommendation). */
+export interface CostRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  potentialSavingsUsd: number;
+  effort: 'baixo' | 'medio' | 'alto';
+  suggestedCommand?: string;
+}
+
+/** Resposta de GET /api/costs/gcp — inventário real de recursos GCP + custo
+ *  estimado (uso real × preço público de lista), não é a fatura oficial. */
+export interface GcpCostReport {
+  generatedAt: string;
+  projectId: string;
+  region: string;
+  resources: GcpResourceCost[];
+  dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
+  recommendations: CostRecommendation[];
   totalMonthlyCostUsd: number;
-  dailySpendTrend: { day: string; aws: number; gcp: number; azure: number; snowflake: number }[];
-  providerBreakdown: { provider: string; cost: number; percentage: number; color: string }[];
-  costPerMillionRecords: number;
-  idleResourcesCost: number;
-  recommendations: {
-    id: string;
-    pipelineId: string;
-    pipelineName: string;
-    type: 'auto_scale' | 'storage_lifecycle' | 'partition_prune' | 'spot_instance';
-    potentialSavingsUsd: number;
-    effort: 'baixo' | 'medio' | 'alto';
-    description: string;
-    applied: boolean;
-  }[];
+  notes: string[];
 }
 
 export interface TeamUser {

@@ -1,7 +1,7 @@
-import { 
-  Pipeline, AlertRule, Incident, LGPDRequest, FinOpsMetric, 
+import {
+  Pipeline, AlertRule, Incident, LGPDRequest,
   TeamUser, RolePermissions, ExecutionLog,
-  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration 
+  SourceConnectorConfig, DestinationConnectorConfig, AutoIntegration
 } from '../types';
 
 export const AVAILABLE_CONNECTORS = [
@@ -238,59 +238,6 @@ export const INITIAL_LGPD_REQUESTS: LGPDRequest[] = [
     auditNotes: 'Relatório completo de dados tratados emitido pelo DPO.'
   }
 ];
-
-export const INITIAL_FINOPS: FinOpsMetric = {
-  totalMonthlyCostUsd: 1470.10,
-  costPerMillionRecords: 0.12,
-  idleResourcesCost: 184.50,
-  dailySpendTrend: [
-    { day: '28/08', aws: 18.2, gcp: 14.5, azure: 4.1, snowflake: 9.8 },
-    { day: '29/08', aws: 19.1, gcp: 15.2, azure: 3.9, snowflake: 10.1 },
-    { day: '30/08', aws: 17.5, gcp: 14.8, azure: 4.2, snowflake: 9.4 },
-    { day: '31/08', aws: 21.4, gcp: 16.9, azure: 5.0, snowflake: 11.2 },
-    { day: '01/09', aws: 20.1, gcp: 15.5, azure: 4.5, snowflake: 10.3 },
-    { day: '02/09', aws: 19.8, gcp: 15.1, azure: 4.3, snowflake: 10.5 },
-    { day: '03/09', aws: 18.9, gcp: 14.7, azure: 4.0, snowflake: 9.9 }
-  ],
-  providerBreakdown: [
-    { provider: 'Amazon Web Services (AWS)', cost: 588.04, percentage: 40, color: '#F59E0B' },
-    { provider: 'Google Cloud Platform (GCP)', cost: 441.03, percentage: 30, color: '#3B82F6' },
-    { provider: 'Snowflake Computing', cost: 294.02, percentage: 20, color: '#06B6D4' },
-    { provider: 'Microsoft Azure', cost: 147.01, percentage: 10, color: '#6366F1' }
-  ],
-  recommendations: [
-    {
-      id: 'rec-1',
-      pipelineId: 'pipe-telemetria-iot',
-      pipelineName: 'Telemetria IoT & Logs em Tempo Real',
-      type: 'spot_instance',
-      potentialSavingsUsd: 215.00,
-      effort: 'baixo',
-      description: 'Habilitar instâncias AWS Spot para nós de workers Spark de ingestão em streaming (economia estimada de 32% no compute).',
-      applied: false
-    },
-    {
-      id: 'rec-2',
-      pipelineId: 'pipe-ecommerce-bq',
-      pipelineName: 'Pipeline Vendas & Transações E-Commerce',
-      type: 'partition_prune',
-      potentialSavingsUsd: 135.00,
-      effort: 'baixo',
-      description: 'Configurar particionamento diário por "timestamp_venda" e clustering por "estado" no BigQuery para diminuir bytes escaneados.',
-      applied: true
-    },
-    {
-      id: 'rec-3',
-      pipelineId: 'pipe-crm-snowflake',
-      pipelineName: 'Customer 360 Ingestão & Mascaramento PII',
-      type: 'auto_scale',
-      potentialSavingsUsd: 94.00,
-      effort: 'medio',
-      description: 'Reduzir o auto-suspend do virtual warehouse Snowflake de 10 minutos para 60 segundos nos jobs de batch noturnos.',
-      applied: false
-    }
-  ]
-};
 
 export const INITIAL_USERS: TeamUser[] = [
   {

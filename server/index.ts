@@ -8,6 +8,7 @@ import { bronzeRouter } from './routes/bronze';
 import { bronzeAutoSyncRouter } from './routes/bronzeAutoSync';
 import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
+import { costsRouter } from './routes/costs';
 import { dbtModelsRouter } from './routes/dbtModels';
 import { destinationsRouter } from './routes/destinations';
 import { prepareGitDeployKey } from './gitDeployKey';
@@ -39,6 +40,7 @@ app.use('/api/bigquery/bronze', requireGatewayApiKey, bronzeRouter);
 app.use('/api/bigquery/bronze/auto-sync', requireGatewayApiKey, bronzeAutoSyncRouter);
 app.use('/api/bigquery/silver', requireGatewayApiKey, silverRouter);
 app.use('/api/bigquery/silver/auto-sync', requireGatewayApiKey, silverAutoSyncRouter);
+app.use('/api/costs', requireGatewayApiKey, costsRouter);
 app.use('/api/dbt/models', requireGatewayApiKey, dbtModelsRouter);
 app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
 

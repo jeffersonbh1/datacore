@@ -707,6 +707,21 @@ export async function fetchPipelineRunsForPipeline(pipelineDbId: number, limit =
   return (data || []).map(mapPipelineRunRow);
 }
 
+/** Soma real de registros sincronizados (pipeline_runs.records_synced) do
+ *  tenant nos últimos 30 dias — numerador real do card "Custo por 1M de
+ *  registros" em Custos & FinOps (CostAnalytics.tsx), no lugar de um mock. */
+export async function fetchRecordsSyncedLast30Days(idEmpresa: number): Promise<number> {
+  if (!supabase) return 0;
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('pipeline_runs')
+    .select('records_synced')
+    .eq('id_empresa', idEmpresa)
+    .gte('iniciado_em', since);
+  if (error) throw new Error(`Erro ao somar registros sincronizados: ${error.message}`);
+  return (data || []).reduce((sum, r) => sum + (Number(r.records_synced) || 0), 0);
+}
+
 /**
  * Grava o progresso de uma construção manual de Bronze/Silver (ver
  * VisualCanvas.handleExecutePipeline) na linha de pipeline_runs do job do

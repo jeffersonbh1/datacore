@@ -1,4 +1,4 @@
-import { AirbyteStreamSummary, SourceCatalogEntry } from '../types';
+import { AirbyteStreamSummary, GcpCostReport, SourceCatalogEntry } from '../types';
 
 const gatewayUrl = import.meta.env.VITE_AIRBYTE_GATEWAY_URL || '';
 const gatewayApiKey = import.meta.env.VITE_AIRBYTE_GATEWAY_API_KEY || '';
@@ -441,6 +441,16 @@ export async function fetchRawTableCounts(payload: {
  * _properties.yml Bronze do sistema (dbt/models/medallion/bronze/<sistema>/_properties.yml),
  * no modelo/coluna correspondente (ver server/bronzeColumnDocs.ts).
  */
+/**
+ * Custos & FinOps com dados reais: inventário real de recursos GCP + custo
+ * estimado (uso real medido × preço público de lista do GCP — ver
+ * server/routes/costs.ts). Cacheado no servidor por 1h; passe force=true
+ * (botão "Atualizar") pra recalcular na hora.
+ */
+export async function fetchGcpCostReport(force = false): Promise<GcpCostReport> {
+  return gatewayFetch(`/api/costs/gcp${force ? '?refresh=1' : ''}`);
+}
+
 export async function updateRawColumnDescription(
   sistema: string,
   table: string,

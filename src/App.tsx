@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   INITIAL_LOGS, INITIAL_ALERT_RULES,
-  INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS, INITIAL_FINOPS,
+  INITIAL_INCIDENTS, INITIAL_LGPD_REQUESTS,
   INITIAL_USERS, ROLE_DEFINITIONS,
   INITIAL_SOURCES, INITIAL_DESTINATIONS, INITIAL_INTEGRATIONS
 } from './data/initialData';
@@ -156,7 +156,6 @@ export default function App() {
   const [alertRules, setAlertRules] = useState(INITIAL_ALERT_RULES);
   const [incidents, setIncidents] = useState(INITIAL_INCIDENTS);
   const [lgpdRequests, setLgpdRequests] = useState(INITIAL_LGPD_REQUESTS);
-  const [finops, setFinops] = useState(INITIAL_FINOPS);
   const [users, setUsers] = useState(INITIAL_USERS);
 
   // Auto Pipeline Connectors and Integrations State
@@ -407,14 +406,6 @@ export default function App() {
     setLogs(prev => [newLog, ...prev]);
   };
 
-  // FinOps recommendation apply
-  const handleApplyFinOpsRecommendation = (recId: string) => {
-    setFinops(prev => ({
-      ...prev,
-      recommendations: prev.recommendations.map(r => r.id === recId ? { ...r, applied: true } : r)
-    }));
-  };
-
   // RBAC User handlers
   const handleUpdateUserRole = (userId: string, newRole: UserRole) => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
@@ -597,9 +588,8 @@ export default function App() {
 
             {activeTab === 'finops' && (
               <CostAnalytics
-                finops={finops}
-                onApplyRecommendation={handleApplyFinOpsRecommendation}
                 canViewFinOps={permissions.canViewFinOps}
+                idEmpresa={currentUser.idEmpresa}
               />
             )}
 
