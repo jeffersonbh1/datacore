@@ -98,17 +98,23 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
 
       let jobsData: { data: AirbyteJob[] };
       try {
+        // orderBy=createdAt|DESC: sem isso o Airbyte devolve os jobs mais ANTIGOS
+        // primeiro (mesmo motivo do comentário em connectionsRouter.ts) — com
+        // limit=5, uma conexão com mais de 5 syncs no histórico nunca via um job
+        // novo, porque o corte acontecia ANTES do sort abaixo (bug real: o
+        // auto-sync ficava preso pra sempre nos 5 jobs mais antigos).
         jobsData = await airbyteFetch<{ data: AirbyteJob[] }>(
-          `/jobs?connectionId=${integ.airbyte_connection_id}&jobType=sync&limit=5`
+          `/jobs?connectionId=${integ.airbyte_connection_id}&jobType=sync&limit=5&orderBy=${encodeURIComponent('createdAt|DESC')}`
         );
       } catch (err) {
         results.push({ integracaoId: integ.id, action: 'skipped', detail: `falha ao consultar jobs do Airbyte: ${err instanceof Error ? err.message : err}` });
         continue;
       }
 
-      // Airbyte's /jobs list is NOT guaranteed most-recent-first (observed
-      // ascending by startTime for at least some connections) — sort explicitly
-      // instead of trusting API order, or "latest" silently picks a stale job.
+      // Airbyte's /jobs list is NOT guaranteed most-recent-first mesmo com
+      // orderBy (observado ascendente por startTime em algumas conexões) —
+      // sort explícito continua necessário, só que agora sobre os 5 jobs
+      // corretos (os mais recentes), não os 5 mais antigos.
       const jobs = [...(jobsData.data || [])].sort(
         (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
       );
