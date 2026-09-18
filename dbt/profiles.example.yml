@@ -33,7 +33,11 @@ datacore:
       project: "{{ env_var('DBT_GCP_PROJECT') }}"
       dataset: "{{ env_var('DBT_SCHEMA_STAGING', 'staging') }}"
       location: "{{ env_var('DBT_GCP_LOCATION', 'southamerica-east1') }}"
-      threads: 8
+      # 4 (não 8): menos handshakes TLS concorrentes disputando a única vCPU do
+      # gateway no Cloud Run — reduz a chance de SSLEOFError em builds com
+      # muitas tabelas (ver incidente 2026-09-18, arena_fahel_beach). Complementa
+      # --no-cpu-throttling em cloudbuild.gateway.yaml.
+      threads: 4
       priority: interactive
       job_execution_timeout_seconds: 900
       job_retries: 1

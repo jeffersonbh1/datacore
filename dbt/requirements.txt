@@ -3,3 +3,11 @@
 #   pip install -r requirements.txt
 # Testado ponta a ponta com dbt-core 1.12.4 / dbt-bigquery 1.12.0 (Python 3.13).
 dbt-bigquery~=1.12.0
+
+# Pin abaixo do range solto que dbt-bigquery 1.12.0 aceita (google-cloud-bigquery<4.0,>=3.0):
+# a partir da 3.42.2, o cliente passou a tratar SSLError (inclui SSLEOFError — handshake
+# TLS derrubado no meio) como NÃO retryable globalmente, quando antes isso era reengolido
+# automaticamente por até 600s. Ainda sem fix mergeado a 2026-09-18 — ver
+# https://github.com/googleapis/google-cloud-python/issues/18178. 3.40.1 é a última versão
+# confirmada antes da regressão. Remover este pin quando o issue acima for fechado.
+google-cloud-bigquery[pandas]==3.40.1

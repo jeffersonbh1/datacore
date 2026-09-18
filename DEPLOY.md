@@ -273,6 +273,16 @@ segredo ou variável já ajustado manualmente. Reserve o comando com
 `--set-secrets`/`--set-env-vars` completo (abaixo) para quando algum desses
 valores realmente precisar mudar.
 
+> **Rode UMA VEZ com `--no-cpu-throttling` adicionado ao comando acima**
+> (`gcloud run deploy airbyte-gateway --source . --no-cpu-throttling --region=$REGION --project=$PROJ`).
+> Sem isso, um `dbt build` com várias tabelas em paralelo pode ter o handshake
+> TLS com o BigQuery cortado por falta de CPU (`SSLEOFError` / "Max retries
+> exceeded" — incidente 2026-09-18, arena_fahel_beach). A flag já está em
+> `cloudbuild.gateway.yaml`, mas esse arquivo não é o caminho realmente usado
+> em produção (ver acima) — precisa ir no comando simples pelo menos uma vez;
+> depois disso, "reaproveita a configuração da revisão anterior" já mantém a
+> flag nos próximos deploys sem precisar repeti-la.
+
 ```bash
 export IMAGE=$REGION-docker.pkg.dev/$PROJ/datacore/gateway:$(git rev-parse --short HEAD)
 
