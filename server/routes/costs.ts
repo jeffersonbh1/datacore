@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getBigQueryClient } from '../bigqueryClient';
 import { getGcpAccessToken } from '../gcpAuth';
-import { getGcpPricing } from '../gcpPricing';
+import { GcpPricing, getGcpPricing } from '../gcpPricing';
 
 export const costsRouter = Router();
 
@@ -138,37 +138,92 @@ function fmtTs(d: Date): string {
   return d.toISOString().replace(/\.\d+Z$/, 'Z');
 }
 
-/** Soma de uma métrica DELTA num intervalo (ex.: billable_instance_time em segundos). */
-async function monitoringSum(token: string, projectId: string, filter: string, days: number): Promise<number> {
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 86400_000);
+// América/Sao_Paulo é UTC-3 fixo (sem horário de verão desde 2019) — dá pra
+// tratar como offset constante em vez de precisar de uma lib de timezone.
+// Sem isso, os buckets "diários" da Monitoring API alinham em janelas de 24h
+// contadas de trás pra frente a partir de "agora" (não em dias de calendário
+// de verdade) e a query do BigQuery agrupava em UTC — nenhum dos dois batia
+// com o dia que aparece no Console pro usuário (fuso São Paulo).
+const SP_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** Início (instante UTC real) do dia de calendário em São Paulo que termina `daysAgo` dias atrás. */
+function spMidnightUtc(daysAgo: number): Date {
+  const spNow = new Date(Date.now() - SP_OFFSET_MS);
+  const y = spNow.getUTCFullYear(), m = spNow.getUTCMonth(), d = spNow.getUTCDate();
+  return new Date(Date.UTC(y, m, d - daysAgo) + SP_OFFSET_MS);
+}
+
+/**
+ * Soma de uma métrica DELTA numa janela [start, end) — SEMPRE exatamente 1
+ * bucket (alignmentPeriod = a janela inteira). Importante: quando se pede
+ * VÁRIOS buckets numa query só (alignmentPeriod menor que o intervalo todo),
+ * a Monitoring API ancora o alinhamento em `interval.endTime` (que aqui
+ * normalmente é "agora", um alvo móvel), NÃO em `interval.startTime` como o
+ * nome sugere — confirmado testando manualmente (os buckets devolvidos batiam
+ * no horário de "agora", não em meia-noite). Isso faz qualquer tentativa de
+ * alinhar buckets a dias de calendário numa query multi-bucket falhar sem
+ * aviso. Pedir 1 bucket por vez, com a janela exata desejada, contorna isso
+ * por completo — mesmo truque que este arquivo já usava pro total de 30d.
+ */
+async function monitoringSumWindow(token: string, projectId: string, filter: string, start: Date, end: Date): Promise<number> {
+  const periodSec = Math.max(1, Math.round((end.getTime() - start.getTime()) / 1000));
   const url = new URL(`https://monitoring.googleapis.com/v3/projects/${projectId}/timeSeries`);
   url.searchParams.set('filter', filter);
   url.searchParams.set('interval.startTime', fmtTs(start));
   url.searchParams.set('interval.endTime', fmtTs(end));
-  url.searchParams.set('aggregation.alignmentPeriod', `${days * 86400}s`);
+  url.searchParams.set('aggregation.alignmentPeriod', `${periodSec}s`);
   url.searchParams.set('aggregation.perSeriesAligner', 'ALIGN_SUM');
   const data = await gcpGet<{ timeSeries?: Array<{ points: Array<{ value: { doubleValue?: number; int64Value?: string } }> }> }>(url.toString(), token);
   const pts = data.timeSeries?.[0]?.points || [];
   return pts.reduce((sum, p) => sum + (p.value.doubleValue ?? Number(p.value.int64Value || 0)), 0);
 }
 
-/** Série diária de uma métrica DELTA, últimos N dias (0 pros dias sem dado). */
-async function monitoringDailySeries(token: string, projectId: string, filter: string, days: number): Promise<Map<string, number>> {
+/** Soma de uma métrica DELTA nos últimos `days` dias corridos (não precisa de alinhamento de dia — usado só pra totais). */
+async function monitoringSum(token: string, projectId: string, filter: string, days: number): Promise<number> {
   const end = new Date();
   const start = new Date(end.getTime() - days * 86400_000);
-  const url = new URL(`https://monitoring.googleapis.com/v3/projects/${projectId}/timeSeries`);
-  url.searchParams.set('filter', filter);
-  url.searchParams.set('interval.startTime', fmtTs(start));
-  url.searchParams.set('interval.endTime', fmtTs(end));
-  url.searchParams.set('aggregation.alignmentPeriod', '86400s');
-  url.searchParams.set('aggregation.perSeriesAligner', 'ALIGN_SUM');
-  const data = await gcpGet<{ timeSeries?: Array<{ points: Array<{ interval: { endTime: string }; value: { doubleValue?: number; int64Value?: string } }> }> }>(url.toString(), token);
+  return monitoringSumWindow(token, projectId, filter, start, end);
+}
+
+/** [{ label, start, end }] pros últimos `days` dias de calendário em São
+ *  Paulo (mais antigo primeiro) — hoje vai até AGORA, não até a meia-noite
+ *  de amanhã (ainda não terminou). */
+function spDayWindows(days: number): Array<{ label: string; start: Date; end: Date }> {
+  const now = new Date();
+  return Array.from({ length: days }, (_, k) => {
+    const i = days - 1 - k;
+    const start = spMidnightUtc(i);
+    const end = i === 0 ? now : spMidnightUtc(i - 1);
+    return { label: start.toISOString().slice(0, 10), start, end };
+  });
+}
+
+/** Série diária (dias de calendário em São Paulo) de uma métrica DELTA, últimos N dias — 1 query por dia (ver monitoringSumWindow). */
+async function monitoringDailySeries(token: string, projectId: string, filter: string, days: number): Promise<Map<string, number>> {
+  const windows = spDayWindows(days);
+  const sums = await Promise.all(windows.map((w) => monitoringSumWindow(token, projectId, filter, w.start, w.end)));
   const out = new Map<string, number>();
-  for (const p of data.timeSeries?.[0]?.points || []) {
-    const date = p.interval.endTime.slice(0, 10);
-    out.set(date, (p.value.doubleValue ?? Number(p.value.int64Value || 0)));
-  }
+  windows.forEach((w, idx) => out.set(w.label, sums[idx]));
+  return out;
+}
+
+/**
+ * Custo real de compute por dia de calendário (São Paulo): soma o uptime real
+ * da instância (compute.googleapis.com/instance/uptime) por dia × preço
+ * atual do tipo de máquina — em vez de assumir o status de AGORA constante
+ * pros últimos N dias, o que é falso pra uma VM que liga/desliga várias
+ * vezes ao dia (ver conversa — foi isso que causava o "17/09: $0,28" quando
+ * o Console mostrava um valor real bem maior).
+ */
+async function getVmDailyUptimeCost(
+  token: string, projectId: string, instanceId: string,
+  vcpus: number, memoryMb: number, pricing: GcpPricing, days: number,
+): Promise<Map<string, number>> {
+  const filter = `metric.type="compute.googleapis.com/instance/uptime" resource.type="gce_instance" resource.labels.instance_id="${instanceId}"`;
+  const secondsPerDay = await monitoringDailySeries(token, projectId, filter, days);
+  const hourlyRate = vcpus * pricing.computeE2CorePerHour + (memoryMb / 1024) * pricing.computeE2RamPerGiBHour;
+  const out = new Map<string, number>();
+  for (const [date, secs] of secondsPerDay) out.set(date, (secs / 3600) * hourlyRate);
   return out;
 }
 
@@ -185,6 +240,15 @@ async function monitoringAvgMax(token: string, projectId: string, filter: string
   const vals = (data.timeSeries?.[0]?.points || []).map((p) => p.value.doubleValue || 0);
   if (vals.length === 0) return { avg: 0, max: 0 };
   return { avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals) };
+}
+
+/** Soma dos bytes billable (já deduplicados/incrementais, conforme a própria API) de todos os snapshots do projeto. */
+async function getSnapshotStorageBytes(token: string, projectId: string): Promise<number> {
+  const data = await gcpGet<{ items?: Array<{ storageBytes?: string }> }>(
+    `https://compute.googleapis.com/compute/v1/projects/${projectId}/global/snapshots`,
+    token,
+  );
+  return (data.items || []).reduce((sum, s) => sum + Number(s.storageBytes || 0), 0);
 }
 
 // --- Artifact Registry / Secret Manager ---------------------------------------
@@ -227,8 +291,11 @@ async function getBigQueryUsage(region: string): Promise<{
   const bq = getBigQueryClient();
 
   const [jobRows] = await bq.query({
+    // DATE(creation_time) sem timezone usa UTC por padrão — explícito em
+    // America/Sao_Paulo pra bater com o dia de calendário que o usuário vê
+    // (mesmo motivo do spMidnightUtc acima, pro lado do Monitoring).
     query: `
-      SELECT DATE(creation_time) AS d, SUM(total_bytes_billed) AS bytes_billed
+      SELECT DATE(creation_time, "America/Sao_Paulo") AS d, SUM(total_bytes_billed) AS bytes_billed
       FROM \`region-${region}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
       WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
       GROUP BY d
@@ -282,7 +349,7 @@ costsRouter.get('/gcp', async (req, res) => {
     }
 
     const token = await getGcpAccessToken();
-    const [pricing, instances, addresses, runServices, bqUsage, arBytes, secretVersions] = await Promise.all([
+    const [pricing, instances, addresses, runServices, bqUsage, arBytes, secretVersions, snapshotBytes] = await Promise.all([
       getGcpPricing(region),
       listComputeInstances(token, projectId),
       listExternalAddresses(token, projectId),
@@ -290,27 +357,42 @@ costsRouter.get('/gcp', async (req, res) => {
       getBigQueryUsage(region),
       getArtifactRegistryStorageBytes(token, projectId, region),
       getSecretVersionCount(token, projectId),
+      getSnapshotStorageBytes(token, projectId),
     ]);
 
     const resources: GcpResourceCost[] = [];
     const notes: string[] = [
       'Estimativa por uso real medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista do GCP (Cloud Billing Catalog) — não é a fatura oficial do Cloud Billing (este projeto não tem billing export configurado).',
+      'Todos os valores em USD. Se você comparar com o relatório do Console do GCP, confira a moeda mostrada lá (R$ e US$ têm números bem diferentes).',
+      'Os dias do gráfico diário seguem o fuso de São Paulo (UTC-3), igual o Console — a Compute Engine usa o uptime real medido de cada dia, não um valor fixo repetido.',
     ];
 
     // --- Compute Engine (VM + disco) ---
-    let computeMonthlyTotal = 0;
+    let diskMonthlyTotal = 0;
+    // Custo de compute por dia real (uptime real × preço) — soma de todas as
+    // instâncias, alimenta o gráfico diário (ver getVmDailyUptimeCost acima).
+    // Disco e snapshot (abaixo, fora do loop) entram à parte, como uma fatia
+    // fixa por dia — ao contrário da CPU/RAM, eles cobram o mesmo todo santo
+    // dia, ligada ou não.
+    const computeDaily = new Map<string, number>();
     const vmRecommendations: CostRecommendation[] = [];
     for (const inst of instances) {
       const zoneName = inst.zone.split('/').pop() || '';
       const machineTypeName = inst.machineType.split('/').pop() || '';
       let cpuMonthly = 0;
       let ramMonthly = 0;
-      let vcpus = 0;
       let cpuAvgPct = 0;
       let cpuMaxPct = 0;
+
+      // Sempre busca o tipo de máquina, mesmo com a instância parada agora —
+      // não houve troca de machine type (confirmado via operations list), e o
+      // custo REAL por dia (uptime real × preço) precisa disso mesmo quando o
+      // status atual não é RUNNING (ela pode ter rodado boa parte de um dia
+      // passado e estar parada só agora).
+      const mt = await getMachineTypeInfo(token, inst.machineType);
+      const vcpus = mt.guestCpus;
+
       if (inst.status === 'RUNNING') {
-        const mt = await getMachineTypeInfo(token, inst.machineType);
-        vcpus = mt.guestCpus;
         cpuMonthly = mt.guestCpus * pricing.computeE2CorePerHour * HOURS_PER_MONTH;
         ramMonthly = (mt.memoryMb / 1024) * pricing.computeE2RamPerGiBHour * HOURS_PER_MONTH;
         try {
@@ -327,10 +409,18 @@ costsRouter.get('/gcp', async (req, res) => {
       } else {
         notes.push(`"${inst.name}" está parada agora (status ${inst.status}) — sem cobrança de compute enquanto assim, e sem dado de CPU pra sugerir redimensionamento até ela rodar de novo.`);
       }
+
+      try {
+        const daily = await getVmDailyUptimeCost(token, projectId, inst.id, vcpus, mt.memoryMb, pricing, DAYS_TREND);
+        for (const [date, usd] of daily) computeDaily.set(date, (computeDaily.get(date) || 0) + usd);
+      } catch {
+        // Sem dado de uptime (instância muito nova) — o dia fica só com disco/snapshot no gráfico.
+      }
+
       const diskGb = (inst.disks || []).reduce((sum, d) => sum + Number(d.diskSizeGb || 0), 0);
       const diskMonthly = diskGb * pricing.computePdBalancedPerGiBMonth;
       const total = cpuMonthly + ramMonthly + diskMonthly;
-      computeMonthlyTotal += total;
+      diskMonthlyTotal += diskMonthly;
 
       resources.push({
         id: `compute-${inst.name}`,
@@ -362,6 +452,23 @@ costsRouter.get('/gcp', async (req, res) => {
         });
       }
     }
+
+    // --- Snapshots de disco (política de agendamento automático) ---
+    const snapshotGiB = snapshotBytes / (1024 ** 3);
+    const snapshotMonthlyUsd = snapshotGiB * pricing.computePdSnapshotPerGiBMonth;
+    if (snapshotBytes > 0) {
+      resources.push({
+        id: 'compute-snapshots',
+        category: 'compute',
+        label: 'Compute Engine — Snapshots',
+        detail: `${snapshotGiB.toFixed(2)}GiB em snapshots automáticos de disco (política de agendamento)`,
+        monthlyCostUsd: snapshotMonthlyUsd,
+        basis: 'storage real dos snapshots (bytes já deduplicados pela própria API) × preço de lista',
+      });
+    }
+    // Disco + snapshot cobram o mesmo valor todo dia (não dependem do uptime da VM)
+    // — soma como fatia fixa diária no gráfico, ao lado do custo real de CPU/RAM.
+    const computeDailyFixedUsd = (diskMonthlyTotal + snapshotMonthlyUsd) / 30;
 
     // --- IP estático externo ---
     for (const addr of addresses) {
@@ -467,15 +574,16 @@ costsRouter.get('/gcp', async (req, res) => {
 
     const totalMonthlyCostUsd = resources.reduce((sum, r) => sum + r.monthlyCostUsd, 0);
 
-    // --- Daily trend (7d): compute é praticamente fixo (VM roda 24/7), Cloud Run/BigQuery variam de verdade ---
+    // --- Daily trend (7d, dias de calendário em São Paulo) ---
+    // computeUsd = uptime real da VM naquele dia × preço (computeDaily) +
+    // fatia fixa de disco/snapshot (computeDailyFixedUsd) — não mais um valor
+    // plano repetido em todos os dias baseado no status de AGORA.
     const dailyTrend: GcpCostReport['dailyTrend'] = [];
-    const computeDailyUsd = computeMonthlyTotal / 30;
     for (let i = DAYS_TREND - 1; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400_000);
-      const key = d.toISOString().slice(0, 10);
+      const key = spMidnightUtc(i).toISOString().slice(0, 10);
       dailyTrend.push({
         date: key,
-        computeUsd: computeDailyUsd,
+        computeUsd: (computeDaily.get(key) || 0) + computeDailyFixedUsd,
         cloudRunUsd: cloudRunDaily.get(key) || 0,
         bigqueryUsd: bqDaily.get(key) || 0,
       });

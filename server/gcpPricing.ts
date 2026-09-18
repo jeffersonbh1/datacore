@@ -26,6 +26,8 @@ export interface GcpPricing {
   computeE2RamPerGiBHour: number;
   /** USD por GiB-mês, disco persistente Balanced. */
   computePdBalancedPerGiBMonth: number;
+  /** USD por GiB-mês, storage de snapshot de disco (Storage PD Snapshot — não o produto "Instant Snapshot"). */
+  computePdSnapshotPerGiBMonth: number;
   /** USD por hora, IP externo estático reservado (não cobra se atrelado a instância rodando). */
   computeStaticIpPerHour: number;
   /** USD por vCPU-segundo, Cloud Run "Instance-based billing" (CPU sempre alocada). */
@@ -136,6 +138,9 @@ export async function getGcpPricing(region: string): Promise<GcpPricing> {
     )),
     computePdBalancedPerGiBMonth: priceOf(need(
       findSku(computeSkus, region, ['Balanced PD Capacity in', city]), 'Balanced PD Capacity',
+    )),
+    computePdSnapshotPerGiBMonth: priceOf(need(
+      findSku(computeSkus, region, ['Storage PD Snapshot in', city]), 'Storage PD Snapshot',
     )),
     computeStaticIpPerHour: priceOf(need(
       findSku(computeSkus, region, ['Static Ip Charge in', city]), 'Static Ip Charge',

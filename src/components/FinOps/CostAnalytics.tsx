@@ -335,9 +335,13 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 })}
               </div>
 
-              <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 leading-relaxed flex items-start gap-1.5">
-                <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{report.notes[0]}</span>
+              <div className="pt-3 border-t border-slate-100 space-y-1.5">
+                {report.notes.map((note, i) => (
+                  <div key={i} className="text-[11px] text-slate-500 leading-relaxed flex items-start gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>{note}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
