@@ -35,6 +35,7 @@ Gateway são deployados aqui.
 | 9 | dbt no gateway | imagem/CPU/timeout maiores | `--memory=1Gi --timeout=900 --max-instances=1` (já no cloudbuild) |
 | 11 | Modelos dbt gerados | escritos em `dbt/models/medallion/bronze/<sistema>/bronze_<sistema>_<t>.sql` | `DBT_CODEGEN_GIT=push` + rebuild da imagem, ou redeploy manual (ver passo 5) |
 | 10 | Chave da SA BigQuery | ✅ rotacionada em 2026-09-15 (a chave anterior tinha virado uma variável de ambiente em texto puro com JWT inválido — ver passo 3) | as duas chaves antigas foram revogadas |
+| 12 | Custos & FinOps (tela) | ✅ feito em 2026-09-18 | precisa de `cloudbilling.googleapis.com` habilitada + `roles/bigquery.resourceViewer` na SA do BigQuery (ver passo 1) |
 
 ---
 
@@ -47,7 +48,20 @@ gcloud config set project $PROJ
 
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com \
-  bigquery.googleapis.com cloudscheduler.googleapis.com
+  bigquery.googleapis.com cloudscheduler.googleapis.com \
+  cloudbilling.googleapis.com
+
+# Tela Custos & FinOps (server/routes/costs.ts) — lê preço de lista real via
+# Cloud Billing Catalog (API acima) e uso real de BigQuery via a SA dedicada
+# (BIGQUERY_CREDENTIALS_JSON). Essa SA só tinha papel de dado, sem
+# "bigquery.jobs.listAll" — sem isso, INFORMATION_SCHEMA.JOBS_BY_PROJECT
+# (histórico de queries) nega com 403. O resto (Compute Engine, Cloud Run,
+# Artifact Registry, Secret Manager, Monitoring) usa a identity de runtime do
+# Cloud Run via ADC, que já tem tudo isso via roles/editor — só o BigQuery
+# precisou desse papel extra.
+gcloud projects add-iam-policy-binding $PROJ \
+  --member="serviceAccount:datacore-bigquery-gateway@$PROJ.iam.gserviceaccount.com" \
+  --role="roles/bigquery.resourceViewer"
 
 gcloud artifacts repositories create datacore \
   --repository-format=docker --location=$REGION
