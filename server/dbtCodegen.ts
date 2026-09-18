@@ -517,7 +517,18 @@ async function gitCommit(repoHintDir: string, message: string, push: boolean): P
     if (!staged.trim()) return { git: 'committed', gitDetail: 'nada a commitar' };
     await execFileP('git', ['-C', repo, '-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message]);
     if (push) {
-      await execFileP('git', ['-C', repo, 'push']);
+      // Remote SSH explícito via deploy key (ver Dockerfile/GIT_SSH_COMMAND) —
+      // não depende do remote que a imagem trouxe do checkout que a gerou
+      // (normalmente HTTPS, sem credencial). GIT_PUSH_REMOTE_URL vem do
+      // cloudbuild.gateway.yaml (git@github.com:<owner>/<repo>.git).
+      const remoteUrl = process.env.GIT_PUSH_REMOTE_URL;
+      if (remoteUrl) await execFileP('git', ['-C', repo, 'remote', 'set-url', 'origin', remoteUrl]);
+      // Push explícito pro branch atual (HEAD:<branch>) em vez de `git push` puro —
+      // a imagem pode não ter upstream configurado para o branch copiado do
+      // checkout que gerou o build.
+      const { stdout: branchOut } = await execFileP('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD']);
+      const branch = branchOut.trim();
+      await execFileP('git', ['-C', repo, 'push', 'origin', `HEAD:${branch}`]);
       return { git: 'pushed' };
     }
     return { git: 'committed' };

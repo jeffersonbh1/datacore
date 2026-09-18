@@ -10,12 +10,15 @@ import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { dbtModelsRouter } from './routes/dbtModels';
 import { destinationsRouter } from './routes/destinations';
+import { prepareGitDeployKey } from './gitDeployKey';
 import { rawCatalogRouter } from './routes/rawCatalog';
 import { silverRouter } from './routes/silver';
 import { silverAutoSyncRouter } from './routes/silverAutoSync';
 import { sourcesRouter } from './routes/sources';
 import { streamsRouter } from './routes/streams';
 import { workspacesRouter } from './routes/workspaces';
+
+prepareGitDeployKey();
 
 const app = express();
 app.use(cors());

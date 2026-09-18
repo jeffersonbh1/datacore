@@ -190,6 +190,50 @@ gcloud run services update airbyte-gateway --region=$REGION \
   --update-secrets="BIGQUERY_CREDENTIALS_JSON=bigquery-credentials-json:latest"
 ```
 
+### Deploy key do `DBT_CODEGEN_GIT=push` (dbt-codegen-deploy-key)
+
+Habilitado em 2026-09-17 depois de um incidente real: uma integração criada em
+produção teve seus modelos dbt gerados só no disco efêmero do gateway
+(`DBT_CODEGEN_GIT=off` até então) e os perdeu no redeploy seguinte — ver
+`project_gateway_deploy` (memória) e o commit da correção
+(`arena_fahel_beach`). Com `push`, toda integração criada em produção já sai
+commitada no `main`, sem depender de alguém lembrar de regenerar manualmente.
+
+**Setup (já feito em produção, refazer só se a chave precisar ser rotacionada):**
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "airbyte-gateway-dbt-codegen" -f ./dbt_codegen_deploy_key
+
+gh repo deploy-key add ./dbt_codegen_deploy_key.pub \
+  --repo jeffersonbh1/datacore --allow-write \
+  --title "airbyte-gateway dbt-codegen (auto-push)"
+
+gcloud secrets create dbt-codegen-deploy-key \
+  --replication-policy=automatic --data-file=./dbt_codegen_deploy_key
+gcloud secrets add-iam-policy-binding dbt-codegen-deploy-key \
+  --member="serviceAccount:$GATEWAY_SA" --role="roles/secretmanager.secretAccessor"
+
+rm ./dbt_codegen_deploy_key ./dbt_codegen_deploy_key.pub   # não deixar a chave privada em disco
+```
+
+Por que é uma **deploy key** (SSH, escopada a este repo) e não um PAT pessoal:
+revogável sem afetar a conta do dono, e não carrega nenhum outro escopo além
+de push neste repo específico.
+
+Como funciona em runtime (ver `server/gitDeployKey.ts`, `Dockerfile`,
+`server/dbtCodegen.ts::gitCommit`):
+1. A secret é montada como **arquivo** (não env var) em `/secrets/dbt-codegen-deploy-key` — vem com permissão aberta, e o `ssh` recusa carregar chave privada nessas condições.
+2. No boot, `prepareGitDeployKey()` copia pra `/tmp/dbt_codegen_deploy_key` com `chmod 600`.
+3. `GIT_SSH_COMMAND` (env, setado no `Dockerfile`) aponta pra essa cópia.
+4. Ao dar push, `gitCommit()` reescreve o remote `origin` pra `GIT_PUSH_REMOTE_URL` (SSH) antes de rodar `git push origin HEAD:<branch>`.
+5. `.git` precisa estar **dentro da imagem** — `.dockerignore`/`.gcloudignore` não excluem mais `.git` (o `.gcloudignore` existe só pra impedir o default do `gcloud run deploy --source` de excluir `.git` sozinho).
+
+Se `DBT_CODEGEN_GIT=push` e o push falhar, `writeIntegrationModels` **não lança
+erro** — a integração/modelos continuam criados normalmente, só o campo `git`
+da resposta vem `"failed"` com `gitDetail` explicando por quê (chave errada,
+sem rede pro GitHub, branch protegida, etc.). Vale monitorar isso, não é
+bloqueante para o fluxo principal.
+
 ---
 
 ## 4. Supabase — migrações

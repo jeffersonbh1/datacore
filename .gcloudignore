@@ -1,0 +1,14 @@
+# gcloud auto-generates this file with ".git" excluded by default — isso
+# quebraria o DBT_CODEGEN_GIT=push (server/dbtCodegen.ts::gitCommit), que
+# precisa de .git dentro da imagem pra commitar/dar push nos modelos gerados.
+# Este arquivo existe só pra impedir esse default e manter .git no upload.
+node_modules
+dist
+server/dist
+.env
+.env.local
+dbt/target
+dbt/dbt_packages
+dbt/logs
+dbt/.venv
+**/__pycache__
