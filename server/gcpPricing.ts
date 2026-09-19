@@ -90,7 +90,18 @@ function findSku(skus: Sku[], region: string, needles: string[]): Sku | undefine
   return skus.find((s) => {
     const regions = s.serviceRegions || [];
     const regionOk = regions.length === 0 || regions.includes(region) || regions.includes('global');
-    return regionOk && needles.every((n) => s.description.includes(n));
+    if (!regionOk) return false;
+    // needles[0] precisa ser o INÍCIO da descrição, não só aparecer em
+    // qualquer lugar — SKUs "variantes" (Spot Preemptible, Regional,
+    // Commitment v1, Committed Use Discount Premium for...) sempre prefixam
+    // o nome da SKU base, então "E2 Instance Ram running in" também batia
+    // (via .includes()) em "Spot Preemptible E2 Instance Ram running in Sao
+    // Paulo" — um preço ~4.5x menor que o on-demand real. Isso já causou um
+    // preço errado em produção (ver conversa: gráfico de custos batendo bem
+    // abaixo do relatório real do Console). Os demais needles (cidade/região
+    // no fim da descrição) continuam checados por .includes().
+    if (!s.description.startsWith(needles[0])) return false;
+    return needles.slice(1).every((n) => s.description.includes(n));
   });
 }
 
