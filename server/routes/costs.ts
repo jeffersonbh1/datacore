@@ -36,6 +36,9 @@ export interface GcpCostReport {
   generatedAt: string;
   projectId: string;
   region: string;
+  /** Intervalo (dias de calendário em São Paulo, 'YYYY-MM-DD') que o dailyTrend cobre — default: mês atual. */
+  rangeStart: string;
+  rangeEnd: string;
   resources: GcpResourceCost[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];
@@ -146,13 +149,6 @@ function fmtTs(d: Date): string {
 // com o dia que aparece no Console pro usuário (fuso São Paulo).
 const SP_OFFSET_MS = 3 * 60 * 60 * 1000;
 
-/** Início (instante UTC real) do dia de calendário em São Paulo que termina `daysAgo` dias atrás. */
-function spMidnightUtc(daysAgo: number): Date {
-  const spNow = new Date(Date.now() - SP_OFFSET_MS);
-  const y = spNow.getUTCFullYear(), m = spNow.getUTCMonth(), d = spNow.getUTCDate();
-  return new Date(Date.UTC(y, m, d - daysAgo) + SP_OFFSET_MS);
-}
-
 /** Início (instante UTC real) do mês de calendário atual em São Paulo — pro
  *  "gasto real desde o dia 1", mesmo período que o relatório padrão do
  *  Console de Billing ("Mês atual") usa. */
@@ -165,6 +161,46 @@ function spMonthStartUtc(): Date {
 function spDaysInCurrentMonth(): number {
   const spNow = new Date(Date.now() - SP_OFFSET_MS);
   return new Date(Date.UTC(spNow.getUTCFullYear(), spNow.getUTCMonth() + 1, 0)).getUTCDate();
+}
+
+/** 'YYYY-MM-DD' (dia de calendário em São Paulo) de hoje. */
+function spTodayLabel(): string {
+  return new Date(Date.now() - SP_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** 'YYYY-MM-DD' do primeiro dia do mês de calendário atual em São Paulo — o
+ *  padrão do filtro de data do gráfico (mesmo período "Mês atual" do Console). */
+function spMonthStartLabel(): string {
+  return spMonthStartUtc().toISOString().slice(0, 10);
+}
+
+/** Início (instante UTC real) do dia de calendário em São Paulo com rótulo 'YYYY-MM-DD'. */
+function spLabelToMidnightUtc(label: string): Date {
+  const [y, m, d] = label.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d) + SP_OFFSET_MS);
+}
+
+/**
+ * Janelas de 1 dia de calendário em São Paulo entre `startLabel` e
+ * `endLabel` (ambos 'YYYY-MM-DD', inclusive, mais antigo primeiro) — o
+ * último dia, se for hoje, vai até AGORA (não até a meia-noite seguinte,
+ * que ainda não aconteceu); dias no futuro são ignorados.
+ */
+function spDayWindowsRange(startLabel: string, endLabel: string): Array<{ label: string; start: Date; end: Date }> {
+  const now = new Date();
+  const startMs = spLabelToMidnightUtc(startLabel).getTime();
+  const endMs = spLabelToMidnightUtc(endLabel).getTime();
+  const windows: Array<{ label: string; start: Date; end: Date }> = [];
+  for (let t = startMs; t <= endMs; t += 86400_000) {
+    if (t >= now.getTime()) break; // dia futuro — nada rodou ainda.
+    const dayEndMidnight = t + 86400_000;
+    windows.push({
+      label: new Date(t).toISOString().slice(0, 10),
+      start: new Date(t),
+      end: new Date(Math.min(dayEndMidnight, now.getTime())),
+    });
+  }
+  return windows;
 }
 
 /**
@@ -199,22 +235,11 @@ async function monitoringSum(token: string, projectId: string, filter: string, d
   return monitoringSumWindow(token, projectId, filter, start, end);
 }
 
-/** [{ label, start, end }] pros últimos `days` dias de calendário em São
- *  Paulo (mais antigo primeiro) — hoje vai até AGORA, não até a meia-noite
- *  de amanhã (ainda não terminou). */
-function spDayWindows(days: number): Array<{ label: string; start: Date; end: Date }> {
-  const now = new Date();
-  return Array.from({ length: days }, (_, k) => {
-    const i = days - 1 - k;
-    const start = spMidnightUtc(i);
-    const end = i === 0 ? now : spMidnightUtc(i - 1);
-    return { label: start.toISOString().slice(0, 10), start, end };
-  });
-}
-
-/** Série diária (dias de calendário em São Paulo) de uma métrica DELTA, últimos N dias — 1 query por dia (ver monitoringSumWindow). */
-async function monitoringDailySeries(token: string, projectId: string, filter: string, days: number): Promise<Map<string, number>> {
-  const windows = spDayWindows(days);
+/** Série diária (dias de calendário em São Paulo) de uma métrica DELTA nas `windows` dadas — 1 query por dia (ver monitoringSumWindow). */
+async function monitoringDailySeries(
+  token: string, projectId: string, filter: string,
+  windows: Array<{ label: string; start: Date; end: Date }>,
+): Promise<Map<string, number>> {
   const sums = await Promise.all(windows.map((w) => monitoringSumWindow(token, projectId, filter, w.start, w.end)));
   const out = new Map<string, number>();
   windows.forEach((w, idx) => out.set(w.label, sums[idx]));
@@ -225,16 +250,17 @@ async function monitoringDailySeries(token: string, projectId: string, filter: s
  * Custo real de compute por dia de calendário (São Paulo): soma o uptime real
  * da instância (compute.googleapis.com/instance/uptime) por dia × preço
  * atual do tipo de máquina — em vez de assumir o status de AGORA constante
- * pros últimos N dias, o que é falso pra uma VM que liga/desliga várias
+ * pros dias do período, o que é falso pra uma VM que liga/desliga várias
  * vezes ao dia (ver conversa — foi isso que causava o "17/09: $0,28" quando
  * o Console mostrava um valor real bem maior).
  */
 async function getVmDailyUptimeCost(
   token: string, projectId: string, instanceId: string,
-  vcpus: number, memoryMb: number, pricing: GcpPricing, days: number,
+  vcpus: number, memoryMb: number, pricing: GcpPricing,
+  windows: Array<{ label: string; start: Date; end: Date }>,
 ): Promise<Map<string, number>> {
   const filter = `metric.type="compute.googleapis.com/instance/uptime" resource.type="gce_instance" resource.labels.instance_id="${instanceId}"`;
-  const secondsPerDay = await monitoringDailySeries(token, projectId, filter, days);
+  const secondsPerDay = await monitoringDailySeries(token, projectId, filter, windows);
   const hourlyRate = vcpus * pricing.computeE2CorePerHour + (memoryMb / 1024) * pricing.computeE2RamPerGiBHour;
   const out = new Map<string, number>();
   for (const [date, secs] of secondsPerDay) out.set(date, (secs / 3600) * hourlyRate);
@@ -299,11 +325,14 @@ async function getSecretVersionCount(token: string, projectId: string): Promise<
  * roles/editor, tinha "bigquery.jobs.listAll" — não é papel incluso no
  * Editor legado).
  */
-async function getBigQueryUsage(region: string): Promise<{
+async function getBigQueryUsage(region: string, lookbackDays: number): Promise<{
   bytesBilled30d: number; dailyBytesBilled: Map<string, number>; storageBytes: number;
 }> {
   const bq = getBigQueryClient();
 
+  // Busca o maior entre 30 dias (pro card do recurso, taxa recente) e o
+  // período pedido no gráfico (pode ser o mês inteiro) — de uma vez só.
+  const queryDays = Math.max(30, lookbackDays);
   const [jobRows] = await bq.query({
     // DATE(creation_time) sem timezone usa UTC por padrão — explícito em
     // America/Sao_Paulo pra bater com o dia de calendário que o usuário vê
@@ -311,16 +340,17 @@ async function getBigQueryUsage(region: string): Promise<{
     query: `
       SELECT DATE(creation_time, "America/Sao_Paulo") AS d, SUM(total_bytes_billed) AS bytes_billed
       FROM \`region-${region}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
-      WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+      WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL ${queryDays} DAY)
       GROUP BY d
     `,
   });
   const dailyBytesBilled = new Map<string, number>();
+  const cutoff30Label = new Date(Date.now() - 30 * 86400_000 - SP_OFFSET_MS).toISOString().slice(0, 10);
   let bytesBilled30d = 0;
   for (const r of jobRows as Array<{ d: { value: string }; bytes_billed: string | number }>) {
     const bytes = Number(r.bytes_billed || 0);
     dailyBytesBilled.set(r.d.value, bytes);
-    bytesBilled30d += bytes;
+    if (r.d.value >= cutoff30Label) bytesBilled30d += bytes;
   }
 
   const [datasets] = await bq.getDatasets();
@@ -342,16 +372,40 @@ async function getBigQueryUsage(region: string): Promise<{
 // --- Rota principal --------------------------------------------------------------
 
 interface CachedReport { value: GcpCostReport; expiresAt: number }
-let cache: CachedReport | null = null;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1h — inventário/uso não muda minuto a minuto; evita ~20 chamadas GCP a cada carregamento de tela.
+// Cacheado por intervalo de datas (cada range pedido é uma entrada própria)
+// — inventário/uso não muda minuto a minuto; evita ~20 chamadas GCP a cada
+// carregamento de tela pro mesmo período.
+const cache = new Map<string, CachedReport>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1h
 
-const DAYS_TREND = 7;
+// CPU média/pico pra recomendação de redimensionamento — janela fixa e curta
+// (comportamento recente), independente do intervalo escolhido no gráfico
+// (que pode ser o mês inteiro).
+const UTIL_LOOKBACK_DAYS = 7;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 92; // ~3 meses — teto sensato pra não disparar centenas de queries paralelas.
 
 costsRouter.get('/gcp', async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === '1';
-    if (!forceRefresh && cache && cache.expiresAt > Date.now()) {
-      res.json(cache.value);
+
+    const startLabel = typeof req.query.start === 'string' && DATE_RE.test(req.query.start) ? req.query.start : spMonthStartLabel();
+    const endLabel = typeof req.query.end === 'string' && DATE_RE.test(req.query.end) ? req.query.end : spTodayLabel();
+    if (startLabel > endLabel) {
+      res.status(400).json({ error: '"start" não pode ser depois de "end".' });
+      return;
+    }
+    const rangeDays = Math.round((spLabelToMidnightUtc(endLabel).getTime() - spLabelToMidnightUtc(startLabel).getTime()) / 86400_000) + 1;
+    if (rangeDays > MAX_RANGE_DAYS) {
+      res.status(400).json({ error: `Intervalo máximo é de ${MAX_RANGE_DAYS} dias.` });
+      return;
+    }
+
+    const cacheKey = `${startLabel}:${endLabel}`;
+    const cached = cache.get(cacheKey);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      res.json(cached.value);
       return;
     }
 
@@ -362,13 +416,14 @@ costsRouter.get('/gcp', async (req, res) => {
       return;
     }
 
+    const dayWindows = spDayWindowsRange(startLabel, endLabel);
     const token = await getGcpAccessToken();
     const [pricing, instances, addresses, runServices, bqUsage, arBytes, secretVersions, snapshotBytes] = await Promise.all([
       getGcpPricing(region),
       listComputeInstances(token, projectId),
       listExternalAddresses(token, projectId),
       listCloudRunServices(token, projectId, region),
-      getBigQueryUsage(region),
+      getBigQueryUsage(region, rangeDays),
       getArtifactRegistryStorageBytes(token, projectId, region),
       getSecretVersionCount(token, projectId),
       getSnapshotStorageBytes(token, projectId),
@@ -424,7 +479,7 @@ costsRouter.get('/gcp', async (req, res) => {
           const util = await monitoringAvgMax(
             token, projectId,
             `metric.type="compute.googleapis.com/instance/cpu/utilization" resource.type="gce_instance" resource.labels.instance_id="${inst.id}"`,
-            DAYS_TREND,
+            UTIL_LOOKBACK_DAYS,
           );
           cpuAvgPct = util.avg * 100;
           cpuMaxPct = util.max * 100;
@@ -450,7 +505,7 @@ costsRouter.get('/gcp', async (req, res) => {
       }
 
       try {
-        const daily = await getVmDailyUptimeCost(token, projectId, inst.id, vcpus, mt.memoryMb, pricing, DAYS_TREND);
+        const daily = await getVmDailyUptimeCost(token, projectId, inst.id, vcpus, mt.memoryMb, pricing, dayWindows);
         for (const [date, usd] of daily) computeDaily.set(date, (computeDaily.get(date) || 0) + usd);
       } catch {
         // Sem dado de uptime (instância muito nova) — o dia fica só com disco/snapshot no gráfico.
@@ -473,7 +528,7 @@ costsRouter.get('/gcp', async (req, res) => {
         category: 'compute',
         label: `Compute Engine — ${inst.name}`,
         detail: inst.status === 'RUNNING'
-          ? `${machineTypeName} (${vcpus} vCPU) em ${zoneName}, disco ${diskGb}GB — CPU real: ${cpuAvgPct.toFixed(1)}% média / ${cpuMaxPct.toFixed(1)}% pico (${DAYS_TREND}d)`
+          ? `${machineTypeName} (${vcpus} vCPU) em ${zoneName}, disco ${diskGb}GB — CPU real: ${cpuAvgPct.toFixed(1)}% média / ${cpuMaxPct.toFixed(1)}% pico (${UTIL_LOOKBACK_DAYS}d)`
           : `${machineTypeName} em ${zoneName} — status ${inst.status} agora (gasto real inclui o tempo rodando mais cedo neste mês), disco ${diskGb}GB`,
         monthlyCostUsd: monthToDateTotal,
         basis: `uptime real desde 1/${monthStart.getUTCMonth() + 1} (fuso São Paulo) × preço de lista E2 on-demand + disco`,
@@ -497,7 +552,7 @@ costsRouter.get('/gcp', async (req, res) => {
         vmRecommendations.push({
           id: `rec-rightsize-${inst.name}`,
           title: `Redimensionar ${inst.name} (${machineTypeName} → ${targetType})`,
-          description: `CPU real dos últimos ${DAYS_TREND} dias: ${cpuAvgPct.toFixed(1)}% média, ${cpuMaxPct.toFixed(1)}% de pico em ${vcpus} vCPUs — ainda sobraria folga com ${targetVcpus} vCPUs.`,
+          description: `CPU real dos últimos ${UTIL_LOOKBACK_DAYS} dias: ${cpuAvgPct.toFixed(1)}% média, ${cpuMaxPct.toFixed(1)}% de pico em ${vcpus} vCPUs — ainda sobraria folga com ${targetVcpus} vCPUs.`,
           potentialSavingsUsd: Math.max(0, projectedFullMonthUsd - targetProjectedFullMonthUsd),
           effort: 'medio',
           suggestedCommand: `gcloud compute instances stop ${inst.name} --zone=${zoneName} && gcloud compute instances set-machine-type ${inst.name} --zone=${zoneName} --machine-type=${targetType} && gcloud compute instances start ${inst.name} --zone=${zoneName}`,
@@ -555,7 +610,7 @@ costsRouter.get('/gcp', async (req, res) => {
       const filter = `metric.type="run.googleapis.com/container/billable_instance_time" resource.type="cloud_run_revision" resource.labels.service_name="${svc.name}"`;
       const [seconds30d, daily] = await Promise.all([
         monitoringSum(token, projectId, filter, 30),
-        monitoringDailySeries(token, projectId, filter, DAYS_TREND),
+        monitoringDailySeries(token, projectId, filter, dayWindows),
       ]);
       const monthly = seconds30d * (svc.cpu * pricing.cloudRunInstanceCpuPerSecond + svc.memoryGiB * pricing.cloudRunInstanceMemPerGiBSecond);
       for (const [date, secs] of daily) {
@@ -634,25 +689,23 @@ costsRouter.get('/gcp', async (req, res) => {
 
     const totalMonthlyCostUsd = resources.reduce((sum, r) => sum + r.monthlyCostUsd, 0);
 
-    // --- Daily trend (7d, dias de calendário em São Paulo) ---
+    // --- Daily trend (dias de calendário em São Paulo, no intervalo pedido) ---
     // computeUsd = uptime real da VM naquele dia × preço (computeDaily) +
-    // fatia fixa de disco/snapshot (computeDailyFixedUsd) — não mais um valor
+    // fatia fixa de disco/snapshot (computeDailyFixedUsd) — não um valor
     // plano repetido em todos os dias baseado no status de AGORA.
-    const dailyTrend: GcpCostReport['dailyTrend'] = [];
-    for (let i = DAYS_TREND - 1; i >= 0; i--) {
-      const key = spMidnightUtc(i).toISOString().slice(0, 10);
-      dailyTrend.push({
-        date: key,
-        computeUsd: (computeDaily.get(key) || 0) + computeDailyFixedUsd,
-        cloudRunUsd: cloudRunDaily.get(key) || 0,
-        bigqueryUsd: bqDaily.get(key) || 0,
-      });
-    }
+    const dailyTrend: GcpCostReport['dailyTrend'] = dayWindows.map((w) => ({
+      date: w.label,
+      computeUsd: (computeDaily.get(w.label) || 0) + computeDailyFixedUsd,
+      cloudRunUsd: cloudRunDaily.get(w.label) || 0,
+      bigqueryUsd: bqDaily.get(w.label) || 0,
+    }));
 
     const report: GcpCostReport = {
       generatedAt: new Date().toISOString(),
       projectId,
       region,
+      rangeStart: startLabel,
+      rangeEnd: endLabel,
       resources,
       dailyTrend,
       recommendations: vmRecommendations,
@@ -660,7 +713,7 @@ costsRouter.get('/gcp', async (req, res) => {
       notes,
     };
 
-    cache = { value: report, expiresAt: Date.now() + CACHE_TTL_MS };
+    cache.set(cacheKey, { value: report, expiresAt: Date.now() + CACHE_TTL_MS });
     res.json(report);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao consultar custos GCP.' });

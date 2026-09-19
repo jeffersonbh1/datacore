@@ -66,16 +66,23 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
+  // Inputs de data do gráfico — controlados aqui, sincronizados com o range
+  // que o servidor de fato usou assim que a resposta chega (o 1º load, sem
+  // range explícito, usa o default do servidor: mês atual em São Paulo).
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
 
-  const refresh = useCallback(async (force = false) => {
+  const refresh = useCallback(async (force: boolean, range?: { start: string; end: string }) => {
     setLoading(true);
     setError(null);
     try {
       const [reportData, records] = await Promise.all([
-        fetchGcpCostReport(force),
+        fetchGcpCostReport(force, range),
         idEmpresa ? fetchRecordsSyncedLast30Days(idEmpresa) : Promise.resolve(0),
       ]);
       setReport(reportData);
+      setRangeStart(reportData.rangeStart);
+      setRangeEnd(reportData.rangeEnd);
       setRecordsSynced30d(records);
       setLastRefreshedAt(new Date());
     } catch (err) {
@@ -87,9 +94,18 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
 
   useEffect(() => {
     if (!canViewFinOps) return;
-    refresh();
+    refresh(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewFinOps]);
+
+  const handleApplyRange = () => {
+    if (!rangeStart || !rangeEnd) return;
+    refresh(true, { start: rangeStart, end: rangeEnd });
+  };
+
+  const handleResetToCurrentMonth = () => {
+    refresh(true, undefined);
+  };
 
   const handleApply = (id: string) => {
     setAppliedIds(prev => new Set(prev).add(id));
@@ -155,7 +171,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
             <span className="text-[11px] text-slate-400">Atualizado às {lastRefreshedAt.toLocaleTimeString('pt-BR')}</span>
           )}
           <button
-            onClick={() => refresh(true)}
+            onClick={() => refresh(true, rangeStart && rangeEnd ? { start: rangeStart, end: rangeEnd } : undefined)}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer shadow-2xs disabled:opacity-60 disabled:cursor-not-allowed"
           >
@@ -246,10 +262,12 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
           {/* Charts Row: Resource Breakdown + Daily Trend */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Evolução do Gasto Diário (últimos 7 dias)</h3>
-                  <p className="text-xs text-slate-500">VM é custo fixo (roda 24/7); Cloud Run e BigQuery variam com uso real medido</p>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Evolução do Gasto Diário {report.rangeStart && report.rangeEnd ? `(${formatDay(report.rangeStart)} a ${formatDay(report.rangeEnd)})` : ''}
+                  </h3>
+                  <p className="text-xs text-slate-500">VM é custo real por uptime medido; Cloud Run e BigQuery variam com uso real medido</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="flex items-center gap-1.5 text-slate-600">
@@ -264,7 +282,44 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 </div>
               </div>
 
-              <div className="h-56 w-full flex items-end justify-between gap-3 pt-6 pb-2 px-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <label className="flex items-center gap-1.5 text-slate-500">
+                  De
+                  <input
+                    type="date"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-slate-500">
+                  até
+                  <input
+                    type="date"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleApplyRange}
+                  disabled={loading || !rangeStart || !rangeEnd}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Aplicar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetToCurrentMonth}
+                  disabled={loading}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-medium transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Mês atual
+                </button>
+              </div>
+
+              <div className={`h-56 w-full flex items-end justify-between ${report.dailyTrend.length > 12 ? 'gap-1' : 'gap-3'} pt-6 pb-2 px-2 border-b border-slate-100`}>
                 {report.dailyTrend.map((item, idx) => {
                   const totalDay = item.computeUsd + item.cloudRunUsd + item.bigqueryUsd;
                   const heightPercent = Math.min(100, (totalDay / maxDailyTotal) * 100);

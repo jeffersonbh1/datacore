@@ -175,6 +175,9 @@ export interface GcpCostReport {
   generatedAt: string;
   projectId: string;
   region: string;
+  /** Intervalo (dias de calendário em São Paulo, 'YYYY-MM-DD') que o dailyTrend cobre — default: mês atual. */
+  rangeStart: string;
+  rangeEnd: string;
   resources: GcpResourceCost[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];

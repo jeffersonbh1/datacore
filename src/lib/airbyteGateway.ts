@@ -447,8 +447,16 @@ export async function fetchRawTableCounts(payload: {
  * server/routes/costs.ts). Cacheado no servidor por 1h; passe force=true
  * (botão "Atualizar") pra recalcular na hora.
  */
-export async function fetchGcpCostReport(force = false): Promise<GcpCostReport> {
-  return gatewayFetch(`/api/costs/gcp${force ? '?refresh=1' : ''}`);
+export async function fetchGcpCostReport(
+  force = false,
+  /** 'YYYY-MM-DD' (fuso São Paulo) — omitido = mês atual (default do servidor). */
+  range?: { start: string; end: string },
+): Promise<GcpCostReport> {
+  const qs = new URLSearchParams();
+  if (force) qs.set('refresh', '1');
+  if (range) { qs.set('start', range.start); qs.set('end', range.end); }
+  const query = qs.toString();
+  return gatewayFetch(`/api/costs/gcp${query ? `?${query}` : ''}`);
 }
 
 export async function updateRawColumnDescription(
