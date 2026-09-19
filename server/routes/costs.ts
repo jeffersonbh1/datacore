@@ -153,6 +153,20 @@ function spMidnightUtc(daysAgo: number): Date {
   return new Date(Date.UTC(y, m, d - daysAgo) + SP_OFFSET_MS);
 }
 
+/** Início (instante UTC real) do mês de calendário atual em São Paulo — pro
+ *  "gasto real desde o dia 1", mesmo período que o relatório padrão do
+ *  Console de Billing ("Mês atual") usa. */
+function spMonthStartUtc(): Date {
+  const spNow = new Date(Date.now() - SP_OFFSET_MS);
+  return new Date(Date.UTC(spNow.getUTCFullYear(), spNow.getUTCMonth(), 1) + SP_OFFSET_MS);
+}
+
+/** Quantos dias tem o mês de calendário atual em São Paulo (28-31). */
+function spDaysInCurrentMonth(): number {
+  const spNow = new Date(Date.now() - SP_OFFSET_MS);
+  return new Date(Date.UTC(spNow.getUTCFullYear(), spNow.getUTCMonth() + 1, 0)).getUTCDate();
+}
+
 /**
  * Soma de uma métrica DELTA numa janela [start, end) — SEMPRE exatamente 1
  * bucket (alignmentPeriod = a janela inteira). Importante: quando se pede
@@ -365,10 +379,25 @@ costsRouter.get('/gcp', async (req, res) => {
       'Estimativa por uso real medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista do GCP (Cloud Billing Catalog) — não é a fatura oficial do Cloud Billing (este projeto não tem billing export configurado).',
       'Todos os valores em USD. Se você comparar com o relatório do Console do GCP, confira a moeda mostrada lá (R$ e US$ têm números bem diferentes).',
       'Os dias do gráfico diário seguem o fuso de São Paulo (UTC-3), igual o Console — a Compute Engine usa o uptime real medido de cada dia, não um valor fixo repetido.',
+      'O custo da Compute Engine (recurso e total) é o gasto REAL acumulado desde o dia 1 deste mês (mesmo período do relatório "Mês atual" do Console) — não uma projeção do status de agora. Cloud Run e BigQuery usam uma janela móvel de 30 dias corridos.',
     ];
 
     // --- Compute Engine (VM + disco) ---
-    let diskMonthlyTotal = 0;
+    // "monthlyCostUsd" aqui = gasto REAL desde o dia 1 deste mês (fuso São
+    // Paulo) até agora — não uma projeção "se o status de agora continuasse".
+    // É o que faz bater com o relatório "Mês atual" do Console: uma VM que
+    // liga/desliga várias vezes ao dia tem gasto acumulado bem diferente do
+    // que "status atual × 730h" sugeriria (confirmado comparando com o
+    // Console: 63.96h de uptime real desde 1/set bateu com os R$140,38 reais
+    // de Compute Engine, contra frações de centavo que a projeção por status
+    // atual dava com a VM parada).
+    const monthStart = spMonthStartUtc();
+    const now = new Date();
+    const daysInMonth = spDaysInCurrentMonth();
+    const daysElapsedInMonth = (now.getTime() - monthStart.getTime()) / 86400_000;
+
+    let diskMonthToDateTotal = 0;
+    let diskFullMonthlyTotal = 0;
     // Custo de compute por dia real (uptime real × preço) — soma de todas as
     // instâncias, alimenta o gráfico diário (ver getVmDailyUptimeCost acima).
     // Disco e snapshot (abaixo, fora do loop) entram à parte, como uma fatia
@@ -379,22 +408,18 @@ costsRouter.get('/gcp', async (req, res) => {
     for (const inst of instances) {
       const zoneName = inst.zone.split('/').pop() || '';
       const machineTypeName = inst.machineType.split('/').pop() || '';
-      let cpuMonthly = 0;
-      let ramMonthly = 0;
       let cpuAvgPct = 0;
       let cpuMaxPct = 0;
 
       // Sempre busca o tipo de máquina, mesmo com a instância parada agora —
       // não houve troca de machine type (confirmado via operations list), e o
-      // custo REAL por dia (uptime real × preço) precisa disso mesmo quando o
-      // status atual não é RUNNING (ela pode ter rodado boa parte de um dia
-      // passado e estar parada só agora).
+      // custo REAL precisa disso mesmo quando o status atual não é RUNNING
+      // (ela pode ter rodado boa parte do mês e estar parada só agora).
       const mt = await getMachineTypeInfo(token, inst.machineType);
       const vcpus = mt.guestCpus;
+      const hourlyRate = vcpus * pricing.computeE2CorePerHour + (mt.memoryMb / 1024) * pricing.computeE2RamPerGiBHour;
 
       if (inst.status === 'RUNNING') {
-        cpuMonthly = mt.guestCpus * pricing.computeE2CorePerHour * HOURS_PER_MONTH;
-        ramMonthly = (mt.memoryMb / 1024) * pricing.computeE2RamPerGiBHour * HOURS_PER_MONTH;
         try {
           const util = await monitoringAvgMax(
             token, projectId,
@@ -410,6 +435,20 @@ costsRouter.get('/gcp', async (req, res) => {
         notes.push(`"${inst.name}" está parada agora (status ${inst.status}) — sem cobrança de compute enquanto assim, e sem dado de CPU pra sugerir redimensionamento até ela rodar de novo.`);
       }
 
+      // Uptime real desde o início do mês (São Paulo) — vira o custo de
+      // CPU/RAM mostrado no card do recurso (gasto real, não projeção).
+      let cpuRamMonthToDate = 0;
+      try {
+        const monthToDateSeconds = await monitoringSumWindow(
+          token, projectId,
+          `metric.type="compute.googleapis.com/instance/uptime" resource.type="gce_instance" resource.labels.instance_id="${inst.id}"`,
+          monthStart, now,
+        );
+        cpuRamMonthToDate = (monthToDateSeconds / 3600) * hourlyRate;
+      } catch {
+        // Sem dado de uptime (instância muito nova) — fica só com disco/snapshot.
+      }
+
       try {
         const daily = await getVmDailyUptimeCost(token, projectId, inst.id, vcpus, mt.memoryMb, pricing, DAYS_TREND);
         for (const [date, usd] of daily) computeDaily.set(date, (computeDaily.get(date) || 0) + usd);
@@ -418,9 +457,16 @@ costsRouter.get('/gcp', async (req, res) => {
       }
 
       const diskGb = (inst.disks || []).reduce((sum, d) => sum + Number(d.diskSizeGb || 0), 0);
-      const diskMonthly = diskGb * pricing.computePdBalancedPerGiBMonth;
-      const total = cpuMonthly + ramMonthly + diskMonthly;
-      diskMonthlyTotal += diskMonthly;
+      // Disco cobra o mesmo valor todo santo dia (não depende do uptime) — a
+      // fatia "até agora" é proporcional aos dias já passados deste mês;
+      // diskFullMonthlyTotal (taxa cheia, sem prorata) alimenta o gráfico
+      // diário abaixo, onde cada dia mostra a taxa diária real de disco, não
+      // uma fração "até agora".
+      const diskMonthToDate = diskGb * pricing.computePdBalancedPerGiBMonth * (daysElapsedInMonth / daysInMonth);
+      const diskFullMonthly = diskGb * pricing.computePdBalancedPerGiBMonth;
+      const monthToDateTotal = cpuRamMonthToDate + diskMonthToDate;
+      diskMonthToDateTotal += diskMonthToDate;
+      diskFullMonthlyTotal += diskFullMonthly;
 
       resources.push({
         id: `compute-${inst.name}`,
@@ -428,25 +474,31 @@ costsRouter.get('/gcp', async (req, res) => {
         label: `Compute Engine — ${inst.name}`,
         detail: inst.status === 'RUNNING'
           ? `${machineTypeName} (${vcpus} vCPU) em ${zoneName}, disco ${diskGb}GB — CPU real: ${cpuAvgPct.toFixed(1)}% média / ${cpuMaxPct.toFixed(1)}% pico (${DAYS_TREND}d)`
-          : `${machineTypeName} em ${zoneName} — status ${inst.status} (sem cobrança de compute enquanto parada, disco ${diskGb}GB continua cobrando)`,
-        monthlyCostUsd: total,
-        basis: 'preço de lista E2 on-demand × 730h/mês (instância rodando) + disco',
+          : `${machineTypeName} em ${zoneName} — status ${inst.status} agora (gasto real inclui o tempo rodando mais cedo neste mês), disco ${diskGb}GB`,
+        monthlyCostUsd: monthToDateTotal,
+        basis: `uptime real desde 1/${monthStart.getUTCMonth() + 1} (fuso São Paulo) × preço de lista E2 on-demand + disco`,
       });
 
-      // Recomendação real: CPU média abaixo de 30% em instância com 4+ vCPUs -> vale redimensionar.
+      // Recomendação real: CPU média abaixo de 30% em instância com 4+ vCPUs -> vale
+      // redimensionar. A economia aqui é uma PROJEÇÃO (se o padrão de uso dos
+      // últimos dias continuar por um mês inteiro rodando), diferente do
+      // "monthlyCostUsd" acima (que é o gasto real já ocorrido) — são
+      // perguntas diferentes: uma é "quanto já gastei", a outra é "quanto eu
+      // pouparia se mudasse o tipo de máquina daqui pra frente".
       if (inst.status === 'RUNNING' && vcpus >= 4 && cpuAvgPct > 0 && cpuAvgPct < 30) {
         const targetVcpus = Math.max(2, Math.ceil(vcpus / 4));
         const family = machineTypeName.split('-')[0] || 'e2';
         const targetType = `${family}-standard-${targetVcpus}`;
         const targetRamGb = targetVcpus * 4;
-        const targetMonthly = targetVcpus * pricing.computeE2CorePerHour * HOURS_PER_MONTH
+        const projectedFullMonthUsd = hourlyRate * HOURS_PER_MONTH + diskGb * pricing.computePdBalancedPerGiBMonth;
+        const targetProjectedFullMonthUsd = targetVcpus * pricing.computeE2CorePerHour * HOURS_PER_MONTH
           + targetRamGb * pricing.computeE2RamPerGiBHour * HOURS_PER_MONTH
           + diskGb * pricing.computePdBalancedPerGiBMonth;
         vmRecommendations.push({
           id: `rec-rightsize-${inst.name}`,
           title: `Redimensionar ${inst.name} (${machineTypeName} → ${targetType})`,
           description: `CPU real dos últimos ${DAYS_TREND} dias: ${cpuAvgPct.toFixed(1)}% média, ${cpuMaxPct.toFixed(1)}% de pico em ${vcpus} vCPUs — ainda sobraria folga com ${targetVcpus} vCPUs.`,
-          potentialSavingsUsd: Math.max(0, total - targetMonthly),
+          potentialSavingsUsd: Math.max(0, projectedFullMonthUsd - targetProjectedFullMonthUsd),
           effort: 'medio',
           suggestedCommand: `gcloud compute instances stop ${inst.name} --zone=${zoneName} && gcloud compute instances set-machine-type ${inst.name} --zone=${zoneName} --machine-type=${targetType} && gcloud compute instances start ${inst.name} --zone=${zoneName}`,
         });
@@ -454,21 +506,29 @@ costsRouter.get('/gcp', async (req, res) => {
     }
 
     // --- Snapshots de disco (política de agendamento automático) ---
+    // Mesmo raciocínio do disco acima: taxa cheia pro gráfico diário,
+    // prorata (dias já passados / dias do mês) pro card "gasto até agora".
+    // O volume de snapshot também cresce dia a dia (cada snapshot novo é
+    // incremental) — usar o volume ATUAL prorateado subestima um pouco o
+    // gasto real do começo do mês (quando havia menos GiB acumulado), mas é
+    // a aproximação mais simples sem guardar histórico de tamanho por dia.
     const snapshotGiB = snapshotBytes / (1024 ** 3);
-    const snapshotMonthlyUsd = snapshotGiB * pricing.computePdSnapshotPerGiBMonth;
+    const snapshotFullMonthlyUsd = snapshotGiB * pricing.computePdSnapshotPerGiBMonth;
+    const snapshotMonthToDateUsd = snapshotFullMonthlyUsd * (daysElapsedInMonth / daysInMonth);
     if (snapshotBytes > 0) {
       resources.push({
         id: 'compute-snapshots',
         category: 'compute',
         label: 'Compute Engine — Snapshots',
-        detail: `${snapshotGiB.toFixed(2)}GiB em snapshots automáticos de disco (política de agendamento)`,
-        monthlyCostUsd: snapshotMonthlyUsd,
-        basis: 'storage real dos snapshots (bytes já deduplicados pela própria API) × preço de lista',
+        detail: `${snapshotGiB.toFixed(2)}GiB em snapshots automáticos de disco (política de agendamento) — volume atual, prorateado pelos dias do mês`,
+        monthlyCostUsd: snapshotMonthToDateUsd,
+        basis: 'storage real dos snapshots (bytes já deduplicados pela própria API) × preço de lista, proporcional aos dias já passados no mês',
       });
     }
     // Disco + snapshot cobram o mesmo valor todo dia (não dependem do uptime da VM)
-    // — soma como fatia fixa diária no gráfico, ao lado do custo real de CPU/RAM.
-    const computeDailyFixedUsd = (diskMonthlyTotal + snapshotMonthlyUsd) / 30;
+    // — soma como fatia fixa diária no gráfico (taxa cheia, não prorateada —
+    // cada dia individual mostra a taxa diária real), ao lado do custo real de CPU/RAM.
+    const computeDailyFixedUsd = (diskFullMonthlyTotal + snapshotFullMonthlyUsd) / 30;
 
     // --- IP estático externo ---
     for (const addr of addresses) {

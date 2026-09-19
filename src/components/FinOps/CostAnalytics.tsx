@@ -187,7 +187,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between text-slate-500 text-xs mb-1 font-medium">
-                <span>Custo Total Estimado (Mês)</span>
+                <span>Gasto Real Neste Mês (até agora)</span>
                 <DollarSign className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-2xl font-bold text-slate-900 flex items-baseline gap-1 font-mono">
