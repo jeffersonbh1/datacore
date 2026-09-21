@@ -11,6 +11,7 @@ import {
 } from './types';
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
+import { DataChatView } from './components/DataChat/DataChatView';
 import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
 import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipelineHeader';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
@@ -573,6 +574,13 @@ export default function App() {
                 isLoading={isLoadingEmpresaData}
                 onNavigateToStudio={handleNavigateToStudio}
                 idEmpresa={currentUser.idEmpresa}
+              />
+            )}
+
+            {activeTab === 'chat-dados' && (
+              <DataChatView
+                idEmpresa={currentUser.idEmpresa ?? null}
+                canEditModels={permissions.canEditPipelines}
               />
             )}
 

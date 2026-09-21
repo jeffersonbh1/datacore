@@ -415,6 +415,66 @@ Abra a URL do frontend, faça login, crie uma integração ponta a ponta.
 
 ---
 
+## 9. Converse com os dados (agente de IA)
+
+Tela "Converse com os dados": chat em linguagem natural com um agente (Claude) que
+consulta o catálogo da empresa, aplica regras de negócio cadastradas, responde
+perguntas com números reais (SELECT somente-leitura no BigQuery) e propõe modelos
+Gold dbt. Código: `server/agent/` (loop, ferramentas, guarda-corpos), rota
+`server/routes/agent.ts`, tela `src/components/DataChat/`.
+
+### Setup (uma vez)
+
+```bash
+# 1) Migração da base de conhecimento (regras de negócio por empresa, com RLS)
+#    -> rodar sql/013_regras_negocio.sql no SQL Editor do Supabase
+
+# 2) Chave da API da Anthropic no Secret Manager (nunca em variável de ambiente em texto)
+printf '%s' 'sk-ant-...' | gcloud secrets create anthropic-api-key --data-file=-
+gcloud secrets add-iam-policy-binding anthropic-api-key   --member="serviceAccount:$GATEWAY_SA" --role="roles/secretmanager.secretAccessor"
+
+# 3) Ligar o segredo ao serviço que JÁ está no ar (o `run deploy --image` do passo 5
+#    preserva env/segredos, então isto é necessário uma única vez)
+gcloud run services update airbyte-gateway --region=$REGION   --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key:latest"
+```
+
+Depois, **redeploy do gateway** (o código novo está em `server/`) e **do frontend**
+(nova aba). Variáveis opcionais (`--update-env-vars`): `ANTHROPIC_MODEL` (default
+`claude-opus-5`), `AGENT_MAX_BYTES_BILLED` (default 1 GB por consulta),
+`AGENT_MAX_MESSAGES_PER_HOUR` (default 60 por usuário).
+
+### Modelo de segurança (o que o gateway garante)
+
+- **Identidade e empresa vêm do servidor.** Toda chamada a `/api/agent/*` exige, além da
+  chave do gateway, o JWT da sessão Supabase em `X-User-Token`; o gateway o valida e lê
+  `usuarios.id_empresa`. O navegador nunca informa a empresa.
+- **Só leitura, só o escopo da empresa.** O agente não tem ferramenta de escrita. O SELECT
+  passa por *dry run*: precisa ser um único `SELECT`, tocar apenas tabelas `bronze_/silver_/gold_`
+  dos datasets derivados das integrações da empresa (nunca Raw, nunca outro tenant, nunca
+  `INFORMATION_SCHEMA`/`EXTERNAL_QUERY`) e caber no teto de bytes.
+- **LGPD.** Colunas com nome de dado pessoal chegam ao modelo omitidas, mesmo se a integração
+  rodou sem sanitização.
+- **Salvar Gold é ação do usuário** (botão + confirmação), restrita a admin/engenheiro de dados
+  (checado no servidor pelo `papel` real). O gateway grava `dbt/models/medallion/gold/<empresa>/`,
+  força o prefixo `gold_<empresa>_`, bloqueia `source()`/DDL/DML/refs fora da empresa e reduz o
+  YAML a chaves e testes permitidos. Com `DBT_CODEGEN_GIT=push` (produção) isso vira commit +
+  push no branch principal — como os modelos Bronze/Silver gerados.
+- **Custo.** Cada mensagem chama um modelo pago: limite por usuário/hora e por conversa
+  (40 mensagens, 12 passos de ferramenta por resposta).
+
+### Fumaça
+
+```bash
+curl -s $G/api/agent/info -H "Authorization: Bearer <GATEWAY_API_KEY>"   -H "X-User-Token: <JWT do Supabase de um usuário logado>"
+# -> {"model":"claude-opus-5","empresa":"...","goldPrefix":"gold_<empresa>_","models":N,...}
+# 401 = token ausente/expirado; 403 = usuário sem empresa
+```
+
+Na tela: pergunte "Quais modelos existem no catálogo?" — deve listar as ferramentas usadas
+(catálogo, colunas) e responder. Erro "sem credencial da Anthropic" = passo 2/3 pendente.
+
+---
+
 ## Notas dbt no Cloud Run
 
 - Imagem ~+300 MB (python + dbt-bigquery). `dbt deps` roda no build; `dbt_packages`

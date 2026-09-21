@@ -3,6 +3,9 @@ import { AirbyteStreamSummary, GcpCostReport, SourceCatalogEntry } from '../type
 const gatewayUrl = import.meta.env.VITE_AIRBYTE_GATEWAY_URL || '';
 const gatewayApiKey = import.meta.env.VITE_AIRBYTE_GATEWAY_API_KEY || '';
 
+/** URL e chave do gateway — para chamadas que não cabem em gatewayFetch (ex.: SSE do agente). */
+export const gatewayConfig = () => ({ url: gatewayUrl, apiKey: gatewayApiKey });
+
 async function gatewayFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!gatewayUrl) {
     throw new Error('VITE_AIRBYTE_GATEWAY_URL não configurada.');

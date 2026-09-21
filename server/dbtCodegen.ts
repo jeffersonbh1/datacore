@@ -59,10 +59,10 @@ const SOURCES_FILE = '_datacore_raw__sources.yml';
 const SOURCES_MANIFEST_FILE = '_generated_sources.json';
 const PROPERTIES_FILE = '_properties.yml';
 export const BRONZE_MANIFEST_FILE = '_generated_bronze.json';
-const SILVER_MANIFEST_FILE = '_generated_silver.json';
+export const SILVER_MANIFEST_FILE = '_generated_silver.json';
 
 // Windows + OneDrive às vezes seguram um handle e devolvem EPERM/EBUSY momentâneo.
-function retrySync<T>(fn: () => T, tries = 5, delayMs = 120): T {
+export function retrySync<T>(fn: () => T, tries = 5, delayMs = 120): T {
   for (let i = 0; ; i++) {
     try {
       return fn();
@@ -201,7 +201,7 @@ export function piiMacroFor(column: string): PiiMacro | null {
 
 // --- manifestos (json fora de model-paths) -----------------------------------
 
-function readJsonManifest<T>(projectDir: string, file: string): T {
+export function readJsonManifest<T>(projectDir: string, file: string): T {
   const p = join(projectDir, file);
   if (!existsSync(p)) return {} as T;
   try {
@@ -506,7 +506,7 @@ function validateSpec(spec: IntegrationModelsSpec): string | null {
   return null;
 }
 
-async function gitCommit(repoHintDir: string, message: string, push: boolean): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
+export async function gitCommit(repoHintDir: string, message: string, push: boolean): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
   try {
     const { stdout: top } = await execFileP('git', ['-C', repoHintDir, 'rev-parse', '--show-toplevel']);
     const repo = top.trim();

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   Network, Layers, ShieldCheck, DollarSign, Activity,
-  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2
+  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2, MessagesSquare
 } from 'lucide-react';
 
-export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'execucoes' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
+export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'execucoes' | 'chat-dados' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -46,6 +46,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'execucoes',
       label: 'Execuções',
       icon: <Activity className="w-4 h-4 text-indigo-600 shrink-0" />
+    },
+    {
+      id: 'chat-dados',
+      label: 'Converse com os dados',
+      icon: <MessagesSquare className="w-4 h-4 text-indigo-600 shrink-0" />
     },
     {
       id: 'governance',

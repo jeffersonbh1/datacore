@@ -3,6 +3,8 @@ import './loadEnv';
 import cors from 'cors';
 import express from 'express';
 import { requireGatewayApiKey } from './authMiddleware';
+import { requireUserSession } from './userSession';
+import { agentRouter } from './routes/agent';
 import { authAdminRouter } from './routes/authAdmin';
 import { bronzeRouter } from './routes/bronze';
 import { bronzeAutoSyncRouter } from './routes/bronzeAutoSync';
@@ -43,6 +45,9 @@ app.use('/api/bigquery/silver/auto-sync', requireGatewayApiKey, silverAutoSyncRo
 app.use('/api/costs', requireGatewayApiKey, costsRouter);
 app.use('/api/dbt/models', requireGatewayApiKey, dbtModelsRouter);
 app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
+// Agente "Converse com os dados": além da chave do gateway exige a sessão real
+// do usuário (JWT do Supabase em X-User-Token) — o isolamento por empresa vem dela.
+app.use('/api/agent', requireGatewayApiKey, requireUserSession, agentRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {
