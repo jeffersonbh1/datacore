@@ -14,6 +14,15 @@ export const lineageRouter = Router();
 
 const MAX_BUILD_MODELS = 20;
 
+/**
+ * Nome do teste a partir do unique_id do dbt: `test.<projeto>.<nome_do_teste>.<hash>`. O `name` que o runDbt
+ * devolve é o ÚLTIMO trecho do unique_id — para modelos é o nome do modelo, mas para testes é só o hash —,
+ * então o nome real tem que vir do unique_id.
+ */
+export function testNameFromUniqueId(uniqueId: string): string {
+  return uniqueId.replace(/^test\.[^.]+\./, '').replace(/\.[0-9a-f]{6,}$/i, '');
+}
+
 lineageRouter.get('/', async (_req, res) => {
   try {
     const tenant = await loadTenantContext(getDataCoreUser(res).idEmpresa);
@@ -108,9 +117,11 @@ lineageRouter.post('/gold/build', async (req, res) => {
       });
       for (const m of models) {
         const own = run.models.find((r) => r.uniqueId.startsWith('model.') && r.name === m.name);
+        // Os testes do _properties.yml carregam o nome do modelo no nome (`not_null_<modelo>_<coluna>`).
         const tests = run.models
-          .filter((r) => r.uniqueId.startsWith('test.') && r.name.includes(m.name))
-          .map((r) => ({ name: r.name.replace(/\.[0-9a-f]{8,}$/, ''), status: r.status, message: r.message ?? null }));
+          .filter((r) => r.uniqueId.startsWith('test.'))
+          .map((r) => ({ name: testNameFromUniqueId(r.uniqueId), status: r.status, message: r.message ?? null }))
+          .filter((t) => t.name.includes(m.name));
         const ok = own?.status === 'success';
         results.push({
           model: m.name,
