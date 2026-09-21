@@ -101,4 +101,3 @@ select
     vlr_faturamento_pendente,
     current_timestamp()                                             as _dbt_loaded_at
 from faturamento_mensal
-order by dat_referencia_mes, des_segmento

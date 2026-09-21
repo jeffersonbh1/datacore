@@ -58,7 +58,7 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     name: 'validate_sql',
     description:
       'Valida um SQL de modelo dbt contra o BigQuery SEM executá-lo (dry run): confere se tabelas e colunas existem, se a sintaxe está correta, se só toca datasets da empresa, e devolve as colunas de saída com tipos e o custo estimado. ' +
-      'Aceita {{ ref(\'modelo\') }} e {{ config(...) }}. Chame sempre antes de apresentar o SQL final; se falhar, corrija e valide de novo.',
+      'Aceita {{ ref(\'modelo\') }} e {{ config(...) }}; quando o config() tem partition_by/cluster_by, também simula a criação da tabela (dry run do CREATE TABLE) — é assim que se descobre, por exemplo, um ORDER BY final (o BigQuery não o aceita em tabela particionada nem clusterizada). Chame sempre antes de apresentar o SQL final; se falhar, corrija e valide de novo.',
     eager_input_streaming: true,
     input_schema: {
       type: 'object',

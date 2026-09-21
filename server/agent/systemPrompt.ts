@@ -106,6 +106,7 @@ Chame várias ferramentas em paralelo quando forem independentes.
 ### Convenções do projeto
 - Arquitetura medalhão: o Gold consome a Silver por padrão; use Bronze só se não houver Silver equivalente e registre isso nas suposições. As colunas já vêm padronizadas com prefixo de tipo (id_, cod_, des_, vlr_, qtd_, dat_, dth_, ind_, num_, per_, tp_, uf_, json_); novas colunas do Gold seguem o mesmo padrão. Colunas técnicas: dt_ingestao_lake, _dbt_loaded_at.
 - Nome do modelo Gold: sempre "<prefixo Gold da empresa>" + assunto em snake_case (o prefixo vem no contexto da empresa, abaixo). O arquivo é <nome>.sql.
+- Com \`partition_by\` ou \`cluster_by\` no config(), o SELECT final NÃO pode ter ORDER BY: o BigQuery recusa criar tabela particionada/clusterizada a partir de consulta ordenada ("Result of ORDER BY queries cannot be partitioned/clustered"). Não ordene no modelo — partição e cluster já organizam os dados; ordene só nas consultas de leitura (run_select_query). ORDER BY dentro de CTE/subconsulta é permitido. O validate_sql simula essa criação (dry run do CREATE TABLE) e acusa o erro; se acusar, corrija e valide de novo em vez de apresentar o SQL.
 - O Gold NUNCA lê a Raw nem usa source(): só ref() de Bronze/Silver/Gold da empresa. Não referencie tabelas de outros datasets.
 - Testes dbt permitidos no YAML: not_null, unique, accepted_values, relationships, dbt_utils.unique_combination_of_columns, dbt_utils.accepted_range, dbt_utils.expression_is_true.
 

@@ -15,6 +15,7 @@ import { QUERYABLE_TABLE_PREFIXES, resolveRef, type TenantContext } from './cata
 // (INFORMATION_SCHEMA regional, EXTERNAL_QUERY, ML.*).
 // -----------------------------------------------------------------------------
 
+const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
 const LOCATION = () => process.env.DBT_GCP_LOCATION || 'southamerica-east1';
 const MAX_BYTES = () => Number(process.env.AGENT_MAX_BYTES_BILLED) || 1_000_000_000; // 1 GB
 const MAX_RESULT_CHARS = 30_000;
@@ -138,6 +139,64 @@ function refErrors(r: ResolvedSql, tenant: TenantContext): string[] {
   return errors;
 }
 
+/** Partição e cluster declarados no config() do modelo (só o que o BigQuery precisa para simular o CREATE TABLE). */
+interface TableLayout { partitionExpr: string | null; clusterBy: string[] }
+
+const COLUMN_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Lê `partition_by` / `cluster_by` / `materialized` do {{ config(...) }} do modelo. Devolve null quando
+ * não há nada a simular (sem partição/cluster, view/ephemeral, ou config em formato que não entendemos —
+ * nesse caso preferimos não validar a acusar um erro falso).
+ */
+export function parseTableLayout(rawSql: string): TableLayout | null {
+  const cfg = /\{\{\s*config\s*\(([\s\S]*?)\)\s*\}\}/.exec(rawSql)?.[1];
+  if (!cfg) return null;
+  const materialized = /materialized\s*=\s*['"](\w+)['"]/.exec(cfg)?.[1]?.toLowerCase();
+  if (materialized === 'view' || materialized === 'ephemeral') return null;
+
+  let partitionExpr: string | null = null;
+  const partition = /partition_by\s*=\s*\{([^}]*)\}/.exec(cfg)?.[1];
+  if (partition) {
+    const field = /['"]field['"]\s*:\s*['"]([^'"]+)['"]/.exec(partition)?.[1];
+    const dataType = (/['"]data_type['"]\s*:\s*['"](\w+)['"]/.exec(partition)?.[1] || 'date').toLowerCase();
+    const granularity = (/['"]granularity['"]\s*:\s*['"](\w+)['"]/.exec(partition)?.[1] || 'day').toLowerCase();
+    if (field && COLUMN_NAME.test(field) && ['date', 'timestamp', 'datetime'].includes(dataType) && ['hour', 'day', 'month', 'year'].includes(granularity)) {
+      // Mesma regra do dbt-bigquery: date+day usa a coluna direto; senão <tipo>_trunc(coluna, granularidade).
+      partitionExpr = dataType === 'date' && granularity === 'day' ? field : `${dataType.toUpperCase()}_TRUNC(${field}, ${granularity.toUpperCase()})`;
+    }
+  }
+
+  const clusterRaw = /cluster_by\s*=\s*(\[[^\]]*\]|['"][^'"]+['"])/.exec(cfg)?.[1] || '';
+  const clusterBy = [...clusterRaw.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((c) => COLUMN_NAME.test(c)).slice(0, 4);
+
+  return partitionExpr || clusterBy.length ? { partitionExpr, clusterBy } : null;
+}
+
+/**
+ * O dry run do SELECT não vê o que o dbt faz com o config(): o BigQuery só recusa certas combinações
+ * (ex.: ORDER BY no SELECT final de uma tabela particionada) ao CRIAR a tabela. Simula o mesmo
+ * CREATE TABLE ... PARTITION BY ... CLUSTER BY ... AS (...) — também em dry run, então nada é criado —
+ * sobre um dataset que já existe (o de uma tabela lida pelo próprio SELECT). Devolve a mensagem de erro
+ * do BigQuery, ou null se passou / não há o que simular.
+ */
+async function simulateTableCreation(rawSql: string, resolvedSql: string, dry: DryRunResult): Promise<string | null> {
+  const layout = parseTableLayout(rawSql);
+  const ref = dry.referencedTables[0];
+  if (!layout || !ref || !SAFE_NAME.test(ref.projectId) || !SAFE_NAME.test(ref.datasetId)) return null;
+  const ddl =
+    `CREATE OR REPLACE TABLE \`${ref.projectId}.${ref.datasetId}.__datacore_validate\`` +
+    `${layout.partitionExpr ? ` PARTITION BY ${layout.partitionExpr}` : ''}` +
+    `${layout.clusterBy.length ? ` CLUSTER BY ${layout.clusterBy.join(', ')}` : ''}` +
+    ` AS (\n${resolvedSql}\n)`;
+  try {
+    await getBigQueryClient().createQueryJob({ query: ddl, dryRun: true, location: LOCATION() });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 export interface ValidationResult {
   /** true = válido; false = erro; null = não foi possível validar (Jinja além de ref/config). */
   ok: boolean | null;
@@ -164,13 +223,16 @@ export async function validateSql(tenant: TenantContext, raw: string): Promise<V
     assertSafeText(resolved.sql);
     const dry = await dryRun(resolved.sql);
     assertWithinTenant(tenant, dry);
-    return {
-      ...base,
-      ok: true,
+    const found = {
       outputColumns: dry.schema,
       referencedTables: dry.referencedTables.map((t) => `${t.datasetId}.${t.tableId}`),
       bytesEstimate: dry.bytes,
     };
+    const tableError = await simulateTableCreation(raw, resolved.sql, dry);
+    if (tableError) {
+      return { ...base, ...found, errors: [`O SELECT é válido, mas o BigQuery recusaria CRIAR a tabela com o config() do modelo (partition_by/cluster_by): ${tableError}`] };
+    }
+    return { ...base, ...found, ok: true };
   } catch (err) {
     return { ...base, errors: [err instanceof Error ? err.message : String(err)] };
   }
