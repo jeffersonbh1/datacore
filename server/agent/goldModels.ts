@@ -139,6 +139,7 @@ function upsertProperties(path: string, entry: Record<string, unknown>): void {
     models = doc.get('models', true);
   }
   if (!isSeq(models)) throw new GoldSaveError('_properties.yml existente está num formato inesperado.', 500);
+  models.flow = false; // `models: []` (flow) faria todo o arquivo sair como [ {name: ...} ]
   models.items = models.items.filter((it) => !(isMap(it) && it.get('name') === entry.name));
   models.add(doc.createNode(entry));
   retrySync(() => writeFileSync(path, doc.toString(), 'utf8'));

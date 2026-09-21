@@ -133,7 +133,7 @@ export const SaveGoldModal: React.FC<SaveGoldModalProps> = ({ sql, yaml, suggest
           <div className="p-5 space-y-3">
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 space-y-2">
               <p className="font-semibold flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Modelo {saved.overwritten ? 'atualizado' : 'salvo'}: <span className="font-mono">{saved.name}</span></p>
-              <ul className="text-xs font-mono space-y-0.5">{saved.files.map((f) => <li key={f}>dbt/models/medallion/gold/{f}</li>)}</ul>
+              <ul className="text-xs font-mono space-y-0.5">{saved.files.map((f) => <li key={f} className="break-all">dbt/models/medallion/gold/{f}</li>)}</ul>
               <p className="text-xs flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> {GIT_RESULT[saved.git]}{saved.gitDetail ? ` (${saved.gitDetail})` : ''}</p>
             </div>
             <p className="text-xs text-slate-500">

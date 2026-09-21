@@ -512,7 +512,11 @@ export async function gitCommit(repoHintDir: string, message: string, push: bool
     const repo = top.trim();
     const name = process.env.GIT_AUTHOR_NAME || 'DataCore Gateway';
     const email = process.env.GIT_AUTHOR_EMAIL || 'gateway@datacore.local';
-    await execFileP('git', ['-C', repo, 'add', '--', 'dbt']);
+    // core.autocrlf=input: a imagem do gateway leva dbt/ com CRLF (vem de um checkout
+    // Windows) enquanto o índice do repo está em LF. Sem normalizar, o `add` enxerga
+    // TODOS os arquivos como alterados e cada commit automático troca o fim de linha
+    // de dezenas de arquivos que não tinham nada a ver com o modelo salvo.
+    await execFileP('git', ['-C', repo, '-c', 'core.autocrlf=input', 'add', '--', 'dbt']);
     const { stdout: staged } = await execFileP('git', ['-C', repo, 'diff', '--cached', '--name-only']);
     if (!staged.trim()) return { git: 'committed', gitDetail: 'nada a commitar' };
     await execFileP('git', ['-C', repo, '-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message]);
