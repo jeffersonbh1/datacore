@@ -1,0 +1,74 @@
+version: 2
+models:
+  - name: gold_datacore_matriz_fahel_beach_faturamento_mensal_segmento
+    description: >
+      Faturamento mensal da Arena Fahel Beach por segmento de receita (BAR,
+      ALUGUEL_QUADRA, AULAS). Grão: mês de competência x segmento. Bar vem de
+      vendas_bar (exclui vendas canceladas, valor liquido de desconto); aluguel
+      de quadra e aulas vêm de agendamentos, classificados pela existência de
+      vínculo em aulas (relação 1:1 por id_agendamento).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - dat_referencia_mes
+            - des_segmento
+      - dbt_utils.expression_is_true:
+          expression: vlr_faturamento_liquido = vlr_faturamento_pago +
+            vlr_faturamento_pendente
+    columns:
+      - name: dat_referencia_mes
+        description: Primeiro dia do mês de competência (data da venda no bar / data do
+          agendamento).
+        data_tests:
+          - not_null
+      - name: num_ano
+        description: Ano de referência.
+        data_tests:
+          - not_null
+      - name: num_mes
+        description: Mês de referência (1 a 12).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 12
+      - name: des_segmento
+        description: Segmento de receita.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - BAR
+                - ALUGUEL_QUADRA
+                - AULAS
+      - name: qtd_transacoes
+        description: Quantidade de transações do segmento no mês (vendas de bar ou
+          agendamentos).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: vlr_faturamento_bruto
+        description: Soma dos valores brutos antes de desconto.
+        data_tests:
+          - not_null
+      - name: vlr_desconto
+        description: Soma dos descontos concedidos (aplicável apenas ao segmento BAR;
+          zero nos demais).
+        data_tests:
+          - not_null
+      - name: vlr_faturamento_liquido
+        description: Faturamento líquido de descontos, independentemente do status de
+          pagamento.
+        data_tests:
+          - not_null
+      - name: vlr_faturamento_pago
+        description: Parcela do faturamento líquido com status de pagamento "Pago".
+        data_tests:
+          - not_null
+      - name: vlr_faturamento_pendente
+        description: Parcela do faturamento líquido ainda não paga.
+        data_tests:
+          - not_null
+      - name: _dbt_loaded_at
+        description: Data/hora do build deste modelo.
