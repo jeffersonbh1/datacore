@@ -1,0 +1,24 @@
+version: 2
+models:
+  [
+    {
+        name: gold_datacore_matriz_teste_descartavel,
+        description: "Modelo temporário de teste técnico. Contagem distinta de alunos da
+          Arena Fahel Beach agregada pelo mês de cadastro (dth_criacao). Não
+          usar para análise de negócio.\n",
+        columns:
+          [
+            {
+                name: dat_mes_cadastro,
+                description: Primeiro dia do mês de cadastro do aluno (date_trunc de
+                  dth_criacao).,
+                data_tests: [ not_null, unique ]
+              },
+            {
+                name: qtd_alunos,
+                description: Quantidade distinta de id_aluno cadastrados no mês.,
+                data_tests: [ not_null, { dbt_utils.accepted_range: { min_value: 0, inclusive: true } } ]
+              }
+          ]
+      }
+  ]
