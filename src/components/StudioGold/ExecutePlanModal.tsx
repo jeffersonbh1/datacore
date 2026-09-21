@@ -43,7 +43,7 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label="Executar fluxo">
       <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><Play className="w-4 h-4 text-indigo-600" /> Executar fluxo até <span className="font-mono text-sm">{targetName}</span></h3>
+          <h3 className="min-w-0 text-base font-bold text-slate-900 flex items-center flex-wrap gap-x-2"><Play className="w-4 h-4 text-indigo-600 shrink-0" /> <span>Executar fluxo até</span> <span className="font-mono text-sm break-all">{targetName}</span></h3>
           {phase !== 'running' && <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" aria-label="Fechar"><X className="w-4 h-4" /></button>}
         </div>
 
