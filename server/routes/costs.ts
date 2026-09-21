@@ -369,6 +369,113 @@ async function getBigQueryUsage(region: string, lookbackDays: number): Promise<{
   return { bytesBilled30d, dailyBytesBilled, storageBytes };
 }
 
+// --- BigQuery Billing Export (fatura oficial real) ----------------------------
+
+// Billing export (Standard + Detailed usage cost) ativado nesta sessão via
+// Console (não dá pra automatizar por gcloud/API) em
+// data-plataform-dev.billing_export — destino: dataset já criado, sem
+// expiração padrão de tabela. Só existe pra este projeto/conta hoje, mas fica
+// como env var pra não ficar hardcoded caso troque de conta de billing.
+const BILLING_ACCOUNT_ID = process.env.GCP_BILLING_ACCOUNT_ID || '0114D9-15523A-79DD49';
+const BILLING_EXPORT_DATASET = process.env.GCP_BILLING_EXPORT_DATASET || 'billing_export';
+
+interface RealBillingReport {
+  resources: GcpResourceCost[];
+  dailyTrend: GcpCostReport['dailyTrend'];
+  totalMonthlyCostUsd: number;
+}
+
+const CATEGORY_BY_SERVICE: Record<string, GcpResourceCost['category']> = {
+  'Compute Engine': 'compute',
+  'Cloud Run': 'cloud_run',
+  'BigQuery': 'bigquery',
+  'Artifact Registry': 'artifact_registry',
+  'Secret Manager': 'secret_manager',
+};
+
+/**
+ * Fatura oficial real via BigQuery Billing Export (Detailed usage cost) —
+ * ground truth do próprio GCP, evita todo o encadeamento de estimativa
+ * (Monitoring × preço de lista) abaixo quando tem dado disponível. A tabela
+ * só passa a existir (e só tem linha pros dias já faturados) algumas horas
+ * depois de o export ser ativado — se a tabela não existir ainda, ou não
+ * tiver nenhuma linha no intervalo pedido, devolve null e quem chamou cai
+ * pro pipeline de estimativa (ver rota principal abaixo), sem quebrar a tela.
+ * cost_in_usd = cost / currency_conversion_rate (a fatura está em BRL neste
+ * projeto); créditos vêm à parte de `cost` e precisam ser somados pro custo
+ * líquido (ver docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-tables/detailed-usage).
+ */
+async function getRealBillingReport(
+  projectId: string, startLabel: string, endLabel: string,
+  dayWindows: Array<{ label: string }>,
+): Promise<RealBillingReport | null> {
+  const bq = getBigQueryClient();
+  const table = `\`${projectId}.${BILLING_EXPORT_DATASET}.gcp_billing_export_resource_v1_${BILLING_ACCOUNT_ID.replace(/-/g, '_')}\``;
+  type Row = { day: { value: string }; service_desc: string; resource_name: string | null; net_cost: number; fx_rate: number };
+  let rows: Row[];
+  try {
+    const result = await bq.query({
+      query: `
+        SELECT
+          DATE(usage_start_time, "America/Sao_Paulo") AS day,
+          service.description AS service_desc,
+          CASE WHEN service.description = 'Compute Engine' THEN resource.name ELSE NULL END AS resource_name,
+          SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net_cost,
+          AVG(currency_conversion_rate) AS fx_rate
+        FROM ${table}
+        WHERE project.id = @projectId
+          AND DATE(usage_start_time, "America/Sao_Paulo") BETWEEN @start AND @end
+        GROUP BY day, service_desc, resource_name
+      `,
+      params: { projectId, start: startLabel, end: endLabel },
+    });
+    rows = result[0] as unknown as Row[];
+  } catch {
+    // Tabela ainda não existe — export recém-ativado, o GCP ainda não criou.
+    return null;
+  }
+  if (!rows || rows.length === 0) return null;
+
+  const byResource = new Map<string, { category: GcpResourceCost['category']; label: string; costUsd: number }>();
+  const dailyByDate = new Map<string, { compute: number; cloudRun: number; bigquery: number }>();
+
+  for (const r of rows) {
+    const category = CATEGORY_BY_SERVICE[r.service_desc] || 'other';
+    const fx = r.fx_rate || 1;
+    const costUsd = Number(r.net_cost || 0) / fx;
+    const key = r.resource_name ? `${r.service_desc}::${r.resource_name}` : r.service_desc;
+    const label = r.resource_name ? `${r.service_desc} — ${r.resource_name}` : r.service_desc;
+    const existing = byResource.get(key);
+    if (existing) existing.costUsd += costUsd;
+    else byResource.set(key, { category, label, costUsd });
+
+    const dayLabel = r.day.value;
+    const bucket = dailyByDate.get(dayLabel) || { compute: 0, cloudRun: 0, bigquery: 0 };
+    if (category === 'compute') bucket.compute += costUsd;
+    else if (category === 'cloud_run') bucket.cloudRun += costUsd;
+    else if (category === 'bigquery') bucket.bigquery += costUsd;
+    dailyByDate.set(dayLabel, bucket);
+  }
+
+  const resources: GcpResourceCost[] = Array.from(byResource.entries()).map(([id, v]) => ({
+    id: `real-${id}`,
+    category: v.category,
+    label: v.label,
+    detail: 'Custo real da fatura do GCP (BigQuery Billing Export)',
+    monthlyCostUsd: v.costUsd,
+    basis: 'fatura oficial (gcp_billing_export_resource_v1) — custo líquido de créditos, convertido de BRL pra USD pela taxa de câmbio do próprio export',
+  }));
+
+  const dailyTrend: GcpCostReport['dailyTrend'] = dayWindows.map((w) => {
+    const bucket = dailyByDate.get(w.label) || { compute: 0, cloudRun: 0, bigquery: 0 };
+    return { date: w.label, computeUsd: bucket.compute, cloudRunUsd: bucket.cloudRun, bigqueryUsd: bucket.bigquery };
+  });
+
+  const totalMonthlyCostUsd = resources.reduce((sum, r) => sum + r.monthlyCostUsd, 0);
+
+  return { resources, dailyTrend, totalMonthlyCostUsd };
+}
+
 // --- Rota principal --------------------------------------------------------------
 
 interface CachedReport { value: GcpCostReport; expiresAt: number }
@@ -418,7 +525,7 @@ costsRouter.get('/gcp', async (req, res) => {
 
     const dayWindows = spDayWindowsRange(startLabel, endLabel);
     const token = await getGcpAccessToken();
-    const [pricing, instances, addresses, runServices, bqUsage, arBytes, secretVersions, snapshotBytes] = await Promise.all([
+    const [pricing, instances, addresses, runServices, bqUsage, arBytes, secretVersions, snapshotBytes, realBilling] = await Promise.all([
       getGcpPricing(region),
       listComputeInstances(token, projectId),
       listExternalAddresses(token, projectId),
@@ -427,6 +534,7 @@ costsRouter.get('/gcp', async (req, res) => {
       getArtifactRegistryStorageBytes(token, projectId, region),
       getSecretVersionCount(token, projectId),
       getSnapshotStorageBytes(token, projectId),
+      getRealBillingReport(projectId, startLabel, endLabel, dayWindows),
     ]);
 
     const resources: GcpResourceCost[] = [];
@@ -700,16 +808,26 @@ costsRouter.get('/gcp', async (req, res) => {
       bigqueryUsd: bqDaily.get(w.label) || 0,
     }));
 
+    // Fatura oficial (BigQuery Billing Export) é a fonte preferencial quando
+    // disponível — substitui os valores de $ da estimativa acima, mas as
+    // recomendações (rightsizing/limpeza) continuam vindo do uso real medido
+    // via Monitoring, já calculado no loop acima independente da fonte de custo.
+    if (realBilling) {
+      notes.unshift('Usando dado REAL da fatura do GCP (BigQuery Billing Export, ativado nesta sessão) — não é mais estimativa por uso × preço de lista. Convertido de BRL pra USD pela taxa de câmbio do próprio export.');
+    } else {
+      notes.push('BigQuery Billing Export foi ativado mas ainda não tem dado disponível para este período (a exportação nova leva algumas horas pra começar a gravar) — usando estimativa por uso real medido enquanto isso.');
+    }
+
     const report: GcpCostReport = {
       generatedAt: new Date().toISOString(),
       projectId,
       region,
       rangeStart: startLabel,
       rangeEnd: endLabel,
-      resources,
-      dailyTrend,
+      resources: realBilling ? realBilling.resources : resources,
+      dailyTrend: realBilling ? realBilling.dailyTrend : dailyTrend,
       recommendations: vmRecommendations,
-      totalMonthlyCostUsd,
+      totalMonthlyCostUsd: realBilling ? realBilling.totalMonthlyCostUsd : totalMonthlyCostUsd,
       notes,
     };
 
