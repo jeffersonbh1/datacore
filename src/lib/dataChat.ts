@@ -87,6 +87,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return json as T;
 }
 
+/** Chamada autenticada ao gateway (chave + sessão do usuário) — reutilizada por outras telas que precisam da empresa do usuário. */
+export const gatewayUserRequest = request;
+
 export const fetchAgentInfo = () => request<AgentInfo>('/api/agent/info');
 
 export const previewGoldModel = (body: { name: string; sql: string; yaml?: string }) =>

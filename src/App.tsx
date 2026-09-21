@@ -12,6 +12,7 @@ import {
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { DataChatView } from './components/DataChat/DataChatView';
+import { StudioGoldView } from './components/StudioGold/StudioGoldView';
 import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
 import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipelineHeader';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
@@ -534,6 +535,14 @@ export default function App() {
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'studio-gold' && (
+              <StudioGoldView
+                pipelines={pipelines}
+                idEmpresa={currentUser.idEmpresa ?? null}
+                canExecute={permissions.canTriggerExecutions}
+              />
             )}
 
             {activeTab === 'auto-pipeline' && (

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -506,38 +506,185 @@ function validateSpec(spec: IntegrationModelsSpec): string | null {
   return null;
 }
 
-export async function gitCommit(repoHintDir: string, message: string, push: boolean): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
+const git = (repo: string, args: string[]) => execFileP('git', ['-C', repo, ...args]);
+
+/** Roda git com dados na stdin (listas grandes de caminhos não cabem em argv). */
+function gitWithStdin(repo: string, args: string[], input: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['-C', repo, ...args], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (c) => { stderr += c; });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`git ${args[0]} falhou (${code}): ${stderr.trim()}`))));
+    child.stdin.end(input);
+  });
+}
+
+/**
+ * O container do gateway NÃO tem o repositório inteiro no disco: a imagem leva só
+ * `dbt/`, o `package.json` e o `.git` (Dockerfile). Para o git isso são centenas de
+ * arquivos "apagados", e `dbt/` chega em CRLF (checkout Windows) contra um índice em
+ * LF — os dois deixariam a árvore "suja" e `git rebase` se recusaria a rodar.
+ * Antes de integrar com o remoto: (1) autocrlf=input, para CRLF == LF na comparação;
+ * (2) skip-worktree nos arquivos ausentes, que o git passa a tratar como "fora do
+ * checkout" (o rebase atualiza o índice deles sem tentar recriá-los no disco).
+ * Só roda no gateway (GIT_PUSH_REMOTE_URL definido) — num checkout completo de dev
+ * isso não é necessário e não deve mexer na configuração do repositório dele.
+ */
+async function prepareSparseRepo(repo: string): Promise<void> {
+  await git(repo, ['config', 'core.autocrlf', 'input']);
+  const { stdout } = await execFileP('git', ['-C', repo, 'ls-files', '-d', '-z'], { maxBuffer: 64 * 1024 * 1024 });
+  if (stdout) await gitWithStdin(repo, ['update-index', '--skip-worktree', '-z', '--stdin'], stdout);
+}
+
+const MAX_PUSH_ATTEMPTS = 3;
+const isRaceRejection = (msg: string) => /non-fast-forward|fetch first|\[rejected\]|failed to update ref/i.test(msg);
+
+class GitConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GitConflictError';
+  }
+}
+
+// Serializa as operações de git do processo (salvar Gold, codegen Bronze/Silver e o
+// sync de leitura abaixo): rebase/commit concorrentes no mesmo repositório se pisariam.
+let gitQueue: Promise<unknown> = Promise.resolve();
+function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = gitQueue.then(fn, fn);
+  gitQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/**
+ * fetch + rebase dos commits locais em cima do remoto (o "pull --rebase"), sem push.
+ * Sem commits locais é só um fast-forward — o que também atualiza os arquivos de dbt/
+ * no disco. Conflito => aborta o rebase (repositório volta ao estado anterior).
+ * Devolve quantos commits locais ainda não estão no remoto e quantos do remoto entraram.
+ */
+async function integrateRemote(repo: string, branch: string, ident: string[]): Promise<{ ahead: number; integrated: number }> {
+  await git(repo, ['fetch', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+  const ahead = Number((await git(repo, ['rev-list', '--count', `origin/${branch}..HEAD`])).stdout.trim());
+  const behind = Number((await git(repo, ['rev-list', '--count', `HEAD..origin/${branch}`])).stdout.trim());
+  if (behind > 0) {
+    try {
+      await git(repo, [...ident, 'rebase', `origin/${branch}`]);
+    } catch (err) {
+      const { stdout } = await git(repo, ['diff', '--name-only', '--diff-filter=U']).catch(() => ({ stdout: '' }));
+      await git(repo, ['rebase', '--abort']).catch(() => undefined);
+      const files = stdout.trim().split('\n').filter(Boolean);
+      // Só é "conflito" quando há arquivos em conflito; sem eles o rebase se recusou por outro
+      // motivo (ex.: edição local ainda não commitada) e a mensagem do git é o que ajuda.
+      const gitMsg = ((err as { stderr?: string }).stderr || (err instanceof Error ? err.message : String(err))).trim().split('\n')[0];
+      throw new GitConflictError(
+        files.length
+          ? `conflito ao integrar com o remoto: origin/${branch} avançou (${behind} commit(s)) e mexeu no(s) mesmo(s) trecho(s) de ${files.join(', ')}.`
+          : `não foi possível integrar com o remoto (origin/${branch} avançou ${behind} commit(s)): ${gitMsg}`,
+      );
+    }
+  }
+  return { ahead, integrated: behind };
+}
+
+/**
+ * Publica o branch integrando antes o que o remoto tem de novo (equivalente a
+ * `git pull --rebase` + push). Se o remoto andar entre o rebase e o push (corrida),
+ * refaz até MAX_PUSH_ATTEMPTS vezes. Conflito => nada é publicado pela metade e
+ * o erro lista os arquivos em conflito.
+ */
+async function publishBranch(repo: string, branch: string, ident: string[]): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
+  let integrated = 0;
+  for (let attempt = 1; ; attempt++) {
+    let step: { ahead: number; integrated: number };
+    try {
+      step = await integrateRemote(repo, branch, ident);
+    } catch (err) {
+      if (err instanceof GitConflictError) throw new Error(`${err.message} Nada foi publicado; resolva no repositório e faça novo deploy do gateway.`);
+      throw err;
+    }
+    integrated += step.integrated;
+    if (step.ahead === 0) return { git: 'committed', gitDetail: 'nada a commitar' };
+    try {
+      await git(repo, ['push', 'origin', `HEAD:${branch}`]);
+      return { git: 'pushed', ...(integrated ? { gitDetail: `integrado ao remoto (rebase sobre ${integrated} commit(s) novo(s))` } : {}) };
+    } catch (err) {
+      if (attempt >= MAX_PUSH_ATTEMPTS || !isRaceRejection(err instanceof Error ? err.message : String(err))) throw err;
+    }
+  }
+}
+
+async function gitCommitInner(repoHintDir: string, message: string, push: boolean): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
   try {
     const { stdout: top } = await execFileP('git', ['-C', repoHintDir, 'rev-parse', '--show-toplevel']);
     const repo = top.trim();
     const name = process.env.GIT_AUTHOR_NAME || 'DataCore Gateway';
     const email = process.env.GIT_AUTHOR_EMAIL || 'gateway@datacore.local';
+    const ident = ['-c', `user.name=${name}`, '-c', `user.email=${email}`];
+    const remoteUrl = process.env.GIT_PUSH_REMOTE_URL;
+    if (push && remoteUrl) await prepareSparseRepo(repo);
     // core.autocrlf=input: a imagem do gateway leva dbt/ com CRLF (vem de um checkout
     // Windows) enquanto o índice do repo está em LF. Sem normalizar, o `add` enxerga
     // TODOS os arquivos como alterados e cada commit automático troca o fim de linha
     // de dezenas de arquivos que não tinham nada a ver com o modelo salvo.
     await execFileP('git', ['-C', repo, '-c', 'core.autocrlf=input', 'add', '--', 'dbt']);
     const { stdout: staged } = await execFileP('git', ['-C', repo, 'diff', '--cached', '--name-only']);
-    if (!staged.trim()) return { git: 'committed', gitDetail: 'nada a commitar' };
-    await execFileP('git', ['-C', repo, '-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message]);
-    if (push) {
-      // Remote SSH explícito via deploy key (ver Dockerfile/GIT_SSH_COMMAND) —
-      // não depende do remote que a imagem trouxe do checkout que a gerou
-      // (normalmente HTTPS, sem credencial). GIT_PUSH_REMOTE_URL vem do
-      // cloudbuild.gateway.yaml (git@github.com:<owner>/<repo>.git).
-      const remoteUrl = process.env.GIT_PUSH_REMOTE_URL;
-      if (remoteUrl) await execFileP('git', ['-C', repo, 'remote', 'set-url', 'origin', remoteUrl]);
-      // Push explícito pro branch atual (HEAD:<branch>) em vez de `git push` puro —
-      // a imagem pode não ter upstream configurado para o branch copiado do
-      // checkout que gerou o build.
-      const { stdout: branchOut } = await execFileP('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD']);
-      const branch = branchOut.trim();
-      await execFileP('git', ['-C', repo, 'push', 'origin', `HEAD:${branch}`]);
-      return { git: 'pushed' };
-    }
-    return { git: 'committed' };
+    const hasNew = staged.trim().length > 0;
+    if (hasNew) await execFileP('git', ['-C', repo, ...ident, 'commit', '-m', message]);
+    if (!push) return hasNew ? { git: 'committed' } : { git: 'committed', gitDetail: 'nada a commitar' };
+
+    // Remote SSH explícito via deploy key (ver Dockerfile/GIT_SSH_COMMAND) —
+    // não depende do remote que a imagem trouxe do checkout que a gerou
+    // (normalmente HTTPS, sem credencial). GIT_PUSH_REMOTE_URL vem do
+    // cloudbuild.gateway.yaml (git@github.com:<owner>/<repo>.git).
+    if (remoteUrl) await execFileP('git', ['-C', repo, 'remote', 'set-url', 'origin', remoteUrl]);
+    // Push explícito pro branch atual (HEAD:<branch>) em vez de `git push` puro —
+    // a imagem pode não ter upstream configurado para o branch copiado do
+    // checkout que gerou o build. Mesmo sem nada novo a commitar, publica commits
+    // locais que ficaram pendentes de uma tentativa anterior que falhou.
+    const { stdout: branchOut } = await execFileP('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD']);
+    return await publishBranch(repo, branchOut.trim(), ident);
   } catch (err) {
     return { git: 'failed', gitDetail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Serializado com o restante das operações de git do processo (ver withGitLock). */
+export function gitCommit(repoHintDir: string, message: string, push: boolean): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'>> {
+  return withGitLock(() => gitCommitInner(repoHintDir, message, push));
+}
+
+let lastRemoteSyncAt = 0;
+const REMOTE_SYNC_MIN_INTERVAL_MS = Number(process.env.DBT_SYNC_INTERVAL_MS) || 30_000;
+
+/**
+ * Traz para o disco do gateway o que o GitHub tem em dbt/ (fetch + fast-forward/rebase).
+ * O disco do Cloud Run é efêmero: a instância reinicia a partir da imagem, então um
+ * modelo Gold salvo depois do último deploy some da leitura (catálogo do agente, tela de
+ * linhagem, build) até um novo deploy — a menos que se sincronize antes de ler. Só age no
+ * modo `push` com GIT_PUSH_REMOTE_URL (gateway em produção); em dev/`off` não faz nada.
+ * Limitado a 1 execução por DBT_SYNC_INTERVAL_MS (30 s). Nunca lança: erro de rede ou
+ * conflito só é logado e a leitura segue com o que já está no disco.
+ */
+export async function syncDbtFromRemote(force = false): Promise<void> {
+  const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
+  const remoteUrl = process.env.GIT_PUSH_REMOTE_URL;
+  if (mode !== 'push' || !remoteUrl) return;
+  if (!force && Date.now() - lastRemoteSyncAt < REMOTE_SYNC_MIN_INTERVAL_MS) return;
+  try {
+    await withGitLock(async () => {
+      if (!force && Date.now() - lastRemoteSyncAt < REMOTE_SYNC_MIN_INTERVAL_MS) return; // outro pedido acabou de sincronizar
+      const { stdout: top } = await execFileP('git', ['-C', resolveDbtProjectDir(), 'rev-parse', '--show-toplevel']);
+      const repo = top.trim();
+      const name = process.env.GIT_AUTHOR_NAME || 'DataCore Gateway';
+      const email = process.env.GIT_AUTHOR_EMAIL || 'gateway@datacore.local';
+      await prepareSparseRepo(repo);
+      await execFileP('git', ['-C', repo, 'remote', 'set-url', 'origin', remoteUrl]);
+      const { stdout: branchOut } = await execFileP('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD']);
+      await integrateRemote(repo, branchOut.trim(), ['-c', `user.name=${name}`, '-c', `user.email=${email}`]);
+      lastRemoteSyncAt = Date.now();
+    });
+  } catch (err) {
+    console.warn('[dbt] sync com o remoto falhou (segue com o disco atual):', err instanceof Error ? err.message.split('\n')[0] : err);
   }
 }
 

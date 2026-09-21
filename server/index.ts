@@ -12,6 +12,7 @@ import { connectionsRouter } from './routes/connections';
 import { connectorsRouter } from './routes/connectors';
 import { costsRouter } from './routes/costs';
 import { dbtModelsRouter } from './routes/dbtModels';
+import { lineageRouter } from './routes/lineage';
 import { destinationsRouter } from './routes/destinations';
 import { prepareGitDeployKey } from './gitDeployKey';
 import { rawCatalogRouter } from './routes/rawCatalog';
@@ -48,6 +49,8 @@ app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
 // Agente "Converse com os dados": além da chave do gateway exige a sessão real
 // do usuário (JWT do Supabase em X-User-Token) — o isolamento por empresa vem dela.
 app.use('/api/agent', requireGatewayApiKey, requireUserSession, agentRouter);
+// Studio Visual ETL Gold: linhagem da empresa + construção de modelos Gold (também exige a sessão do usuário).
+app.use('/api/lineage', requireGatewayApiKey, requireUserSession, lineageRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {

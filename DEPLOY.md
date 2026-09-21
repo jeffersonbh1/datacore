@@ -458,7 +458,12 @@ Depois, **redeploy do gateway** (o código novo está em `server/`) e **do front
   (checado no servidor pelo `papel` real). O gateway grava `dbt/models/medallion/gold/<empresa>/`,
   força o prefixo `gold_<empresa>_`, bloqueia `source()`/DDL/DML/refs fora da empresa e reduz o
   YAML a chaves e testes permitidos. Com `DBT_CODEGEN_GIT=push` (produção) isso vira commit +
-  push no branch principal — como os modelos Bronze/Silver gerados.
+  push no branch principal — como os modelos Bronze/Silver gerados. Antes do push o gateway
+  integra o que o remoto tem de novo (`git fetch` + `git rebase`, com nova tentativa se o remoto
+  andar no meio do push), então um `main` que avançou depois do build da imagem não derruba mais o
+  salvamento. Se o remoto e o gateway editaram o mesmo trecho de um arquivo, o rebase é abortado,
+  nada é publicado e a tela mostra "commit/push falhou" com os arquivos em conflito (os arquivos
+  continuam gravados no gateway; resolva no repositório e refaça o deploy).
 - **Custo.** Cada mensagem chama um modelo pago: limite por usuário/hora e por conversa
   (40 mensagens, 12 passos de ferramenta por resposta).
 
@@ -472,6 +477,35 @@ curl -s $G/api/agent/info -H "Authorization: Bearer <GATEWAY_API_KEY>"   -H "X-U
 
 Na tela: pergunte "Quais modelos existem no catálogo?" — deve listar as ferramentas usadas
 (catálogo, colunas) e responder. Erro "sem credencial da Anthropic" = passo 2/3 pendente.
+
+---
+
+## 10. Studio Visual ETL Gold (linhagem + execução)
+
+Página "Studio Visual ETL Gold": 4 comboboxes (tabela Raw, Bronze, Silver, Gold) e, ao escolher
+uma, o fluxo inteiro dos dois lados — de onde o dado vem e para onde vai — mesmo entre
+integrações diferentes. Código: `server/agent/lineage.ts`, `server/routes/lineage.ts` (rotas
+`/api/lineage`, `/api/lineage/sql`, `/api/lineage/gold/build`, todas com sessão do usuário) e
+`src/components/StudioGold/`. Não exige variável de ambiente nem migração nova: só **redeploy do
+gateway e do frontend**.
+
+- **Linhagem lida dos SQLs reais** (`{{ source() }}` / `{{ ref() }}`), não da convenção de nomes;
+  por isso um Gold que junta Silvers de integrações diferentes aparece ligado às duas. Linhas e
+  última atualização vêm de `__TABLES__` do BigQuery (só metadado, sem custo).
+- **Executar fluxo até aqui:** sincroniza a Raw no Airbyte (opcional), constrói Bronze e Silver
+  (mesmos endpoints do Studio, gravando em `pipeline_runs`) e depois o Gold com `dbt build` (modelo +
+  testes do `_properties.yml`). Cada camada só roda para o que deu certo na anterior. Construir Gold
+  exige perfil admin/engenheiro (checado no servidor).
+- **Dataset do Gold** = o das Silvers de que ele depende (`silver_X` -> `gold_X`), não um dataset
+  único da empresa.
+- **Limitação:** o dbt resolve `ref()` pelo dataset Silver da execução (`DBT_SCHEMA_SILVER` é um só por
+  chamada). Um Gold cujas Silvers estão em datasets diferentes aparece no grafo normalmente, mas a
+  construção é recusada com uma mensagem clara — construir esse caso exige um `generate_schema_name`
+  por sistema no projeto dbt.
+- **Sincronização com o GitHub:** o disco do Cloud Run é efêmero. Antes de ler os modelos (catálogo do
+  agente, linhagem, build), o gateway em modo `push` faz `git fetch` + fast-forward de `dbt/` (no máximo
+  1x a cada `DBT_SYNC_INTERVAL_MS`, default 30 s). Assim um Gold salvo depois do último deploy não some
+  quando a instância reinicia. Falha de rede ou conflito só vira aviso no log; a leitura segue com o disco.
 
 ---
 

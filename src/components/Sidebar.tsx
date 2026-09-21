@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   Network, Layers, ShieldCheck, DollarSign, Activity,
-  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2, MessagesSquare
+  Lock, ChevronRight, ChevronLeft, HelpCircle, Terminal, Wand2, UserPlus, Building2, MessagesSquare, Workflow
 } from 'lucide-react';
 
-export type ActiveTab = 'studio' | 'auto-pipeline' | 'pipelines' | 'execucoes' | 'chat-dados' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
+export type ActiveTab = 'studio' | 'studio-gold' | 'auto-pipeline' | 'pipelines' | 'execucoes' | 'chat-dados' | 'governance' | 'finops' | 'rbac' | 'cadastro-usuario' | 'empresas';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -36,6 +36,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'studio',
       label: 'Studio Visual ETL',
       icon: <Network className="w-4 h-4 shrink-0" />
+    },
+    {
+      id: 'studio-gold',
+      label: 'Studio Visual ETL Gold',
+      icon: <Workflow className="w-4 h-4 text-amber-600 shrink-0" />
     },
     {
       id: 'auto-pipeline',
