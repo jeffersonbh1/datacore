@@ -5,21 +5,25 @@ import {
   LAYER_LABEL, NODE_H, NODE_W, fetchLineage, focusOn, indexLineage, layoutGraph, nodesOfLayer,
   type Lineage, type LineageLayer, type LineageNode,
 } from '../../lib/lineage';
-import { buildPlan, runPlan, type ExecPlan, type RunHooks, type RunState } from '../../lib/lineageExecution';
+import { buildPlan, runPlan, type ExecPlan, type ExecScope, type RunHooks, type RunState } from '../../lib/lineageExecution';
+import { ExecutionRecorder, MISSING_TABLE_HINT, isMissingExecutionsTable } from '../../lib/studioExecutions';
 import { ExecutePlanModal, type RunLogEntry } from './ExecutePlanModal';
 import { LAYER_STYLE, LineageGraph } from './LineageGraph';
 import { NodeDetailPanel } from './NodeDetailPanel';
+import { TableCombobox } from './TableCombobox';
 
 interface StudioGoldViewProps {
   pipelines: Pipeline[];
   idEmpresa: number | null;
   /** Perfis que podem executar (sincronizar/construir). */
   canExecute: boolean;
+  /** Nome de quem executa, gravado no histórico da tela Execuções. */
+  userName?: string | null;
 }
 
 const PICKER_LAYERS: Array<Extract<LineageLayer, 'raw' | 'bronze' | 'silver' | 'gold'>> = ['raw', 'bronze', 'silver', 'gold'];
 
-export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmpresa, canExecute }) => {
+export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmpresa, canExecute, userName = null }) => {
   const [lineage, setLineage] = useState<Lineage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +62,8 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   const edges = useMemo(() => (lineage && focus ? lineage.edges.filter((e) => focus.ids.has(e.source) && focus.ids.has(e.target)) : []), [lineage, focus]);
   const focusNode = focus && index ? index.byId.get(focus.id)! : null;
   const activeNode = activeId && index ? index.byId.get(activeId) ?? null : null;
+  // O alvo da execução pode não ser a tabela em foco (o botão "Executar esta tabela" vale para qualquer nó do painel).
+  const planTarget = plan && index ? index.byId.get(plan.focusId) ?? null : null;
 
   const options = useMemo(() => {
     const out = {} as Record<(typeof PICKER_LAYERS)[number], LineageNode[]>;
@@ -94,11 +100,12 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
 
   // ---- Execução
   const canRun = canExecute && !!focusNode && focusNode.layer !== 'source';
-  const openPlan = () => {
-    if (!index || !lineage || !focus) return;
-    const next = buildPlan(index, focus.id, lineage.integrations, pipelines);
+  /** 'fluxo' = até a tabela (com tudo que a alimenta); 'tabela' = só ela. */
+  const openPlan = (targetId: string, scope: ExecScope) => {
+    if (!index || !lineage || !index.byId.has(targetId)) return;
+    const next = buildPlan(index, targetId, lineage.integrations, pipelines, scope);
     setPlan(next);
-    setIncludeSync(next.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId));
+    setIncludeSync(scope === 'fluxo' && next.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId));
     setPhase('confirm');
     setLog([]);
     setResult(null);
@@ -114,20 +121,40 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
     cancelRef.current = false;
     setCancelling(false);
     const canSyncAny = plan.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId);
+    const withSync = plan.scope === 'fluxo' && includeSync && canSyncAny;
+    const target = index.byId.get(plan.focusId);
+
+    // Histórico da tela Execuções: grava ao começar, a cada tabela e ao terminar — sem nunca atrapalhar a execução.
+    const recorder = new ExecutionRecorder(idEmpresa, {
+      escopo: plan.scope,
+      alvoNome: target?.name ?? plan.focusId,
+      alvoCamada: !target || target.layer === 'source' ? 'raw' : target.layer,
+      comSincronizacao: withSync,
+      executadoPor: userName,
+    });
+    await recorder.start();
+
     const hooks: RunHooks = {
       log: (message, level = 'info') => setLog((prev) => [...prev, { id: ++logId.current, level, message, at: new Date().toLocaleTimeString('pt-BR') }]),
       setState: (ids, state) => setRunStates((prev) => { const m = new Map(prev); ids.forEach((i) => m.set(i, state)); return m; }),
       isCancelled: () => cancelRef.current,
+      record: (item) => recorder.record(item),
     };
+    let outcome: { ok: boolean; cancelled: boolean };
     try {
-      setResult(await runPlan(plan, { includeSync: includeSync && canSyncAny, idEmpresa, index }, hooks));
+      outcome = await runPlan(plan, { includeSync: withSync, idEmpresa, index }, hooks);
     } catch (err) {
       hooks.log(err instanceof Error ? err.message : 'Falha inesperada na execução.', 'error');
-      setResult({ ok: false, cancelled: false });
-    } finally {
-      setPhase('done');
-      load(true); // linhas/“construída”/última atualização já refletem o que rodou
+      outcome = { ok: false, cancelled: false };
     }
+    await recorder.finish(outcome.cancelled ? 'cancelled' : outcome.ok ? 'success' : 'failed');
+    if (recorder.lastError) {
+      const reason = recorder.lastError instanceof Error ? recorder.lastError.message : (recorder.lastError as { message?: string })?.message ?? 'erro desconhecido';
+      hooks.log(isMissingExecutionsTable(recorder.lastError) ? MISSING_TABLE_HINT : `Não consegui registrar esta execução na tela Execuções: ${reason}`, 'warn');
+    }
+    setResult(outcome);
+    setPhase('done');
+    load(true); // linhas/“construída”/última atualização já refletem o que rodou
   };
 
   const summary = useMemo(() => {
@@ -163,7 +190,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
             </button>
             <button
               type="button"
-              onClick={openPlan}
+              onClick={() => focus && openPlan(focus.id, 'fluxo')}
               disabled={!canRun}
               title={!canExecute ? 'Seu perfil não pode executar pipelines.' : !focusNode ? 'Escolha uma tabela para executar o fluxo até ela.' : focusNode.layer === 'source' ? 'Escolha uma tabela Raw, Bronze, Silver ou Gold.' : 'Executa tudo que alimenta esta tabela'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white cursor-pointer transition"
@@ -174,26 +201,17 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {PICKER_LAYERS.map((layer) => {
-            const grouped = new Map<string, LineageNode[]>();
-            for (const n of options[layer]) grouped.set(n.integrationName || '', [...(grouped.get(n.integrationName || '') ?? []), n]);
-            return (
-              <label key={layer} className="flex flex-col gap-1 min-w-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tabela {LAYER_LABEL[layer]} ({options[layer].length})</span>
-                <select
-                  value={focusNode?.layer === layer ? focusNode.id : ''}
-                  onChange={(e) => pick(e.target.value)}
-                  disabled={loading || options[layer].length === 0}
-                  className={`w-full text-xs border rounded-lg px-2.5 py-2 bg-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400 ${focusNode?.layer === layer ? 'border-indigo-400 font-semibold' : 'border-slate-300'}`}
-                >
-                  <option value="">{options[layer].length ? `Selecione uma tabela ${LAYER_LABEL[layer]}…` : `Nenhuma tabela ${LAYER_LABEL[layer]}`}</option>
-                  {[...grouped.entries()].map(([group, nodes]) => group
-                    ? <optgroup key={group} label={group}>{nodes.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</optgroup>
-                    : nodes.map((n) => <option key={n.id} value={n.id}>{n.name}</option>))}
-                </select>
-              </label>
-            );
-          })}
+          {PICKER_LAYERS.map((layer) => (
+            <TableCombobox
+              key={layer}
+              label={`Tabela ${LAYER_LABEL[layer]}`}
+              options={options[layer]}
+              value={focusNode?.layer === layer ? focusNode.id : null}
+              onChange={pick}
+              placeholder={`Buscar tabela ${LAYER_LABEL[layer]}…`}
+              disabled={loading}
+            />
+          ))}
         </div>
       </header>
 
@@ -254,14 +272,24 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
         </section>
 
         {activeNode && index && (
-          <NodeDetailPanel node={activeNode} index={index} isFocus={activeNode.id === focus?.id} onFocus={pick} onClose={() => setActiveId(null)} />
+          <NodeDetailPanel
+            node={activeNode}
+            index={index}
+            isFocus={activeNode.id === focus?.id}
+            onFocus={pick}
+            onExecute={(id) => openPlan(id, 'tabela')}
+            canExecute={canExecute}
+            executeHint={canExecute ? undefined : 'Seu perfil não pode executar pipelines.'}
+            onClose={() => setActiveId(null)}
+          />
         )}
       </div>
 
-      {plan && focusNode && (
+      {plan && planTarget && (
         <ExecutePlanModal
           plan={plan}
-          targetName={focusNode.name}
+          targetName={planTarget.name}
+          targetLayer={planTarget.layer}
           phase={phase}
           log={log}
           result={result}

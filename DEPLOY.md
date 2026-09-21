@@ -486,7 +486,8 @@ Página "Studio Visual ETL Gold": 4 comboboxes (tabela Raw, Bronze, Silver, Gold
 uma, o fluxo inteiro dos dois lados — de onde o dado vem e para onde vai — mesmo entre
 integrações diferentes. Código: `server/agent/lineage.ts`, `server/routes/lineage.ts` (rotas
 `/api/lineage`, `/api/lineage/sql`, `/api/lineage/gold/build`, todas com sessão do usuário) e
-`src/components/StudioGold/`. Não exige variável de ambiente nem migração nova: só **redeploy do
+`src/components/StudioGold/`. Não exige variável de ambiente. O histórico de execuções (abaixo) exige
+a migração **`sql/014_studio_execucoes.sql`** no SQL Editor do Supabase; o restante é só **redeploy do
 gateway e do frontend**.
 
 - **Linhagem lida dos SQLs reais** (`{{ source() }}` / `{{ ref() }}`), não da convenção de nomes;
@@ -496,6 +497,19 @@ gateway e do frontend**.
   (mesmos endpoints do Studio, gravando em `pipeline_runs`) e depois o Gold com `dbt build` (modelo +
   testes do `_properties.yml`). Cada camada só roda para o que deu certo na anterior. Construir Gold
   exige perfil admin/engenheiro (checado no servidor).
+- **Executar esta tabela:** o painel de detalhes de uma tabela Bronze/Silver/Gold tem o botão "Executar
+  esta tabela", ao lado de "Focar nesta tabela" e "Ver SQL". Constrói SÓ aquele modelo (Gold: com os
+  testes), sem sincronizar o Airbyte nem reconstruir o que o alimenta; avisa antes se uma entrada direta
+  ainda não foi construída no BigQuery.
+- **Busca nos comboboxes:** digitar filtra as tabelas por qualquer parte do nome (sem acento, sem
+  diferenciar maiúsculas, `_` = espaço, várias palavras = todas precisam aparecer).
+- **Histórico na tela Execuções:** toda execução do Studio Gold (fluxo ou tabela única, com ou sem
+  sync, qualquer camada, inclusive Gold) grava uma linha em `studio_execucoes` — ao começar (aparece
+  "Em andamento"), a cada tabela concluída e ao terminar — e a tela Execuções mostra o resultado por
+  tabela (linhas, testes do Gold, erro). Uma execução "Em andamento" há mais de 45 min é exibida como
+  "Interrompida" (aba fechada no meio). Sem a migração 014 a execução funciona normalmente; só o
+  registro não é gravado e a tela avisa qual script rodar. As execuções com sync continuam gravando
+  também em `pipeline_runs` (job do Airbyte), como antes.
 - **Dataset do Gold** = o das Silvers de que ele depende (`silver_X` -> `gold_X`), não um dataset
   único da empresa.
 - **Limitação:** o dbt resolve `ref()` pelo dataset Silver da execução (`DBT_SCHEMA_SILVER` é um só por

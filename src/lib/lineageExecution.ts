@@ -3,6 +3,7 @@ import { buildBronzeLayer, buildSilverLayer, fetchConnectionJobs, triggerAirbyte
 import { summarizeTableFailures } from './pipelineBuilder';
 import { updatePipelineRunLayerStatus, upsertPipelineRuns } from './supabase';
 import { buildGoldModels, collect, topoOrder, type LineageIndex, type LineageIntegration } from './lineage';
+import type { ExecItem } from './studioExecutions';
 
 // -----------------------------------------------------------------------------
 // "Executar fluxo até aqui" da tela Studio Visual ETL Gold. Mesma sequência e mesmas
@@ -13,6 +14,7 @@ import { buildGoldModels, collect, topoOrder, type LineageIndex, type LineageInt
 // -----------------------------------------------------------------------------
 
 export type RunState = 'running' | 'success' | 'error' | 'skipped';
+export type ExecScope = 'tabela' | 'fluxo';
 
 export interface PlanIntegration {
   integration: LineageIntegration;
@@ -32,14 +34,22 @@ export interface PlanGold {
 
 export interface ExecPlan {
   focusId: string;
+  /** 'tabela' = só o próprio modelo (nada do que o alimenta); 'fluxo' = ele + tudo que o alimenta. */
+  scope: ExecScope;
   integrations: PlanIntegration[];
   /** Em ordem de dependência (o que é consumido vem antes). */
   gold: PlanGold[];
+  /** Só no escopo 'tabela': entradas diretas que ainda não foram construídas no BigQuery (a construção tende a falhar). */
+  unbuiltInputs: string[];
 }
 
-/** O que precisa rodar para o nó em foco ficar atualizado: ele mesmo + tudo que o alimenta. */
-export function buildPlan(index: LineageIndex, focusId: string, integrations: LineageIntegration[], pipelines: Pipeline[]): ExecPlan {
-  const ids = new Set([...collect(index, focusId, 'up'), focusId]);
+/**
+ * O que precisa rodar para o nó escolhido ficar atualizado. Escopo 'fluxo' (padrão): ele mesmo + tudo que o
+ * alimenta. Escopo 'tabela': SÓ ele — usa o que já está construído nas camadas anteriores, sem sincronizar nem
+ * reconstruir nada além dele.
+ */
+export function buildPlan(index: LineageIndex, focusId: string, integrations: LineageIntegration[], pipelines: Pipeline[], scope: ExecScope = 'fluxo'): ExecPlan {
+  const ids = scope === 'tabela' ? new Set([focusId]) : new Set([...collect(index, focusId, 'up'), focusId]);
   const byIntegration = new Map<number, PlanIntegration>();
   const ensure = (id: number): PlanIntegration | null => {
     const known = byIntegration.get(id);
@@ -78,13 +88,19 @@ export function buildPlan(index: LineageIndex, focusId: string, integrations: Li
     return { nodeId: id, name: index.byId.get(id)!.name, blocked };
   });
 
-  return { focusId, integrations: [...byIntegration.values()], gold };
+  const unbuiltInputs = scope === 'tabela'
+    ? (index.parents.get(focusId) ?? []).map((id) => index.byId.get(id)).filter((n) => n && n.layer !== 'source' && n.built === false).map((n) => n!.name)
+    : [];
+
+  return { focusId, scope, integrations: [...byIntegration.values()], gold, unbuiltInputs };
 }
 
 export interface RunHooks {
   log: (message: string, level?: 'info' | 'warn' | 'error') => void;
   setState: (nodeIds: string[], state: RunState) => void;
   isCancelled: () => boolean;
+  /** Resultado final de UMA tabela (ou da sincronização de uma integração) — alimenta o histórico da tela Execuções. */
+  record?: (item: ExecItem) => void;
 }
 
 interface SyncOutcome { ok: boolean; jobId: number | null }
@@ -118,6 +134,11 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
   const safe = async (label: string, fn: () => Promise<void>) => {
     try { await fn(); } catch (err) { console.error(`Erro ao registrar ${label}:`, err); }
   };
+  const nodeName = (nodeId: string) => opts.index.byId.get(nodeId)?.name ?? nodeId;
+  const rec = (
+    layer: ExecItem['layer'], name: string, integration: string | null, status: ExecItem['status'],
+    extra: { rowsAffected?: number | null; error?: string | null; tests?: ExecItem['tests'] } = {},
+  ) => hooks.record?.({ layer, name, integration, status, rowsAffected: extra.rowsAffected ?? null, error: extra.error ?? null, tests: extra.tests ?? null });
 
   // ---- A) Sincronização real da Raw (todas as integrações em paralelo)
   if (opts.includeSync) {
@@ -126,6 +147,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
       const connectionId = pi.pipeline?.airbyteConnectionId || pi.integration.airbyteConnectionId;
       if (!connectionId) {
         hooks.log(`${name}: sem conexão real no Airbyte — sincronização pulada; segue com o que já está na Raw.`, 'warn');
+        rec('raw', name, name, 'skipped', { error: 'Sem conexão real no Airbyte — seguiu com o que já estava na Raw.' });
         return { ok: true, jobId: null };
       }
       hooks.setState(pi.syncNodeIds, 'running');
@@ -144,17 +166,20 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         if (state === 'success') {
           hooks.setState(pi.syncNodeIds, 'success');
           hooks.log(`${name}: sincronização concluída.`);
+          rec('raw', name, name, 'ok', { rowsAffected: job?.rowsSynced ?? null });
           return { ok: true, jobId: triggered.jobId };
         }
         if (state === 'cancelled') { cancelled = true; hooks.setState(pi.syncNodeIds, 'skipped'); return { ok: false, jobId: triggered.jobId }; }
         hooks.setState(pi.syncNodeIds, 'error');
         hooks.log(`${name}: ${state === 'timeout' ? 'a sincronização não terminou a tempo' : 'a sincronização falhou'} — Bronze/Silver desta integração não serão construídas.`, 'error');
+        rec('raw', name, name, 'error', { error: state === 'timeout' ? 'A sincronização não terminou a tempo (10 min).' : 'A sincronização falhou no Airbyte.' });
         for (const b of [...pi.bronze, ...pi.silver]) failed.add(b.nodeId);
         for (const id of pi.syncNodeIds) failed.add(id);
         return { ok: false, jobId: triggered.jobId };
       } catch (err) {
         hooks.setState(pi.syncNodeIds, 'error');
         hooks.log(`${name}: ${err instanceof Error ? err.message : 'falha ao sincronizar'}`, 'error');
+        rec('raw', name, name, 'error', { error: err instanceof Error ? err.message : 'Falha ao sincronizar.' });
         for (const b of [...pi.bronze, ...pi.silver]) failed.add(b.nodeId);
         for (const id of pi.syncNodeIds) failed.add(id);
         return { ok: false, jobId: null };
@@ -171,6 +196,10 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
       if (!run?.dbId || !opts.idEmpresa) return;
       await safe(`o status da ${layer}`, () => updatePipelineRunLayerStatus(run.dbId!, run.jobId, layer, status, error, tables));
     };
+
+    // O que já está marcado como falho aqui é consequência de a sincronização ter falhado.
+    for (const b of pi.bronze) if (failed.has(b.nodeId)) rec('bronze', nodeName(b.nodeId), integration.nome, 'skipped', { error: 'Não construída: a sincronização desta integração falhou.' });
+    for (const s of pi.silver) if (failed.has(s.nodeId)) rec('silver', nodeName(s.nodeId), integration.nome, 'skipped', { error: 'Não construída: a sincronização desta integração falhou.' });
 
     const bronze = pi.bronze.filter((b) => !failed.has(b.nodeId));
     let bronzeOk = new Set<string>();
@@ -189,6 +218,8 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           const ok = byTable.get(b.table)?.status === 'ok';
           hooks.setState([b.nodeId], ok ? 'success' : 'error');
           if (ok) bronzeOk.add(b.table); else failed.add(b.nodeId);
+          const r = byTable.get(b.table);
+          rec('bronze', nodeName(b.nodeId), integration.nome, ok ? 'ok' : 'error', { rowsAffected: r?.rowsAffected ?? null, error: ok ? null : (r?.error || 'O dbt não retornou resultado para esta tabela.') });
         }
         const bad = results.filter((r) => r.status === 'error');
         if (bad.length) hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
@@ -200,13 +231,18 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         hooks.setState(nodeIds, 'error');
         hooks.log(`${integration.nome}: ${msg}`, 'error');
         for (const id of nodeIds) failed.add(id);
+        for (const b of bronze) rec('bronze', nodeName(b.nodeId), integration.nome, 'error', { error: msg });
         await persistLayer('bronze', 'failed', msg, bronze.map((b) => ({ table: b.table, status: 'error', rowsAffected: null, error: msg })));
         bronzeOk = new Set();
       }
     }
     // Se a Bronze não estava no plano (o foco é a Silver de uma tabela já pronta), a Silver segue.
     const silver = pi.silver.filter((s) => !failed.has(s.nodeId) && (pi.bronze.length === 0 || bronzeOk.has(s.table)));
-    for (const s of pi.silver) if (!silver.includes(s) && !failed.has(s.nodeId)) failed.add(s.nodeId);
+    for (const s of pi.silver) {
+      if (silver.includes(s) || failed.has(s.nodeId)) continue;
+      failed.add(s.nodeId);
+      rec('silver', nodeName(s.nodeId), integration.nome, 'skipped', { error: 'Não construída: a Bronze desta tabela falhou.' });
+    }
 
     if (hooks.isCancelled()) { cancelled = true; break; }
     if (silver.length > 0) {
@@ -225,6 +261,8 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           const ok = byTable.get(s.table)?.status === 'ok';
           hooks.setState([s.nodeId], ok ? 'success' : 'error');
           if (!ok) failed.add(s.nodeId);
+          const r = byTable.get(s.table);
+          rec('silver', nodeName(s.nodeId), integration.nome, ok ? 'ok' : 'error', { rowsAffected: r?.rowsAffected ?? null, error: ok ? null : (r?.error || 'O dbt não retornou resultado para esta tabela.') });
         }
         const bad = results.filter((r) => r.status === 'error');
         if (bad.length) hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
@@ -236,6 +274,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         hooks.setState(nodeIds, 'error');
         hooks.log(`${integration.nome}: ${msg}`, 'error');
         for (const id of nodeIds) failed.add(id);
+        for (const s of silver) rec('silver', nodeName(s.nodeId), integration.nome, 'error', { error: msg });
         await persistLayer('silver', 'failed', msg, silver.map((s) => ({ table: s.table, status: 'error', rowsAffected: null, error: msg })));
       }
     }
@@ -246,8 +285,8 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     const buildable: PlanGold[] = [];
     for (const g of plan.gold) {
       const brokenUpstream = [...collect(opts.index, g.nodeId, 'up')].some((a) => failed.has(a));
-      if (g.blocked) { hooks.setState([g.nodeId], 'error'); hooks.log(`${g.name}: ${g.blocked}`, 'error'); failed.add(g.nodeId); }
-      else if (brokenUpstream) { hooks.setState([g.nodeId], 'skipped'); hooks.log(`${g.name}: não construído — uma tabela de que ele depende falhou.`, 'warn'); failed.add(g.nodeId); }
+      if (g.blocked) { hooks.setState([g.nodeId], 'error'); hooks.log(`${g.name}: ${g.blocked}`, 'error'); failed.add(g.nodeId); rec('gold', g.name, null, 'error', { error: g.blocked }); }
+      else if (brokenUpstream) { hooks.setState([g.nodeId], 'skipped'); hooks.log(`${g.name}: não construído — uma tabela de que ele depende falhou.`, 'warn'); failed.add(g.nodeId); rec('gold', g.name, null, 'skipped', { error: 'Não construído: uma tabela de que ele depende falhou.' }); }
       else buildable.push(g);
     }
     if (buildable.length > 0) {
@@ -261,16 +300,18 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
             hooks.setState([g.nodeId], 'success');
             const bad = r.tests.filter((t) => t.status !== 'pass');
             hooks.log(`${g.name}: construído${r.rowsAffected !== null ? ` (${r.rowsAffected} linhas)` : ''}; testes: ${r.tests.length - bad.length}/${r.tests.length} ok${bad.length ? ` — falharam: ${bad.map((t) => t.name).join(', ')}` : ''}.`, bad.length ? 'warn' : 'info');
+            rec('gold', g.name, null, 'ok', { rowsAffected: r.rowsAffected, tests: { total: r.tests.length, failed: bad.map((t) => t.name) } });
           } else {
             hooks.setState([g.nodeId], 'error');
             hooks.log(`${g.name}: ${r?.error || 'falha ao construir'}`, 'error');
             failed.add(g.nodeId);
+            rec('gold', g.name, null, 'error', { error: r?.error || 'Falha ao construir.' });
           }
         }
       } catch (err) {
         hooks.setState(buildable.map((g) => g.nodeId), 'error');
         hooks.log(err instanceof Error ? err.message : 'Falha ao construir o Gold.', 'error');
-        for (const g of buildable) failed.add(g.nodeId);
+        for (const g of buildable) { failed.add(g.nodeId); rec('gold', g.name, null, 'error', { error: err instanceof Error ? err.message : 'Falha ao construir o Gold.' }); }
       }
     }
   }

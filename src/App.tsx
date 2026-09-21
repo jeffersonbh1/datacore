@@ -542,6 +542,7 @@ export default function App() {
                 pipelines={pipelines}
                 idEmpresa={currentUser.idEmpresa ?? null}
                 canExecute={permissions.canTriggerExecutions}
+                userName={currentUser.name}
               />
             )}
 

@@ -10,6 +10,7 @@ import {
   insertTableRebuildAttempt, fetchTableRebuildHistory, TableRebuildAttempt,
 } from '../../lib/supabase';
 import { fetchConnectionJobs, buildBronzeLayer, buildSilverLayer, fetchRawTableCounts } from '../../lib/airbyteGateway';
+import { StudioExecutionsSection } from './StudioExecutionsSection';
 
 type Layer = 'bronze' | 'silver';
 
@@ -499,7 +500,8 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
             Execuções
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Acompanhamento real de cada camada (Raw no Airbyte, Bronze e Silver via dbt) por pipeline —
+            Acompanhamento real de cada camada (Raw no Airbyte, Bronze e Silver via dbt) por pipeline e, no
+            bloco do Studio Visual ETL Gold, de tudo que foi executado por lá (inclusive tabelas isoladas e Gold) —
             sobrevive à navegação entre telas, ao contrário do progresso mostrado no Studio.
           </p>
         </div>
@@ -528,6 +530,8 @@ export const ExecutionsView: React.FC<ExecutionsViewProps> = ({ pipelines, isLoa
           <button type="button" onClick={() => setFetchError(null)} className="text-rose-500 hover:text-rose-700 cursor-pointer">✕</button>
         </div>
       )}
+
+      <StudioExecutionsSection refreshKey={lastRefreshedAt?.getTime() ?? 0} />
 
       {isLoading && trackedPipelines.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-2 shadow-sm">
