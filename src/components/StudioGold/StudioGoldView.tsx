@@ -265,6 +265,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
             onExecute={(id) => openPlan(id, 'tabela')}
             canExecute={canExecute}
             executeHint={canExecute ? undefined : 'Seu perfil não pode executar pipelines.'}
+            isExecuting={jobs.some((j) => j.phase === 'running' && j.targetId === activeNode.id)}
             onOpenEditor={setEditingNode}
             onClose={() => setActiveId(null)}
           />
@@ -276,6 +277,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           node={editingNode}
           canEdit={canExecute}
           editHint={canExecute ? undefined : 'Seu perfil não pode editar pipelines.'}
+          isExecuting={jobs.some((j) => j.phase === 'running' && j.targetId === editingNode.id)}
           onExecute={(id) => openPlan(id, 'tabela')}
           onClose={() => setEditingNode(null)}
         />

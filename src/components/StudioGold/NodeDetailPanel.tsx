@@ -13,6 +13,8 @@ interface NodeDetailPanelProps {
   /** Perfil pode executar E nenhuma execução está em andamento. */
   canExecute: boolean;
   executeHint?: string;
+  /** Já existe um job em segundo plano rodando pra ESTE nó especificamente. */
+  isExecuting: boolean;
   /** Abre o editor dbt em tela cheia (ver + editar + executar) para este nó. */
   onOpenEditor: (node: LineageNode) => void;
   onClose: () => void;
@@ -25,7 +27,7 @@ const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value
   </div>
 );
 
-export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, isFocus, onFocus, onExecute, canExecute, executeHint, onOpenEditor, onClose }) => {
+export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, isFocus, onFocus, onExecute, canExecute, executeHint, isExecuting, onOpenEditor, onClose }) => {
   const [sql, setSql] = useState<ModelSql | null>(null);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -107,11 +109,12 @@ export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, i
             <button
               type="button"
               onClick={() => onExecute(node.id)}
-              disabled={!canExecute}
-              title={canExecute ? 'Executa só esta tabela — não sincroniza nem reconstrói o que a alimenta' : (executeHint || 'Seu perfil não pode executar pipelines.')}
+              disabled={!canExecute || isExecuting}
+              title={isExecuting ? 'Execução em andamento — acompanhe pelo sino no canto superior direito.' : canExecute ? 'Executa só esta tabela — não sincroniza nem reconstrói o que a alimenta' : (executeHint || 'Seu perfil não pode executar pipelines.')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed text-emerald-800 rounded-lg text-xs font-semibold cursor-pointer transition"
             >
-              <Play className="w-3.5 h-3.5" /> Executar esta tabela
+              {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              {isExecuting ? 'Em execução...' : 'Executar esta tabela'}
             </button>
           )}
         </div>

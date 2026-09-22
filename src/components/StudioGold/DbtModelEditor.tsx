@@ -36,12 +36,14 @@ interface DbtModelEditorProps {
   /** Perfil pode editar/salvar/executar/compilar (mesmo critério de "Executar esta tabela"). */
   canEdit: boolean;
   editHint?: string;
+  /** Já existe um job em segundo plano rodando pra ESTE nó especificamente. */
+  isExecuting: boolean;
   /** Reusa o mesmo fluxo de execução de tabela única já existente na tela (abre a confirmação). */
   onExecute: (id: string) => void;
   onClose: () => void;
 }
 
-export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, editHint, onExecute, onClose }) => {
+export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, editHint, isExecuting, onExecute, onClose }) => {
   const [model, setModel] = useState<ModelSql | null>(null);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(true);
@@ -200,12 +202,12 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
             type="button"
             id="btn-dbt-editor-execute"
             onClick={() => onExecute(node.id)}
-            disabled={!canEdit}
-            title={canEdit ? 'Executa só esta tabela — não sincroniza nem reconstrói o que a alimenta' : (editHint || 'Seu perfil não pode executar pipelines.')}
+            disabled={!canEdit || isExecuting}
+            title={isExecuting ? 'Execução em andamento — acompanhe pelo sino no canto superior direito.' : canEdit ? 'Executa só esta tabela — não sincroniza nem reconstrói o que a alimenta' : (editHint || 'Seu perfil não pode executar pipelines.')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-700 bg-emerald-900/40 hover:bg-emerald-900/70 disabled:opacity-50 disabled:cursor-not-allowed text-emerald-300 text-xs font-semibold transition cursor-pointer"
           >
-            <Play className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Executar esta tabela</span>
+            {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{isExecuting ? 'Em execução...' : 'Executar esta tabela'}</span>
           </button>
           <button
             type="button"

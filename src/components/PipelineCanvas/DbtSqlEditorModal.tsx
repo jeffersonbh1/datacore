@@ -434,9 +434,12 @@ export const DbtSqlEditorModal: React.FC<DbtSqlEditorModalProps> = ({
       }
       return;
     }
+    // Não fecha mais ao salvar: o usuário pode querer rodar "dbt compile", construir a
+    // camada ou seguir editando logo em seguida — fechar sozinho o forçaria a reabrir.
     onSave(node.id, sqlCode, modelName, materialization);
     setIsDirty(false);
-    onClose();
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   // Synchronize materialization dropdown with config in SQL code
