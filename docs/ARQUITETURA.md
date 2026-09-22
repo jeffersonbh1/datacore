@@ -100,6 +100,24 @@ DataCore; o resto são serviços que a DataCore orquestra.
 | **Data lakehouse** | Google BigQuery | GCP | Armazena todas as camadas: `raw_*`, `bronze_*` e (futuro) silver/gold. |
 | **Transformação** | dbt-core + `dbt-bigquery` | Dentro da imagem do Gateway | Constrói a camada Bronze. Modelos `.sql` gerados por integração e versionados no repositório. |
 
+### Linguagens por área
+
+| Linguagem | Onde é usada |
+| --- | --- |
+| **TypeScript (.ts)** | Backend/gateway (`server/`) — rotas Express, integração com Airbyte/BigQuery/GCP, agente de IA; e lógica/utilitários do frontend (`src/lib/`, `src/data/`) fora dos componentes visuais |
+| **TypeScript + JSX (.tsx)** | Toda a interface React do console (`src/components/**`) — Studio Visual ETL, Studio Gold, Pipelines, Execuções, Custos & FinOps, Governança, Segurança, Empresas etc. |
+| **SQL** | Dois contextos: modelos dbt (`dbt/models/**`, a maioria — camadas Bronze/Silver/Gold no BigQuery) e migrações do banco (`sql/*.sql`, schema/RLS do Supabase/Postgres) |
+| **YAML** | Configuração do dbt (`dbt_project.yml`, `profiles.yml`, `packages.yml`), documentação de schema dos modelos (`_properties.yml`, `_sources.yml`) e configs de deploy (`cloudbuild.frontend.yaml`, `cloudbuild.gateway.yaml`) |
+| **JSON** | Configuração de projeto (`package.json`, `tsconfig.json`) e manifests gerados pelo dbt (`dbt/_generated_bronze.json` etc., usados pelo editor SQL do Studio) |
+| **HTML** | `index.html` — ponto de entrada da SPA (Vite) |
+| **CSS** | `src/index.css` — estilos globais (Tailwind) |
+| **Dockerfile** | `Dockerfile` / `Dockerfile.frontend` — build dos containers do gateway e do frontend |
+| **CSV** | `dbt/seeds/raw_transacoes.csv` — dado semente (seed) do dbt |
+
+SQL e TypeScript/TSX dominam o repositório (93 e 87 arquivos, respectivamente,
+contra 18 YAML e 8 JSON) — reflexo de ser uma plataforma de dados (transformação
+em dbt) com um console web em React/Node por cima.
+
 ---
 
 ## 4. Arquitetura técnica
