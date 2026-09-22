@@ -31,6 +31,9 @@ export interface RunDbtInput {
   fullRefresh?: boolean;
   /** Target do profiles.yml. Default: process.env.DBT_TARGET || "prod". */
   target?: string;
+  /** Subcomando do dbt — "build" (default, materializa de verdade) ou "compile"
+   *  (só renderiza o Jinja, sem tocar no BigQuery — usado pelo editor do Studio Gold). */
+  command?: 'build' | 'compile';
 }
 
 export interface DbtModelResult {
@@ -265,15 +268,16 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
     }
     depsInstalled = true;
 
+    const command = input.command || 'build';
     const args = [
       '--no-use-colors',
-      'build',
+      command,
       '--select', ...select.split(/\s+/).filter(Boolean),
       '--target', target,
       '--project-dir', projectDir,
       '--profiles-dir', childEnv.DBT_PROFILES_DIR as string,
     ];
-    if (input.fullRefresh) args.push('--full-refresh');
+    if (input.fullRefresh && command === 'build') args.push('--full-refresh');
 
     // Remove o run_results.json anterior: se este build falhar antes de escrever
     // o seu (erro de compilação/parse), não queremos ler resultados obsoletos.
@@ -294,7 +298,7 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
       models,
       stdoutTail: tail(stdout),
       stderrTail: tail(stderr),
-      error: built.code === 0 && !hasNodeFailure ? undefined : 'dbt build reportou falhas — ver models[] e stderrTail.',
+      error: built.code === 0 && !hasNodeFailure ? undefined : `dbt ${command} reportou falhas — ver models[] e stderrTail.`,
     };
   });
 }

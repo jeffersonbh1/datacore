@@ -7,6 +7,7 @@ import {
 } from '../../lib/lineage';
 import { buildPlan, type ExecPlan, type ExecScope, type RunState } from '../../lib/lineageExecution';
 import { useExecutionJobs } from '../Executions/ExecutionJobsProvider';
+import { DbtModelEditor } from './DbtModelEditor';
 import { ExecutePlanModal } from './ExecutePlanModal';
 import { LAYER_STYLE, LineageGraph } from './LineageGraph';
 import { NodeDetailPanel } from './NodeDetailPanel';
@@ -31,6 +32,8 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   const [focusId, setFocusId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  /** Modelo aberto no editor dbt em tela cheia (visualizar/editar/executar). */
+  const [editingNode, setEditingNode] = useState<LineageNode | null>(null);
   /** Execução (em segundo plano) cujo andamento pinta o grafo — some ao escolher outra tabela. */
   const [statesJobId, setStatesJobId] = useState<string | null>(null);
 
@@ -262,10 +265,21 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
             onExecute={(id) => openPlan(id, 'tabela')}
             canExecute={canExecute}
             executeHint={canExecute ? undefined : 'Seu perfil não pode executar pipelines.'}
+            onOpenEditor={setEditingNode}
             onClose={() => setActiveId(null)}
           />
         )}
       </div>
+
+      {editingNode && (
+        <DbtModelEditor
+          node={editingNode}
+          canEdit={canExecute}
+          editHint={canExecute ? undefined : 'Seu perfil não pode editar pipelines.'}
+          onExecute={(id) => openPlan(id, 'tabela')}
+          onClose={() => setEditingNode(null)}
+        />
+      )}
 
       {plan && planTarget && (
         <ExecutePlanModal

@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
   BRONZE_MANIFEST_FILE,
   SILVER_MANIFEST_FILE,
@@ -119,18 +119,73 @@ export function parseSources(sql: string): Array<{ source: string; table: string
   return [...sql.matchAll(/\{\{\s*source\(\s*['"]([A-Za-z0-9_]+)['"]\s*,\s*['"]([A-Za-z0-9_.\-]+)['"]\s*\)\s*\}\}/g)].map((m) => ({ source: m[1], table: m[2] }));
 }
 
-/** Caminho do .sql de um modelo no projeto dbt (ou null se não existir no disco). */
-export function modelSqlPath(t: TenantContext, m: CatalogModel): string | null {
-  const dir = m.layer === 'gold'
+/** Pasta do modelo no projeto dbt (contém o .sql e o _properties.yml do sistema/empresa). */
+export function modelDir(t: TenantContext, m: CatalogModel): string {
+  return m.layer === 'gold'
     ? goldDir(t)
     : join(resolveDbtProjectDir(), 'models', 'medallion', m.layer, m.sistema || '');
-  const file = join(dir, `${m.name}.sql`);
+}
+
+/** Caminho do .sql de um modelo no projeto dbt (ou null se não existir no disco). */
+export function modelSqlPath(t: TenantContext, m: CatalogModel): string | null {
+  const file = join(modelDir(t, m), `${m.name}.sql`);
   return existsSync(file) ? file : null;
 }
 
 export function readModelSql(t: TenantContext, m: CatalogModel): string | null {
   const file = modelSqlPath(t, m);
   return file ? readFileSync(file, 'utf8') : null;
+}
+
+/** Sobrescreve o .sql de um modelo já existente no disco (Bronze/Silver/Gold) — usado
+ *  pelo editor visual do Studio Gold. `false` se o modelo não tem arquivo real ainda
+ *  (nunca cria um arquivo novo por aqui, só edita o que o codegen/build já gerou). */
+export function writeModelSql(t: TenantContext, m: CatalogModel, sql: string): boolean {
+  const file = modelSqlPath(t, m);
+  if (!file) return false;
+  writeFileSync(file, sql, 'utf8');
+  return true;
+}
+
+/** Nome do projeto dbt (dbt_project.yml::name) — prefixo da pasta target/compiled/. */
+let cachedProjectName: string | null = null;
+function dbtProjectName(): string {
+  if (cachedProjectName) return cachedProjectName;
+  const raw = readFileSync(join(resolveDbtProjectDir(), 'dbt_project.yml'), 'utf8');
+  const parsed = parseYaml(raw) as { name?: string };
+  cachedProjectName = parsed.name || 'datacore_dbt';
+  return cachedProjectName;
+}
+
+/** Caminho do .sql COMPILADO (Jinja já resolvido) de um modelo, gerado por `dbt compile`
+ *  — mesma posição relativa de models/ dentro de target/compiled/<projeto>/. Null se o
+ *  modelo nunca foi compilado (ninguém rodou "dbt compile"/"dbt build" para ele ainda). */
+export function compiledModelSqlPath(t: TenantContext, m: CatalogModel): string | null {
+  const projectDir = resolveDbtProjectDir();
+  const relDir = modelDir(t, m).slice(projectDir.length + 1); // ex.: models/medallion/bronze/sap
+  const file = join(projectDir, 'target', 'compiled', dbtProjectName(), relDir, `${m.name}.sql`);
+  return existsSync(file) ? file : null;
+}
+
+export function readCompiledModelSql(t: TenantContext, m: CatalogModel): string | null {
+  const file = compiledModelSqlPath(t, m);
+  return file ? readFileSync(file, 'utf8') : null;
+}
+
+/** Bloco YAML REAL (não um template) do _properties.yml deste modelo — o arquivo documenta
+ *  TODOS os modelos do sistema/empresa juntos, então isto extrai só a entrada do modelo
+ *  pedido. Null se o modelo não tem documentação (_properties.yml ausente ou sem entrada). */
+export function readModelPropertiesYaml(t: TenantContext, m: CatalogModel): string | null {
+  const propsPath = join(modelDir(t, m), '_properties.yml');
+  if (!existsSync(propsPath)) return null;
+  try {
+    const parsed = parseYaml(readFileSync(propsPath, 'utf8')) as { models?: Array<Record<string, unknown>> } | null;
+    const entry = (parsed?.models ?? []).find((mo) => mo.name === m.name);
+    if (!entry) return null;
+    return stringifyYaml({ version: 2, models: [entry] });
+  } catch {
+    return null;
+  }
 }
 
 /** silver_X -> gold_X (mesma convenção raw_X -> bronze_X -> silver_X -> gold_X do dbtRunner). */

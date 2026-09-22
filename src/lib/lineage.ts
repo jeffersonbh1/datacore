@@ -69,6 +69,15 @@ export interface GoldBuildResult {
 
 export const fetchLineage = () => gatewayUserRequest<Lineage>('/api/lineage');
 export const fetchModelSql = (model: string) => gatewayUserRequest<ModelSql>(`/api/lineage/sql?model=${encodeURIComponent(model)}`);
+/** Sobrescreve o .sql real de um modelo Bronze/Silver/Gold — usado pelo editor completo do Studio Gold. */
+export const saveModelSql = (model: string, sql: string) =>
+  gatewayUserRequest<{ ok: boolean; name: string }>(`/api/lineage/sql?model=${encodeURIComponent(model)}`, { method: 'PUT', body: JSON.stringify({ sql }) });
+/** _properties.yml real (documentação/testes) da entrada deste modelo — só leitura. */
+export const fetchModelProperties = (model: string) =>
+  gatewayUserRequest<{ yaml: string | null }>(`/api/lineage/properties?model=${encodeURIComponent(model)}`);
+/** `dbt compile` de verdade (não simulado) — renderiza o Jinja contra o dataset real, sem gravar no BigQuery. */
+export const compileModel = (model: string) =>
+  gatewayUserRequest<{ sql: string }>('/api/lineage/compile', { method: 'POST', body: JSON.stringify({ model }) });
 export const buildGoldModels = (models: string[]) =>
   gatewayUserRequest<{ results: GoldBuildResult[] }>('/api/lineage/gold/build', { method: 'POST', body: JSON.stringify({ models }) });
 

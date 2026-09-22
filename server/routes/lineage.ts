@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { loadTenantContext, readModelSql, type CatalogModel } from '../agent/catalog';
+import {
+  loadTenantContext, readCompiledModelSql, readModelPropertiesYaml, readModelSql, writeModelSql,
+  type CatalogModel, type TenantContext,
+} from '../agent/catalog';
 import { buildLineage, silverDatasetsOf } from '../agent/lineage';
 import { DbtUnavailableError, runDbt } from '../dbtRunner';
 import { canSaveGoldModels, getDataCoreUser } from '../userSession';
@@ -52,6 +55,133 @@ lineageRouter.get('/sql', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao ler o modelo.' });
+  }
+});
+
+/** _properties.yml real (documentação/testes) da entrada deste modelo — somente leitura. */
+lineageRouter.get('/properties', async (req, res) => {
+  try {
+    const name = String(req.query.model || '');
+    const tenant = await loadTenantContext(getDataCoreUser(res).idEmpresa);
+    const model = tenant.models.get(name);
+    if (!model) {
+      res.status(404).json({ error: `Modelo "${name}" não existe no catálogo da empresa.` });
+      return;
+    }
+    res.json({ yaml: readModelPropertiesYaml(tenant, model) });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao ler a documentação do modelo.' });
+  }
+});
+
+interface DbtRunParams {
+  projectId: string;
+  rawDataset: string;
+  bronzeDataset: string;
+  silverDataset: string;
+  goldDataset: string;
+  location?: string;
+}
+
+/** Datasets/projeto necessários pra rodar o dbt (build ou compile) sobre um modelo de
+ *  qualquer camada — mesmo critério do build de Gold (silverDatasetsOf) pra achar a
+ *  integração dona, generalizado pra Bronze/Silver (que já têm integrationId direto). */
+function resolveDbtRunParams(tenant: TenantContext, model: CatalogModel): DbtRunParams | { error: string } {
+  if (model.layer === 'gold') {
+    const silvers = silverDatasetsOf(tenant, model);
+    if (silvers.size === 0) return { error: 'Não foi possível identificar de qual Silver este Gold depende (nenhum ref() a um modelo Silver).' };
+    if (silvers.size > 1) return { error: `Depende de Silvers em datasets diferentes (${[...silvers].join(', ')}): a execução usa um dataset Silver por vez e ainda não suporta isto.` };
+    const silverDataset = [...silvers][0];
+    const integ = tenant.integrations.find((i) => i.silverDataset === silverDataset);
+    if (!integ) return { error: `Nenhuma integração da empresa usa o dataset ${silverDataset}.` };
+    return {
+      projectId: integ.projectId, rawDataset: integ.rawDataset, bronzeDataset: integ.bronzeDataset,
+      silverDataset, goldDataset: model.dataset, location: integ.location || undefined,
+    };
+  }
+  const integ = tenant.integrations.find((i) => i.id === model.integrationId);
+  if (!integ) return { error: 'Integração não encontrada para este modelo.' };
+  return {
+    projectId: integ.projectId, rawDataset: integ.rawDataset, bronzeDataset: integ.bronzeDataset,
+    silverDataset: integ.silverDataset, goldDataset: integ.goldDataset, location: integ.location || undefined,
+  };
+}
+
+/**
+ * `dbt compile` de verdade (não uma simulação) — renderiza o Jinja do modelo contra o
+ * dataset real, sem materializar nada no BigQuery. Usado pela aba "SQL Compilado" do
+ * editor do Studio Gold. Mesmo critério de permissão do build (spawna um processo dbt real).
+ */
+lineageRouter.post('/compile', async (req, res) => {
+  const user = getDataCoreUser(res);
+  if (!canSaveGoldModels(user.papel)) {
+    res.status(403).json({ error: 'Seu perfil não pode compilar modelos dbt (requer administrador ou engenheiro de dados).' });
+    return;
+  }
+  const name = String((req.body as { model?: unknown })?.model || '');
+  if (!name) {
+    res.status(400).json({ error: 'Campo "model" é obrigatório.' });
+    return;
+  }
+  try {
+    const tenant = await loadTenantContext(user.idEmpresa);
+    const model = tenant.models.get(name);
+    if (!model) {
+      res.status(404).json({ error: `Modelo "${name}" não existe no catálogo da empresa.` });
+      return;
+    }
+    const params = resolveDbtRunParams(tenant, model);
+    if ('error' in params) {
+      res.status(422).json({ error: params.error });
+      return;
+    }
+    const run = await runDbt({ ...params, select: model.name, command: 'compile' });
+    if (!run.ok) {
+      res.status(422).json({ error: run.error || 'dbt compile falhou.', detail: run.stderrTail });
+      return;
+    }
+    const sql = readCompiledModelSql(tenant, model);
+    if (sql === null) {
+      res.status(500).json({ error: 'dbt compile terminou sem erro, mas o arquivo compilado não foi encontrado.' });
+      return;
+    }
+    res.json({ sql });
+  } catch (err) {
+    if (err instanceof DbtUnavailableError) { res.status(503).json({ error: err.message }); return; }
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao compilar o modelo.' });
+  }
+});
+
+/** Sobrescreve o .sql (somente leitura antes) — abre o editor completo do Studio Gold
+ *  a poder editar, não só ver. Mesmo critério de quem pode escrever no repositório dbt
+ *  usado pelo build de Gold (admin/engenheiro de dados). */
+lineageRouter.put('/sql', async (req, res) => {
+  try {
+    const user = getDataCoreUser(res);
+    if (!canSaveGoldModels(user.papel)) {
+      res.status(403).json({ error: 'Seu perfil não pode editar modelos dbt (requer administrador ou engenheiro de dados).' });
+      return;
+    }
+    const name = String(req.query.model || '');
+    const { sql } = req.body as { sql?: string };
+    if (typeof sql !== 'string' || !sql.trim()) {
+      res.status(400).json({ error: 'Campo "sql" (string não vazia) é obrigatório.' });
+      return;
+    }
+    const tenant = await loadTenantContext(user.idEmpresa);
+    const model = tenant.models.get(name);
+    if (!model) {
+      res.status(404).json({ error: `Modelo "${name}" não existe no catálogo da empresa.` });
+      return;
+    }
+    const ok = writeModelSql(tenant, model, sql);
+    if (!ok) {
+      res.status(404).json({ error: `Modelo "${name}" não tem arquivo .sql real no projeto dbt.` });
+      return;
+    }
+    res.json({ ok: true, name });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao salvar o modelo.' });
   }
 });
 

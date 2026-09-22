@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Code2, Crosshair, Loader2, Play, X } from 'lucide-react';
+import { Code2, Crosshair, FilePenLine, Loader2, Play, X } from 'lucide-react';
 import { LAYER_LABEL, fetchModelSql, type LineageIndex, type LineageNode, type ModelSql } from '../../lib/lineage';
 import { LAYER_STYLE, formatRows, formatWhen } from './LineageGraph';
 
@@ -13,6 +13,8 @@ interface NodeDetailPanelProps {
   /** Perfil pode executar E nenhuma execução está em andamento. */
   canExecute: boolean;
   executeHint?: string;
+  /** Abre o editor dbt em tela cheia (ver + editar + executar) para este nó. */
+  onOpenEditor: (node: LineageNode) => void;
   onClose: () => void;
 }
 
@@ -23,7 +25,7 @@ const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value
   </div>
 );
 
-export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, isFocus, onFocus, onExecute, canExecute, executeHint, onClose }) => {
+export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, isFocus, onFocus, onExecute, canExecute, executeHint, onOpenEditor, onClose }) => {
   const [sql, setSql] = useState<ModelSql | null>(null);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -89,6 +91,16 @@ export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, i
           {isModel && (
             <button type="button" onClick={toggleSql} className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition">
               <Code2 className="w-3.5 h-3.5" /> {sqlOpen ? 'Ocultar SQL' : 'Ver SQL'}
+            </button>
+          )}
+          {isModel && (
+            <button
+              type="button"
+              onClick={() => onOpenEditor(node)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition"
+              title="Abrir o editor completo do modelo dbt (visualizar, editar e executar) em tela cheia"
+            >
+              <FilePenLine className="w-3.5 h-3.5" /> Editar no dbt
             </button>
           )}
           {isModel && (
