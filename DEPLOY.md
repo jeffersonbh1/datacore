@@ -501,6 +501,15 @@ gateway e do frontend**.
   esta tabela", ao lado de "Focar nesta tabela" e "Ver SQL". Constrói SÓ aquele modelo (Gold: com os
   testes), sem sincronizar o Airbyte nem reconstruir o que o alimenta; avisa antes se uma entrada direta
   ainda não foi construída no BigQuery.
+- **Execução em segundo plano + sino de notificações:** confirmar "Executar fluxo até aqui" ou "Executar
+  esta tabela" NÃO abre uma janela bloqueante — a execução roda no `ExecutionJobsProvider` (`src/lib/executionJobs.ts`,
+  montado uma vez em `App.tsx`, fora de qualquer aba) e o usuário pode navegar para qualquer outra tela
+  enquanto ela acontece. O sino no cabeçalho (`ExecutionBell.tsx`, ao lado do usuário) mostra quantas
+  execuções estão rodando e, ao concluir, um contador de não vistas (verde = sucesso, vermelho = falha);
+  um aviso rápido (canto inferior direito) aparece ao iniciar e ao terminar. Clicar numa notificação abre
+  a mesma janela de detalhe/log de sempre. Fechar a aba/recarregar a página interrompe a execução (é ela
+  quem orquestra as chamadas); um `beforeunload` avisa disso enquanto algo está rodando. Duas execuções
+  da MESMA tabela ao mesmo tempo são bloqueadas na confirmação ("já está sendo executada agora").
 - **Busca nos comboboxes:** digitar filtra as tabelas por qualquer parte do nome (sem acento, sem
   diferenciar maiúsculas, `_` = espaço, várias palavras = todas precisam aparecer).
 - **Histórico na tela Execuções:** toda execução do Studio Gold (fluxo ou tabela única, com ou sem

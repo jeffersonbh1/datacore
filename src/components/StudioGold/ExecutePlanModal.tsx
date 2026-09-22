@@ -1,16 +1,10 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, Play, X } from 'lucide-react';
 import type { ExecPlan } from '../../lib/lineageExecution';
+import type { RunLogEntry } from '../../lib/executionJobs';
 
 /** Rótulo do tipo de tabela do alvo, para o resumo do plano de "executar só esta tabela". */
 const LAYER_NOUN: Record<string, string> = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' };
-
-export interface RunLogEntry {
-  id: number;
-  level: 'info' | 'warn' | 'error';
-  message: string;
-  at: string;
-}
 
 interface ExecutePlanModalProps {
   plan: ExecPlan;
@@ -27,6 +21,8 @@ interface ExecutePlanModalProps {
   onStart: () => void;
   onCancelRun: () => void;
   onClose: () => void;
+  /** Na confirmação: motivo pelo qual não dá para iniciar agora (ex.: a mesma tabela já está executando). */
+  blockedReason?: string | null;
 }
 
 const LOG_STYLE: Record<RunLogEntry['level'], string> = {
@@ -36,7 +32,7 @@ const LOG_STYLE: Record<RunLogEntry['level'], string> = {
 };
 
 export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
-  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose,
+  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose, blockedReason = null,
 }) => {
   const single = plan.scope === 'tabela';
   const bronzeCount = plan.integrations.reduce((n, i) => n + i.bronze.length, 0);
@@ -50,7 +46,7 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
       <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h3 className="min-w-0 text-base font-bold text-slate-900 flex items-center flex-wrap gap-x-2"><Play className="w-4 h-4 text-indigo-600 shrink-0" /> <span>{single ? 'Executar tabela' : 'Executar fluxo até'}</span> <span className="font-mono text-sm break-all">{targetName}</span></h3>
-          {phase !== 'running' && <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" aria-label="Fechar"><X className="w-4 h-4" /></button>}
+          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" aria-label="Fechar"><X className="w-4 h-4" /></button>
         </div>
 
         {phase === 'confirm' ? (
@@ -104,9 +100,17 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
               ? 'O resultado fica registrado na tela Execuções.'
               : 'Cada camada só roda para o que deu certo na anterior, e um Gold só é construído se tudo que ele consome estiver íntegro. O resultado fica registrado na tela Execuções.'}</p>
 
+            <p className="text-xs text-slate-500">A execução roda em segundo plano: depois de iniciar você pode usar o resto do sistema e acompanhar pelo sino no canto superior direito.</p>
+
+            {blockedReason && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" /> <span>{blockedReason}</span>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancelar</button>
-              <button type="button" disabled={nothingToRun} onClick={onStart} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold cursor-pointer transition">
+              <button type="button" disabled={nothingToRun || Boolean(blockedReason)} onClick={onStart} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold cursor-pointer transition">
                 <Play className="w-3.5 h-3.5" /> Executar
               </button>
             </div>
@@ -121,7 +125,7 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
             </div>
             {phase === 'running' ? (
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> {cancelling ? 'Cancelando após o passo atual…' : 'Executando — não feche esta janela.'}</p>
+                <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> {cancelling ? 'Cancelando após o passo atual…' : 'Executando em segundo plano — pode fechar esta janela.'}</p>
                 <button type="button" disabled={cancelling} onClick={onCancelRun} className="px-3 py-1.5 border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer">Cancelar execução</button>
               </div>
             ) : (

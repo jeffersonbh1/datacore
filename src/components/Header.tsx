@@ -6,6 +6,7 @@ import {
 import { UserRole, TeamUser } from '../types';
 import { ROLE_DEFINITIONS } from '../data/initialData';
 import { DataCoreLogo } from './common/DataCoreLogo';
+import { ExecutionBell } from './Executions/ExecutionBell';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -87,6 +88,9 @@ export const Header: React.FC<HeaderProps> = ({
             <ChevronDown className="w-3.5 h-3.5 text-slate-500 pointer-events-none absolute right-0" />
           </div>
         </div>
+
+        {/* Sino de notificações: execuções do Studio Gold em segundo plano */}
+        <ExecutionBell />
 
         {/* Card 4: Identificação do Usuário e Logout */}
         <div id="header-user-badge" className="flex items-center gap-2.5 border-l border-slate-200 pl-2.5 sm:pl-3 shrink-0">

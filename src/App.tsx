@@ -18,6 +18,7 @@ import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipeline
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
 import { PipelinesOverview } from './components/PipelinesList/PipelinesOverview';
 import { ExecutionsView } from './components/Executions/ExecutionsView';
+import { ExecutionJobsProvider } from './components/Executions/ExecutionJobsProvider';
 import { LgpdHub } from './components/Governance/LgpdHub';
 import { CostAnalytics } from './components/FinOps/CostAnalytics';
 import { RbacManager } from './components/Security/RbacManager';
@@ -462,6 +463,7 @@ export default function App() {
   const pendingDsrCount = lgpdRequests.filter(r => r.status === 'pendente' || r.status === 'em_analise').length;
 
   return (
+    <ExecutionJobsProvider>
     <div id="app-root" className="h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans selection:bg-indigo-600 selection:text-white pt-14 overflow-hidden">
       {/* Top Header (Fixed at top) */}
       <Header
@@ -711,5 +713,6 @@ export default function App() {
         </button>
       </nav>
     </div>
+    </ExecutionJobsProvider>
   );
 }

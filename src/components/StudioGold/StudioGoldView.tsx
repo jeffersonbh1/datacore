@@ -5,9 +5,9 @@ import {
   LAYER_LABEL, NODE_H, NODE_W, fetchLineage, focusOn, indexLineage, layoutGraph, nodesOfLayer,
   type Lineage, type LineageLayer, type LineageNode,
 } from '../../lib/lineage';
-import { buildPlan, runPlan, type ExecPlan, type ExecScope, type RunHooks, type RunState } from '../../lib/lineageExecution';
-import { ExecutionRecorder, MISSING_TABLE_HINT, isMissingExecutionsTable } from '../../lib/studioExecutions';
-import { ExecutePlanModal, type RunLogEntry } from './ExecutePlanModal';
+import { buildPlan, type ExecPlan, type ExecScope, type RunState } from '../../lib/lineageExecution';
+import { useExecutionJobs } from '../Executions/ExecutionJobsProvider';
+import { ExecutePlanModal } from './ExecutePlanModal';
 import { LAYER_STYLE, LineageGraph } from './LineageGraph';
 import { NodeDetailPanel } from './NodeDetailPanel';
 import { TableCombobox } from './TableCombobox';
@@ -22,6 +22,7 @@ interface StudioGoldViewProps {
 }
 
 const PICKER_LAYERS: Array<Extract<LineageLayer, 'raw' | 'bronze' | 'silver' | 'gold'>> = ['raw', 'bronze', 'silver', 'gold'];
+const NO_STATES: Map<string, RunState> = new Map();
 
 export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmpresa, canExecute, userName = null }) => {
   const [lineage, setLineage] = useState<Lineage | null>(null);
@@ -30,17 +31,14 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   const [focusId, setFocusId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [runStates, setRunStates] = useState<Map<string, RunState>>(new Map());
+  /** Execução (em segundo plano) cujo andamento pinta o grafo — some ao escolher outra tabela. */
+  const [statesJobId, setStatesJobId] = useState<string | null>(null);
 
-  // Execução
+  // Confirmação da execução. A execução em si roda em segundo plano, no gerenciador do app
+  // (sino do cabeçalho): sobrevive a esta tela ser fechada.
   const [plan, setPlan] = useState<ExecPlan | null>(null);
-  const [phase, setPhase] = useState<'confirm' | 'running' | 'done'>('confirm');
   const [includeSync, setIncludeSync] = useState(true);
-  const [log, setLog] = useState<RunLogEntry[]>([]);
-  const [result, setResult] = useState<{ ok: boolean; cancelled: boolean } | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  const cancelRef = useRef(false);
-  const logId = useRef(0);
+  const { jobs, store } = useExecutionJobs();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -55,6 +53,15 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Uma execução terminou (mesmo em outra tela): recarrega linhas/“construída”/última atualização.
+  const lastFinishedAt = useMemo(() => jobs.reduce((m, j) => Math.max(m, j.finishedAt ?? 0), 0), [jobs]);
+  const seenFinishedAt = useRef(lastFinishedAt);
+  useEffect(() => {
+    if (lastFinishedAt > seenFinishedAt.current) { seenFinishedAt.current = lastFinishedAt; load(true); }
+  }, [lastFinishedAt, load]);
+
+  const runStates = useMemo(() => (statesJobId ? jobs.find((j) => j.id === statesJobId)?.runStates : undefined) ?? NO_STATES, [jobs, statesJobId]);
 
   const index = useMemo(() => (lineage ? indexLineage(lineage) : null), [lineage]);
   const focus = useMemo(() => (index && focusId && index.byId.has(focusId) ? focusOn(index, focusId) : null), [index, focusId]);
@@ -74,7 +81,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   const pick = (id: string) => {
     setFocusId(id || null);
     setActiveId(id || null);
-    setRunStates(new Map());
+    setStatesJobId(null);
   };
 
   // Ao focar uma tabela, centraliza-a na área do grafo.
@@ -106,55 +113,15 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
     const next = buildPlan(index, targetId, lineage.integrations, pipelines, scope);
     setPlan(next);
     setIncludeSync(scope === 'fluxo' && next.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId));
-    setPhase('confirm');
-    setLog([]);
-    setResult(null);
-    setCancelling(false);
   };
 
-  const startRun = async () => {
+  /** Confirmado: a execução vai para o segundo plano (sino do cabeçalho) e a janela de confirmação fecha. */
+  const startRun = () => {
     if (!plan || !index) return;
-    setPhase('running');
-    setLog([]);
-    setResult(null);
-    setRunStates(new Map());
-    cancelRef.current = false;
-    setCancelling(false);
     const canSyncAny = plan.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId);
-    const withSync = plan.scope === 'fluxo' && includeSync && canSyncAny;
-    const target = index.byId.get(plan.focusId);
-
-    // Histórico da tela Execuções: grava ao começar, a cada tabela e ao terminar — sem nunca atrapalhar a execução.
-    const recorder = new ExecutionRecorder(idEmpresa, {
-      escopo: plan.scope,
-      alvoNome: target?.name ?? plan.focusId,
-      alvoCamada: !target || target.layer === 'source' ? 'raw' : target.layer,
-      comSincronizacao: withSync,
-      executadoPor: userName,
-    });
-    await recorder.start();
-
-    const hooks: RunHooks = {
-      log: (message, level = 'info') => setLog((prev) => [...prev, { id: ++logId.current, level, message, at: new Date().toLocaleTimeString('pt-BR') }]),
-      setState: (ids, state) => setRunStates((prev) => { const m = new Map(prev); ids.forEach((i) => m.set(i, state)); return m; }),
-      isCancelled: () => cancelRef.current,
-      record: (item) => recorder.record(item),
-    };
-    let outcome: { ok: boolean; cancelled: boolean };
-    try {
-      outcome = await runPlan(plan, { includeSync: withSync, idEmpresa, index }, hooks);
-    } catch (err) {
-      hooks.log(err instanceof Error ? err.message : 'Falha inesperada na execução.', 'error');
-      outcome = { ok: false, cancelled: false };
-    }
-    await recorder.finish(outcome.cancelled ? 'cancelled' : outcome.ok ? 'success' : 'failed');
-    if (recorder.lastError) {
-      const reason = recorder.lastError instanceof Error ? recorder.lastError.message : (recorder.lastError as { message?: string })?.message ?? 'erro desconhecido';
-      hooks.log(isMissingExecutionsTable(recorder.lastError) ? MISSING_TABLE_HINT : `Não consegui registrar esta execução na tela Execuções: ${reason}`, 'warn');
-    }
-    setResult(outcome);
-    setPhase('done');
-    load(true); // linhas/“construída”/última atualização já refletem o que rodou
+    const jobId = store.start({ plan, index, idEmpresa, userName, includeSync: plan.scope === 'fluxo' && includeSync && canSyncAny });
+    setStatesJobId(jobId);
+    setPlan(null);
   };
 
   const summary = useMemo(() => {
@@ -290,15 +257,18 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           plan={plan}
           targetName={planTarget.name}
           targetLayer={planTarget.layer}
-          phase={phase}
-          log={log}
-          result={result}
+          phase="confirm"
+          log={[]}
+          result={null}
           includeSync={includeSync}
           onIncludeSyncChange={setIncludeSync}
           canSyncAny={plan.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId)}
-          cancelling={cancelling}
+          cancelling={false}
+          blockedReason={jobs.some((j) => j.phase === 'running' && j.targetId === plan.focusId)
+            ? 'Esta tabela já está sendo executada agora. Aguarde terminar — acompanhe pelo sino no canto superior direito.'
+            : null}
           onStart={startRun}
-          onCancelRun={() => { cancelRef.current = true; setCancelling(true); }}
+          onCancelRun={() => {}}
           onClose={() => setPlan(null)}
         />
       )}
