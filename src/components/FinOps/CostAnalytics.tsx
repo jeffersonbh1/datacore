@@ -321,7 +321,9 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 </button>
               </div>
 
-              <div className={`h-56 w-full flex items-end justify-between ${report.dailyTrend.length > 12 ? 'gap-1' : 'gap-3'} pt-6 pb-2 px-2 border-b border-slate-100`}>
+              {/* overflow-hidden é a trava: mesmo que uma barra não consiga encolher o suficiente (intervalo
+                  com muitos dias), o excesso fica cortado aqui dentro — nunca vaza por cima do card vizinho. */}
+              <div className={`h-56 w-full flex items-end justify-between overflow-hidden ${report.dailyTrend.length > 12 ? 'gap-1' : 'gap-3'} pt-6 pb-2 px-2 border-b border-slate-100`}>
                 {report.dailyTrend.map((item, idx) => {
                   const totalDay = item.computeUsd + item.cloudRunUsd + item.bigqueryUsd;
                   const heightPercent = Math.min(100, (totalDay / maxDailyTotal) * 100);
@@ -330,8 +332,11 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                   const bqHeight = totalDay > 0 ? (item.bigqueryUsd / totalDay) * 100 : 0;
 
                   return (
-                    <div key={idx} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
-                      <div className="text-[10px] text-slate-500 font-mono opacity-0 group-hover:opacity-100 transition font-medium">
+                    // min-w-0: sem isto, o texto da data ("01/09") vira a largura mínima do item flex e,
+                    // com muitos dias, a soma das larguras mínimas passa do espaço disponível — as últimas
+                    // barras eram empurradas pra fora do card em vez de encolher (vazando sobre o card vizinho).
+                    <div key={idx} className="flex-1 min-w-0 flex flex-col items-center gap-2 group h-full justify-end">
+                      <div className="w-full text-center truncate text-[10px] text-slate-500 font-mono opacity-0 group-hover:opacity-100 transition font-medium">
                         ${totalDay.toFixed(2)}
                       </div>
                       <div
@@ -342,7 +347,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                         <div style={{ height: `${runHeight}%` }} className="bg-blue-500 w-full" title={`Cloud Run: $${item.cloudRunUsd.toFixed(2)}`} />
                         <div style={{ height: `${bqHeight}%` }} className="bg-cyan-500 w-full" title={`BigQuery: $${item.bigqueryUsd.toFixed(2)}`} />
                       </div>
-                      <span className="text-[11px] text-slate-500 font-mono group-hover:text-slate-900 group-hover:font-semibold transition">
+                      <span className="w-full text-center truncate text-[11px] text-slate-500 font-mono group-hover:text-slate-900 group-hover:font-semibold transition">
                         {formatDay(item.date)}
                       </span>
                     </div>
