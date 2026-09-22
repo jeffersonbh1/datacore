@@ -55,6 +55,7 @@ export default function App() {
     return INITIAL_USERS.find(u => u.id === savedId) || INITIAL_USERS[0];
   });
   const [activeTab, setActiveTab] = useState<ActiveTab>('pipelines');
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>(() => currentUser?.role || 'admin');
 
   // True while the URL carries a Supabase password-recovery token
@@ -424,12 +425,13 @@ export default function App() {
     setCurrentRole(role);
     setIsAuthenticated(true);
     setActiveTab('pipelines');
+    setSessionExpiredNotice(null);
     localStorage.setItem('datacore_auth_active', 'true');
     localStorage.setItem('datacore_user_id', user.id);
     localStorage.setItem('datacore_user_profile', JSON.stringify(user));
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (reason?: 'inactivity') => {
     try {
       await logoutFromSupabase();
     } catch (err) {
@@ -439,7 +441,41 @@ export default function App() {
     localStorage.removeItem('datacore_auth_active');
     localStorage.removeItem('datacore_user_id');
     localStorage.removeItem('datacore_user_profile');
+    setSessionExpiredNotice(reason === 'inactivity' ? 'Sua sessão expirou por inatividade. Faça login novamente.' : null);
   };
+
+  // Encerra a sessão automaticamente após 30min sem nenhuma interação do usuário
+  // (mouse, teclado, toque ou rolagem) — evita uma sessão autenticada aberta
+  // indefinidamente numa máquina sem supervisão.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let lastReset = 0;
+
+    const scheduleLogout = () => {
+      timeoutId = setTimeout(() => { void handleLogout('inactivity'); }, INACTIVITY_LIMIT_MS);
+    };
+
+    // Throttlado: reagir a todo mousemove/scroll reiniciaria o timer a uma taxa
+    // muito maior do que necessário para apenas marcar "houve atividade".
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastReset < 1000) return;
+      lastReset = now;
+      clearTimeout(timeoutId);
+      scheduleLogout();
+    };
+
+    const events: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((evt) => window.addEventListener(evt, onActivity, { passive: true }));
+    scheduleLogout();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, onActivity));
+    };
+  }, [isAuthenticated]);
 
   // Handler when a user is successfully registered
   const handleUserCreated = (newUser: TeamUser) => {
@@ -455,7 +491,7 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onLogin={handleLogin} sessionExpiredNotice={sessionExpiredNotice} />;
   }
 
   const activeCount = pipelines.filter(p => p.status === 'active').length;
@@ -473,6 +509,7 @@ export default function App() {
         totalPipelinesCount={pipelines.length}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onLogoClick={() => setActiveTab('pipelines')}
       />
 
       {/* Main Content Area */}

@@ -15,6 +15,8 @@ interface HeaderProps {
   totalPipelinesCount: number;
   currentUser?: TeamUser | null;
   onLogout?: () => void;
+  /** Vai para a tela principal (Pipelines & Fluxos) ao clicar no logo. */
+  onLogoClick?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,7 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   activePipelinesCount,
   totalPipelinesCount,
   currentUser,
-  onLogout
+  onLogout,
+  onLogoClick
 }) => {
   const currentRoleDef = ROLE_DEFINITIONS[currentRole] || ROLE_DEFINITIONS.admin;
 
@@ -33,9 +36,16 @@ export const Header: React.FC<HeaderProps> = ({
       className="fixed top-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-40 shadow-xs min-w-0"
     >
       {/* Brand logo & title */}
-      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+      <button
+        type="button"
+        id="btn-header-logo"
+        onClick={onLogoClick}
+        disabled={!onLogoClick}
+        className="flex items-center gap-2.5 sm:gap-3 shrink-0 cursor-pointer disabled:cursor-default rounded-lg -m-1 p-1 hover:bg-slate-50 transition"
+        title="Ir para Pipelines & Fluxos"
+      >
         <DataCoreLogo size="sm" showWordmark={true} showTagline={false} />
-      </div>
+      </button>
 
       {/* Operational Cards & User Controls Cluster (No overlap layout) */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">

@@ -11,9 +11,11 @@ import { isSupabaseConfigured, loginWithSupabaseAuth, supabase } from '../../lib
 
 interface LoginScreenProps {
   onLogin: (user: TeamUser, role: UserRole) => void;
+  /** Mensagem exibida quando o usuário caiu aqui por a sessão ter expirado (ex.: inatividade). */
+  sessionExpiredNotice?: string | null;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, sessionExpiredNotice }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -140,6 +142,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 Informe seu usuário e senha para acessar o console
               </p>
             </div>
+
+            {/* Sessão expirada (ex.: inatividade) */}
+            {!error && sessionExpiredNotice && (
+              <div className="mb-5 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>{sessionExpiredNotice}</span>
+              </div>
+            )}
 
             {/* Error Message */}
             {error && (
