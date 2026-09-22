@@ -15,6 +15,9 @@ export const costsRouter = Router();
 // Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista ao vivo
 // (gcpPricing.ts) — recurso real, uso real, preço real de lista, mas não é a
 // fatura. `GcpCostReport.costSource` diz qual das duas gerou a resposta.
+// Todo valor monetário do relatório é BRL — inclusive os campos nomeados
+// "*Usd" abaixo, mantidos por não haver tipo compartilhado entre server e
+// frontend que justifique o rename (src/types.ts duplica estas interfaces).
 // -----------------------------------------------------------------------------
 
 export interface GcpResourceCost {
@@ -229,8 +232,16 @@ async function monitoringSumWindow(token: string, projectId: string, filter: str
   url.searchParams.set('aggregation.alignmentPeriod', `${periodSec}s`);
   url.searchParams.set('aggregation.perSeriesAligner', 'ALIGN_SUM');
   const data = await gcpGet<{ timeSeries?: Array<{ points: Array<{ value: { doubleValue?: number; int64Value?: string } }> }> }>(url.toString(), token);
-  const pts = data.timeSeries?.[0]?.points || [];
-  return pts.reduce((sum, p) => sum + (p.value.doubleValue ?? Number(p.value.int64Value || 0)), 0);
+  // Sem crossSeriesReducer, o filtro pode bater em MAIS de uma série (ex.:
+  // Cloud Run cria uma série por revisão — 40+ revisões num mês de deploys
+  // frequentes viram 40+ séries) — somar só timeSeries[0] descartava quase
+  // todo o uso real (confirmado: 0h calculado contra 103h reais em 30d pro
+  // airbyte-gateway). Soma todas as séries devolvidas, não só a primeira.
+  const series = data.timeSeries || [];
+  return series.reduce(
+    (sum, ts) => sum + ts.points.reduce((s, p) => s + (p.value.doubleValue ?? Number(p.value.int64Value || 0)), 0),
+    0,
+  );
 }
 
 /** Soma de uma métrica DELTA nos últimos `days` dias corridos (não precisa de alinhamento de dia — usado só pra totais). */
@@ -390,6 +401,51 @@ interface RealBillingReport {
   totalMonthlyCostUsd: number;
 }
 
+// BigQuery Billing Export NÃO faz backfill retroativo: cada serviço só passa a
+// ter linha a partir do dia em que o GCP efetivamente começou a gravar aquele
+// serviço no export (confirmado 2026-09-22: linhas de Cloud Run existem desde
+// 10/09, mas Compute Engine — ~90% do custo real do mês — só existem a partir
+// de 18/09; o Console mostrava R$207,58 de Compute Engine no mês contra
+// R$22,98 vindos do export, um total mensal 9x menor que o real). Sem este
+// checkpoint, `getRealBillingReport` somava só o que tinha linha e reportava
+// isso como "fatura real completa" do período pedido, mascarando 17 dias de
+// custo real que a própria fatura oficial contabiliza. Cacheado 6h — é uma
+// data histórica que só muda quando um serviço novo aparece pela 1ª vez.
+let billingCoverageCache: { projectId: string; startLabel: string; expiresAt: number } | null = null;
+const BILLING_COVERAGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Dia (fuso São Paulo) a partir do qual o export tem linha para TODOS os serviços que já
+ *  apareceram nele — o "pior caso" entre os serviços, não a data mais antiga qualquer.
+ *  `null` = tabela sem nenhuma linha pro projeto (export recém-ativado ou inexistente). */
+async function getBillingExportCoverageStart(projectId: string): Promise<string | null> {
+  if (billingCoverageCache && billingCoverageCache.projectId === projectId && billingCoverageCache.expiresAt > Date.now()) {
+    return billingCoverageCache.startLabel;
+  }
+  const bq = getBigQueryClient();
+  const table = `\`${projectId}.${BILLING_EXPORT_DATASET}.gcp_billing_export_resource_v1_${BILLING_ACCOUNT_ID.replace(/-/g, '_')}\``;
+  let rows: Array<{ coverage_start: { value: string } | null }>;
+  try {
+    const result = await bq.query({
+      query: `
+        SELECT MAX(min_day) AS coverage_start
+        FROM (
+          SELECT MIN(DATE(usage_start_time, "America/Sao_Paulo")) AS min_day
+          FROM ${table}
+          WHERE project.id = @projectId
+          GROUP BY service.description
+        )
+      `,
+      params: { projectId },
+    });
+    rows = result[0] as unknown as Array<{ coverage_start: { value: string } | null }>;
+  } catch {
+    return null; // tabela ainda não existe.
+  }
+  const startLabel = rows?.[0]?.coverage_start?.value ?? null;
+  if (startLabel) billingCoverageCache = { projectId, startLabel, expiresAt: Date.now() + BILLING_COVERAGE_CACHE_TTL_MS };
+  return startLabel;
+}
+
 const CATEGORY_BY_SERVICE: Record<string, GcpResourceCost['category']> = {
   'Compute Engine': 'compute',
   'Cloud Run': 'cloud_run',
@@ -406,17 +462,29 @@ const CATEGORY_BY_SERVICE: Record<string, GcpResourceCost['category']> = {
  * depois de o export ser ativado — se a tabela não existir ainda, ou não
  * tiver nenhuma linha no intervalo pedido, devolve null e quem chamou cai
  * pro pipeline de estimativa (ver rota principal abaixo), sem quebrar a tela.
- * cost_in_usd = cost / currency_conversion_rate (a fatura está em BRL neste
- * projeto); créditos vêm à parte de `cost` e precisam ser somados pro custo
- * líquido (ver docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-tables/detailed-usage).
+ * `cost` já vem na moeda da conta de faturamento (BRL neste projeto) — sem
+ * conversão de câmbio necessária; créditos vêm à parte de `cost` e precisam
+ * ser somados pro custo líquido (ver
+ * docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-tables/detailed-usage).
+ * Os campos do relatório continuam nomeados "*Usd" (não há tipo compartilhado
+ * entre server/frontend pra justificar o rename) mas os valores são BRL —
+ * mesma moeda em todo o relatório (real e estimativa).
  */
 async function getRealBillingReport(
   projectId: string, startLabel: string, endLabel: string,
   dayWindows: Array<{ label: string }>,
 ): Promise<RealBillingReport | null> {
+  // O período pedido começa antes de o export ter linha pra TODOS os serviços
+  // que ele já registrou (ver getBillingExportCoverageStart acima) — somar só
+  // o que existe daria um total real, porém incompleto, menor que a fatura de
+  // verdade. Cai pro pipeline de estimativa (que cobre o mês inteiro via
+  // Monitoring) em vez de mostrar um "real" enganoso.
+  const coverageStart = await getBillingExportCoverageStart(projectId);
+  if (coverageStart && startLabel < coverageStart) return null;
+
   const bq = getBigQueryClient();
   const table = `\`${projectId}.${BILLING_EXPORT_DATASET}.gcp_billing_export_resource_v1_${BILLING_ACCOUNT_ID.replace(/-/g, '_')}\``;
-  type Row = { day: { value: string }; service_desc: string; resource_name: string | null; net_cost: number; fx_rate: number };
+  type Row = { day: { value: string }; service_desc: string; resource_name: string | null; net_cost: number };
   let rows: Row[];
   try {
     const result = await bq.query({
@@ -425,8 +493,7 @@ async function getRealBillingReport(
           DATE(usage_start_time, "America/Sao_Paulo") AS day,
           service.description AS service_desc,
           CASE WHEN service.description = 'Compute Engine' THEN resource.name ELSE NULL END AS resource_name,
-          SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net_cost,
-          AVG(currency_conversion_rate) AS fx_rate
+          SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net_cost
         FROM ${table}
         WHERE project.id = @projectId
           AND DATE(usage_start_time, "America/Sao_Paulo") BETWEEN @start AND @end
@@ -446,8 +513,7 @@ async function getRealBillingReport(
 
   for (const r of rows) {
     const category = CATEGORY_BY_SERVICE[r.service_desc] || 'other';
-    const fx = r.fx_rate || 1;
-    const costUsd = Number(r.net_cost || 0) / fx;
+    const costUsd = Number(r.net_cost || 0); // BRL, nome do campo mantido — ver comentário do doc acima.
     const key = r.resource_name ? `${r.service_desc}::${r.resource_name}` : r.service_desc;
     const label = r.resource_name ? `${r.service_desc} — ${r.resource_name}` : r.service_desc;
     const existing = byResource.get(key);
@@ -468,7 +534,7 @@ async function getRealBillingReport(
     label: v.label,
     detail: 'Custo real da fatura do GCP (BigQuery Billing Export)',
     monthlyCostUsd: v.costUsd,
-    basis: 'fatura oficial (gcp_billing_export_resource_v1) — custo líquido de créditos, convertido de BRL pra USD pela taxa de câmbio do próprio export',
+    basis: 'fatura oficial (gcp_billing_export_resource_v1) — custo líquido de créditos, em BRL (moeda da conta de faturamento)',
   }));
 
   const dailyTrend: GcpCostReport['dailyTrend'] = dayWindows.map((w) => {
@@ -547,7 +613,7 @@ costsRouter.get('/gcp', async (req, res) => {
     // fallback (ver `realBilling ? ... : notes.push(...)` mais abaixo) — colocá-la sempre aqui
     // e só ACRESCENTAR a nota real por cima (unshift) deixava as duas, contraditórias, na tela.
     const notes: string[] = [
-      'Todos os valores em USD. Se você comparar com o relatório do Console do GCP, confira a moeda mostrada lá (R$ e US$ têm números bem diferentes).',
+      'Todos os valores em BRL (Real), mesma moeda da conta de faturamento e do relatório do Console do GCP.',
       'Os dias do gráfico diário seguem o fuso de São Paulo (UTC-3), igual o Console — a Compute Engine usa o uptime real medido de cada dia, não um valor fixo repetido.',
       'O custo da Compute Engine (recurso e total) é o gasto REAL acumulado desde o dia 1 deste mês (mesmo período do relatório "Mês atual" do Console) — não uma projeção do status de agora. Cloud Run e BigQuery usam uma janela móvel de 30 dias corridos.',
     ];
@@ -820,7 +886,7 @@ costsRouter.get('/gcp', async (req, res) => {
     // recomendações (rightsizing/limpeza) continuam vindo do uso real medido
     // via Monitoring, já calculado no loop acima independente da fonte de custo.
     if (realBilling) {
-      notes.unshift('Usando dado REAL da fatura do GCP (BigQuery Billing Export) — não é estimativa por uso × preço de lista. Convertido de BRL pra USD pela taxa de câmbio do próprio export.');
+      notes.unshift('Usando dado REAL da fatura do GCP (BigQuery Billing Export) — não é estimativa por uso × preço de lista.');
     } else {
       notes.unshift('Estimativa por uso real medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista do GCP (Cloud Billing Catalog) — não é a fatura oficial do Cloud Billing.');
       notes.push('BigQuery Billing Export foi ativado mas ainda não tem dado disponível para este período (a exportação nova leva algumas horas pra começar a gravar) — usando estimativa por uso real medido enquanto isso.');

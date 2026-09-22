@@ -149,7 +149,9 @@ export interface LGPDRequest {
   auditNotes: string;
 }
 
-/** Uma linha de custo real (server/routes/costs.ts::GcpResourceCost). */
+/** Uma linha de custo real (server/routes/costs.ts::GcpResourceCost). Campos "*Usd"
+ *  são, na verdade, BRL (moeda da conta de faturamento) — nome mantido por não haver
+ *  tipo compartilhado entre server/frontend que justifique o rename. */
 export interface GcpResourceCost {
   id: string;
   category: 'compute' | 'cloud_run' | 'bigquery' | 'artifact_registry' | 'secret_manager' | 'other';
@@ -170,7 +172,8 @@ export interface CostRecommendation {
 }
 
 /** Resposta de GET /api/costs/gcp — inventário real de recursos GCP + custo
- *  estimado (uso real × preço público de lista), não é a fatura oficial. */
+ *  estimado (uso real × preço público de lista), não é a fatura oficial.
+ *  Todos os valores monetários (mesmo os campos nomeados "*Usd") são BRL. */
 export interface GcpCostReport {
   generatedAt: string;
   projectId: string;

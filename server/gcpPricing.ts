@@ -20,27 +20,27 @@ const SERVICE_IDS = {
 } as const;
 
 export interface GcpPricing {
-  /** USD por vCPU-hora, VM E2 on-demand na região configurada. */
+  /** BRL por vCPU-hora, VM E2 on-demand na região configurada. */
   computeE2CorePerHour: number;
-  /** USD por GiB-hora de RAM, VM E2 on-demand. */
+  /** BRL por GiB-hora de RAM, VM E2 on-demand. */
   computeE2RamPerGiBHour: number;
-  /** USD por GiB-mês, disco persistente Balanced. */
+  /** BRL por GiB-mês, disco persistente Balanced. */
   computePdBalancedPerGiBMonth: number;
-  /** USD por GiB-mês, storage de snapshot de disco (Storage PD Snapshot — não o produto "Instant Snapshot"). */
+  /** BRL por GiB-mês, storage de snapshot de disco (Storage PD Snapshot — não o produto "Instant Snapshot"). */
   computePdSnapshotPerGiBMonth: number;
-  /** USD por hora, IP externo estático reservado (não cobra se atrelado a instância rodando). */
+  /** BRL por hora, IP externo estático reservado (não cobra se atrelado a instância rodando). */
   computeStaticIpPerHour: number;
-  /** USD por vCPU-segundo, Cloud Run "Instance-based billing" (CPU sempre alocada). */
+  /** BRL por vCPU-segundo, Cloud Run "Instance-based billing" (CPU sempre alocada). */
   cloudRunInstanceCpuPerSecond: number;
-  /** USD por GiB-segundo, Cloud Run "Instance-based billing". */
+  /** BRL por GiB-segundo, Cloud Run "Instance-based billing". */
   cloudRunInstanceMemPerGiBSecond: number;
-  /** USD por GiB-mês de storage no Artifact Registry (global). */
+  /** BRL por GiB-mês de storage no Artifact Registry (global). */
   artifactRegistryStoragePerGiBMonth: number;
-  /** USD por versão de secret ativa/mês, acima do free tier (6 versões). */
+  /** BRL por versão de secret ativa/mês, acima do free tier (6 versões). */
   secretManagerVersionPerMonth: number;
-  /** USD por TiB processado, BigQuery on-demand analysis. */
+  /** BRL por TiB processado, BigQuery on-demand analysis. */
   bigQueryAnalysisPerTiB: number;
-  /** USD por GiB-mês, BigQuery active logical storage, acima do free tier (10GB). */
+  /** BRL por GiB-mês, BigQuery active logical storage, acima do free tier (10GB). */
   bigQueryActiveStoragePerGiBMonth: number;
   fetchedAt: string;
 }
@@ -70,7 +70,10 @@ async function fetchAllSkus(serviceId: string, token: string): Promise<Sku[]> {
   let pageToken: string | undefined;
   do {
     const url = new URL(`https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus`);
-    url.searchParams.set('currencyCode', 'USD');
+    // BRL: mesma moeda da conta de faturamento (a fatura real também é BRL, ver
+    // getRealBillingReport em costs.ts) — o Catalog API já devolve o preço de
+    // lista convertido pelo Google, sem precisar de uma segunda conversão manual.
+    url.searchParams.set('currencyCode', 'BRL');
     url.searchParams.set('pageSize', '5000');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });

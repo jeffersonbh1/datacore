@@ -31,9 +31,11 @@ const CATEGORY_COLOR: Record<GcpResourceCost['category'], string> = {
   other: '#10B981',
 };
 
-function formatDay(iso: string): string {
+/** `showMonth = false` (padrão do eixo do gráfico) mostra só o dia; o rótulo de
+ *  intervalo do cabeçalho e o caso de o período passar de um mês pedem "dd/mm". */
+function formatDay(iso: string, showMonth = true): string {
   const [, m, d] = iso.split('-');
-  return `${d}/${m}`;
+  return showMonth ? `${d}/${m}` : d;
 }
 
 function CopyCommandButton({ command }: { command: string }) {
@@ -152,6 +154,9 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
     1,
     ...(report?.dailyTrend || []).map(d => d.computeUsd + d.cloudRunUsd + d.bigqueryUsd),
   );
+  // Rótulo de cada barra: só o dia normalmente; dia/mês quando o período selecionado
+  // atravessa mais de um mês (senão "01", "02"... de meses diferentes ficam ambíguos).
+  const spansMultipleMonths = !!report && report.rangeStart.slice(0, 7) !== report.rangeEnd.slice(0, 7);
 
   return (
     <div id="finops-view-container" className="space-y-6">
@@ -209,8 +214,8 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 <DollarSign className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-2xl font-bold text-slate-900 flex items-baseline gap-1 font-mono">
-                ${totalMonthly.toFixed(2)}
-                <span className="text-xs text-slate-400 font-normal">USD</span>
+                R${totalMonthly.toFixed(2)}
+                <span className="text-xs text-slate-400 font-normal">BRL</span>
               </div>
               <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1 font-medium">
                 <Server className="w-3.5 h-3.5" />
@@ -224,7 +229,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 <Zap className="w-4 h-4 text-sky-600" />
               </div>
               <div className="text-2xl font-bold text-sky-600 flex items-baseline gap-1 font-mono">
-                {costPerMillion != null ? `$${costPerMillion.toFixed(2)}` : '—'}
+                {costPerMillion != null ? `R$${costPerMillion.toFixed(2)}` : '—'}
                 <span className="text-xs text-slate-400 font-normal">/ 1M</span>
               </div>
               <span className="text-[11px] text-slate-500">
@@ -238,7 +243,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 <AlertCircle className="w-4 h-4 text-amber-600" />
               </div>
               <div className="text-2xl font-bold text-amber-600 flex items-baseline gap-1 font-mono">
-                ${(topRecommendation?.potentialSavingsUsd || 0).toFixed(2)}
+                R${(topRecommendation?.potentialSavingsUsd || 0).toFixed(2)}
                 <span className="text-xs text-slate-400 font-normal">/mês</span>
               </div>
               <span className="text-[11px] text-amber-600 font-medium truncate block" title={topRecommendation?.title}>
@@ -252,7 +257,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 <Sparkles className="w-4 h-4 text-indigo-600" />
               </div>
               <div className="text-2xl font-bold text-indigo-600 flex items-baseline gap-1 font-mono">
-                ${totalPotentialSavings.toFixed(2)}
+                R${totalPotentialSavings.toFixed(2)}
                 <span className="text-xs text-slate-400 font-normal">/mês</span>
               </div>
               <span className="text-[11px] text-indigo-600 font-medium">
@@ -337,18 +342,18 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                     // barras eram empurradas pra fora do card em vez de encolher (vazando sobre o card vizinho).
                     <div key={idx} className="flex-1 min-w-0 flex flex-col items-center gap-2 group h-full justify-end">
                       <div className="w-full text-center truncate text-[10px] text-slate-500 font-mono opacity-0 group-hover:opacity-100 transition font-medium">
-                        ${totalDay.toFixed(2)}
+                        R${totalDay.toFixed(2)}
                       </div>
                       <div
                         className="w-full max-w-[42px] rounded-t overflow-hidden flex flex-col-reverse transition-all duration-300 group-hover:brightness-105 group-hover:scale-105 shadow-sm"
                         style={{ height: `${heightPercent}%` }}
                       >
-                        <div style={{ height: `${computeHeight}%` }} className="bg-amber-500 w-full" title={`Compute Engine: $${item.computeUsd.toFixed(2)}`} />
-                        <div style={{ height: `${runHeight}%` }} className="bg-blue-500 w-full" title={`Cloud Run: $${item.cloudRunUsd.toFixed(2)}`} />
-                        <div style={{ height: `${bqHeight}%` }} className="bg-cyan-500 w-full" title={`BigQuery: $${item.bigqueryUsd.toFixed(2)}`} />
+                        <div style={{ height: `${computeHeight}%` }} className="bg-amber-500 w-full" title={`Compute Engine: R$${item.computeUsd.toFixed(2)}`} />
+                        <div style={{ height: `${runHeight}%` }} className="bg-blue-500 w-full" title={`Cloud Run: R$${item.cloudRunUsd.toFixed(2)}`} />
+                        <div style={{ height: `${bqHeight}%` }} className="bg-cyan-500 w-full" title={`BigQuery: R$${item.bigqueryUsd.toFixed(2)}`} />
                       </div>
                       <span className="w-full text-center truncate text-[11px] text-slate-500 font-mono group-hover:text-slate-900 group-hover:font-semibold transition">
-                        {formatDay(item.date)}
+                        {formatDay(item.date, spansMultipleMonths)}
                       </span>
                     </div>
                   );
@@ -379,7 +384,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-slate-700 font-medium truncate pr-2">{CATEGORY_LABEL[group.category]}</span>
                         <span className="font-mono text-slate-600 font-semibold shrink-0">
-                          ${group.monthlyCostUsd.toFixed(2)} ({pct}%)
+                          R${group.monthlyCostUsd.toFixed(2)} ({pct}%)
                         </span>
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
@@ -419,7 +424,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                 </div>
               </div>
               <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
-                Economia Total Possível: ${totalPotentialSavings.toFixed(2)}/mês
+                Economia Total Possível: R${totalPotentialSavings.toFixed(2)}/mês
               </span>
             </div>
 
@@ -442,7 +447,7 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
                             {rec.effort === 'baixo' ? 'Esforço Baixo' : rec.effort === 'medio' ? 'Esforço Médio' : 'Esforço Alto'}
                           </span>
                           <span className="text-xs font-bold font-mono text-emerald-600">
-                            +${rec.potentialSavingsUsd.toFixed(2)}/mês
+                            +R${rec.potentialSavingsUsd.toFixed(2)}/mês
                           </span>
                         </div>
 
