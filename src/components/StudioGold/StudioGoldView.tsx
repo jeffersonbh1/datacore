@@ -61,7 +61,22 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
     if (lastFinishedAt > seenFinishedAt.current) { seenFinishedAt.current = lastFinishedAt; load(true); }
   }, [lastFinishedAt, load]);
 
-  const runStates = useMemo(() => (statesJobId ? jobs.find((j) => j.id === statesJobId)?.runStates : undefined) ?? NO_STATES, [jobs, statesJobId]);
+  // Estados da última execução escolhida (para manter as cores de sucesso/erro após terminar) — some ao focar outra tabela.
+  const selectedJobStates = useMemo(() => (statesJobId ? jobs.find((j) => j.id === statesJobId)?.runStates : undefined) ?? NO_STATES, [jobs, statesJobId]);
+  // Execuções em andamento agora (de qualquer origem — inclusive iniciadas antes de focar esta tela) pintam
+  // sempre que o nó estiver visível, mesmo trocando de tabela em foco: a animação não deve depender do
+  // usuário ter ficado olhando para o job que a iniciou.
+  const liveRunStates = useMemo(() => {
+    const running = jobs.filter((j) => j.phase === 'running');
+    if (running.length === 0) return NO_STATES;
+    const m = new Map<string, RunState>();
+    running.forEach((j) => j.runStates.forEach((state, id) => m.set(id, state)));
+    return m;
+  }, [jobs]);
+  const runStates = useMemo(() => {
+    if (liveRunStates.size === 0) return selectedJobStates;
+    return new Map([...selectedJobStates, ...liveRunStates]);
+  }, [selectedJobStates, liveRunStates]);
 
   const index = useMemo(() => (lineage ? indexLineage(lineage) : null), [lineage]);
   const focus = useMemo(() => (index && focusId && index.byId.has(focusId) ? focusOn(index, focusId) : null), [index, focusId]);
