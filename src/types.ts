@@ -178,6 +178,8 @@ export interface GcpCostReport {
   /** Intervalo (dias de calendário em São Paulo, 'YYYY-MM-DD') que o dailyTrend cobre — default: mês atual. */
   rangeStart: string;
   rangeEnd: string;
+  /** 'billing_export' = fatura oficial real (BigQuery Billing Export); 'estimate' = uso medido × preço de lista (fallback). */
+  costSource: 'billing_export' | 'estimate';
   resources: GcpResourceCost[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];

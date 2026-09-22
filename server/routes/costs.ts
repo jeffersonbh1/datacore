@@ -6,12 +6,15 @@ import { GcpPricing, getGcpPricing } from '../gcpPricing';
 export const costsRouter = Router();
 
 // -----------------------------------------------------------------------------
-// Custos & FinOps com dados reais: inventário real de recursos GCP (Compute
-// Engine, Cloud Run, BigQuery, Artifact Registry, Secret Manager) + uso real
-// medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de
-// lista ao vivo (gcpPricing.ts). NÃO é a fatura oficial do Cloud Billing —
-// não há billing export configurado neste projeto — mas é honesto: recurso
-// real, uso real, preço real de lista.
+// Custos & FinOps com dados reais. Fonte preferencial: a fatura oficial do GCP
+// via BigQuery Billing Export (ver getRealBillingReport, mais abaixo) — quando
+// disponível para o período pedido, é ground truth do próprio GCP. Sem ela
+// (export ainda não tem dado pro período, ou não está configurado), cai para
+// um fallback honesto: inventário real de recursos GCP (Compute Engine, Cloud
+// Run, BigQuery, Artifact Registry, Secret Manager) + uso real medido (Cloud
+// Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista ao vivo
+// (gcpPricing.ts) — recurso real, uso real, preço real de lista, mas não é a
+// fatura. `GcpCostReport.costSource` diz qual das duas gerou a resposta.
 // -----------------------------------------------------------------------------
 
 export interface GcpResourceCost {
@@ -39,6 +42,8 @@ export interface GcpCostReport {
   /** Intervalo (dias de calendário em São Paulo, 'YYYY-MM-DD') que o dailyTrend cobre — default: mês atual. */
   rangeStart: string;
   rangeEnd: string;
+  /** 'billing_export' = fatura oficial real (BigQuery Billing Export); 'estimate' = uso medido × preço de lista (fallback). */
+  costSource: 'billing_export' | 'estimate';
   resources: GcpResourceCost[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];
@@ -538,8 +543,10 @@ costsRouter.get('/gcp', async (req, res) => {
     ]);
 
     const resources: GcpResourceCost[] = [];
+    // A nota de "é estimativa, sem billing export" só é verdadeira quando de fato caímos no
+    // fallback (ver `realBilling ? ... : notes.push(...)` mais abaixo) — colocá-la sempre aqui
+    // e só ACRESCENTAR a nota real por cima (unshift) deixava as duas, contraditórias, na tela.
     const notes: string[] = [
-      'Estimativa por uso real medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista do GCP (Cloud Billing Catalog) — não é a fatura oficial do Cloud Billing (este projeto não tem billing export configurado).',
       'Todos os valores em USD. Se você comparar com o relatório do Console do GCP, confira a moeda mostrada lá (R$ e US$ têm números bem diferentes).',
       'Os dias do gráfico diário seguem o fuso de São Paulo (UTC-3), igual o Console — a Compute Engine usa o uptime real medido de cada dia, não um valor fixo repetido.',
       'O custo da Compute Engine (recurso e total) é o gasto REAL acumulado desde o dia 1 deste mês (mesmo período do relatório "Mês atual" do Console) — não uma projeção do status de agora. Cloud Run e BigQuery usam uma janela móvel de 30 dias corridos.',
@@ -813,8 +820,9 @@ costsRouter.get('/gcp', async (req, res) => {
     // recomendações (rightsizing/limpeza) continuam vindo do uso real medido
     // via Monitoring, já calculado no loop acima independente da fonte de custo.
     if (realBilling) {
-      notes.unshift('Usando dado REAL da fatura do GCP (BigQuery Billing Export, ativado nesta sessão) — não é mais estimativa por uso × preço de lista. Convertido de BRL pra USD pela taxa de câmbio do próprio export.');
+      notes.unshift('Usando dado REAL da fatura do GCP (BigQuery Billing Export) — não é estimativa por uso × preço de lista. Convertido de BRL pra USD pela taxa de câmbio do próprio export.');
     } else {
+      notes.unshift('Estimativa por uso real medido (Cloud Monitoring / BigQuery INFORMATION_SCHEMA) × preço público de lista do GCP (Cloud Billing Catalog) — não é a fatura oficial do Cloud Billing.');
       notes.push('BigQuery Billing Export foi ativado mas ainda não tem dado disponível para este período (a exportação nova leva algumas horas pra começar a gravar) — usando estimativa por uso real medido enquanto isso.');
     }
 
@@ -824,6 +832,7 @@ costsRouter.get('/gcp', async (req, res) => {
       region,
       rangeStart: startLabel,
       rangeEnd: endLabel,
+      costSource: realBilling ? 'billing_export' : 'estimate',
       resources: realBilling ? realBilling.resources : resources,
       dailyTrend: realBilling ? realBilling.dailyTrend : dailyTrend,
       recommendations: vmRecommendations,

@@ -162,8 +162,10 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
             Custos & FinOps
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Inventário real de recursos GCP (projeto {report?.projectId || '—'}) + uso real medido × preço público
-            de lista — não é a fatura oficial do Cloud Billing (sem billing export configurado).
+            {report?.costSource === 'billing_export'
+              ? <>Fatura oficial real do GCP (projeto {report.projectId}), via BigQuery Billing Export — não é estimativa.</>
+              : <>Inventário real de recursos GCP (projeto {report?.projectId || '—'}) + uso real medido × preço público
+                de lista — não é a fatura oficial do Cloud Billing (sem billing export configurado).</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
