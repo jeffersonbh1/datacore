@@ -112,7 +112,7 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
   };
 
   return (
-    <div id="cadastro-usuario-container" className="space-y-6 max-w-4xl mx-auto">
+    <div id="cadastro-usuario-container" className="space-y-6">
       {/* Top Banner Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
