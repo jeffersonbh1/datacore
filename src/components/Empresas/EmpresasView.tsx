@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   Building2, Plus, RefreshCw, AlertTriangle, CheckCircle2,
-  Database, Link2, X
+  Database, Link2, X, Pencil, Save
 } from 'lucide-react';
 import { Empresa } from '../../types';
-import { isSupabaseConfigured, fetchEmpresas, createEmpresa, updateEmpresaStatus } from '../../lib/supabase';
+import { isSupabaseConfigured, fetchEmpresas, createEmpresa, updateEmpresa, updateEmpresaStatus } from '../../lib/supabase';
 import { createAirbyteWorkspace } from '../../lib/airbyteGateway';
 
 interface EmpresasViewProps {
@@ -36,6 +36,9 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
   const [nome, setNome] = useState('');
   const [plano, setPlano] = useState('');
   const [airbyteWorkspaceId, setAirbyteWorkspaceId] = useState('');
+  const [status, setStatus] = useState<Empresa['status']>('ativo');
+  // null = formulário de criação; preenchido = editando essa empresa
+  const [editing, setEditing] = useState<Empresa | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -58,13 +61,64 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const closeForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setNome('');
+    setPlano('');
+    setAirbyteWorkspaceId('');
+    setStatus('ativo');
+    setFormError(null);
+  };
+
+  const openCreate = () => {
+    closeForm();
+    setSuccessMsg(null);
+    setShowForm(true);
+  };
+
+  const openEdit = (empresa: Empresa) => {
+    setEditing(empresa);
+    setNome(empresa.nome);
+    setPlano(empresa.plano || '');
+    setAirbyteWorkspaceId(empresa.airbyteWorkspaceId || '');
+    setStatus(empresa.status);
+    setFormError(null);
+    setSuccessMsg(null);
+    setShowForm(true);
+  };
+
+  const handleUpdate = async (empresa: Empresa) => {
+    setIsSaving(true);
+    try {
+      const updated = await updateEmpresa(empresa.id, {
+        nome: nome.trim(),
+        plano: plano.trim() || null,
+        status,
+        airbyteWorkspaceId: airbyteWorkspaceId.trim() || null,
+      });
+      setEmpresas(prev => prev.map(e => e.id === updated.id ? updated : e).sort((a, b) => a.nome.localeCompare(b.nome)));
+      setSuccessMsg(`Empresa "${updated.nome}" atualizada com sucesso.`);
+      closeForm();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao atualizar empresa.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     setSuccessMsg(null);
 
     if (!nome.trim()) {
       setFormError('Informe o nome da empresa.');
+      return;
+    }
+
+    if (editing) {
+      await handleUpdate(editing);
       return;
     }
 
@@ -95,10 +149,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
       });
       setEmpresas(prev => [...prev, created].sort((a, b) => a.nome.localeCompare(b.nome)));
       setSuccessMsg(`Empresa "${created.nome}" criada com sucesso (slug: ${created.slug}).`);
-      setNome('');
-      setPlano('');
-      setAirbyteWorkspaceId('');
-      setShowForm(false);
+      closeForm();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Erro ao criar empresa.');
     } finally {
@@ -144,10 +195,10 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
           </div>
         </div>
 
-        {supabaseReady && (
+        {supabaseReady && canManage && (
           <button
             type="button"
-            onClick={() => { setShowForm(!showForm); setFormError(null); setSuccessMsg(null); }}
+            onClick={() => (showForm ? closeForm() : openCreate())}
             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition cursor-pointer"
           >
             {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -185,14 +236,19 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
 
       {/* Create Form */}
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+          <h3 className="text-sm font-bold text-slate-900">
+            {editing
+              ? <>Editar empresa <span className="font-mono font-normal text-slate-500">#{editing.id} · {editing.slug}</span></>
+              : 'Nova empresa'}
+          </h3>
           {formError && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>{formError}</span>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${editing ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <div className="sm:col-span-1">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Nome da Empresa <span className="text-rose-500">*</span>
@@ -216,6 +272,20 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
               />
             </div>
+            {editing && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as Empresa['status'])}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                >
+                  {(Object.keys(STATUS_LABEL) as Empresa['status'][]).map(s => (
+                    <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Airbyte Workspace ID (opcional)</label>
               <div className="relative">
@@ -224,7 +294,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
                 </div>
                 <input
                   type="text"
-                  placeholder="Deixe em branco para provisionar um novo automaticamente"
+                  placeholder={editing ? 'Sem workspace vinculado' : 'Deixe em branco para provisionar um novo automaticamente'}
                   value={airbyteWorkspaceId}
                   onChange={(e) => setAirbyteWorkspaceId(e.target.value)}
                   className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
@@ -233,16 +303,25 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
             </div>
           </div>
           <p className="text-[11px] text-slate-500">
-            O identificador (slug) é gerado automaticamente a partir do nome. Deixando o Workspace ID em branco, um workspace novo e isolado é criado no Airbyte na hora — cada empresa tem o seu, sem compartilhar origens/destinos com outras. Só preencha manualmente se já existir um workspace pra reaproveitar.
+            {editing
+              ? <>O identificador (slug) <code className="font-mono">{editing.slug}</code> não muda na edição. Alterar o Workspace ID troca o workspace do Airbyte onde ficam as origens, destinos e conexões dessa empresa — só faça isso se tiver certeza de que o novo workspace é o certo.</>
+              : 'O identificador (slug) é gerado automaticamente a partir do nome. Deixando o Workspace ID em branco, um workspace novo e isolado é criado no Airbyte na hora — cada empresa tem o seu, sem compartilhar origens/destinos com outras. Só preencha manualmente se já existir um workspace pra reaproveitar.'}
           </p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeForm}
+              className="px-4 py-2.5 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition cursor-pointer"
+            >
+              Cancelar
+            </button>
             <button
               type="submit"
               disabled={isSaving}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
             >
-              {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              <span>{isSaving ? 'Criando...' : 'Criar Empresa'}</span>
+              {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : editing ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              <span>{isSaving ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Criar Empresa'}</span>
             </button>
           </div>
         </form>
@@ -292,17 +371,27 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ canManage = true }) 
                 </div>
 
                 {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => handleToggleStatus(empresa)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border shrink-0 self-start sm:self-center ${
-                      empresa.status === 'ativo'
-                        ? 'border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100'
-                        : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
-                    }`}
-                  >
-                    {empresa.status === 'ativo' ? 'Suspender' : 'Reativar'}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(empresa)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 flex items-center gap-1.5"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(empresa)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border ${
+                        empresa.status === 'ativo'
+                          ? 'border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100'
+                          : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {empresa.status === 'ativo' ? 'Suspender' : 'Reativar'}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}

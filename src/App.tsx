@@ -22,7 +22,7 @@ import { ExecutionJobsProvider } from './components/Executions/ExecutionJobsProv
 import { LgpdHub } from './components/Governance/LgpdHub';
 import { CostAnalytics } from './components/FinOps/CostAnalytics';
 import { RbacManager } from './components/Security/RbacManager';
-import { CadastroUsuarioView } from './components/Security/CadastroUsuarioView';
+import { AdministracaoView, AdminSection } from './components/Admin/AdministracaoView';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { ResetPasswordScreen } from './components/Auth/ResetPasswordScreen';
 import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2, Loader2 } from 'lucide-react';
@@ -36,7 +36,6 @@ import {
 import { buildPipelineFromIntegration } from './lib/pipelineBuilder';
 import { refreshPipelineMetrics } from './lib/pipelineRuns';
 import { updateAirbyteConnectionStatus } from './lib/airbyteGateway';
-import { EmpresasView } from './components/Empresas/EmpresasView';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -55,6 +54,7 @@ export default function App() {
     return INITIAL_USERS.find(u => u.id === savedId) || INITIAL_USERS[0];
   });
   const [activeTab, setActiveTab] = useState<ActiveTab>('pipelines');
+  const [adminSection, setAdminSection] = useState<AdminSection>('usuarios');
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>(() => currentUser?.role || 'admin');
 
@@ -656,23 +656,21 @@ export default function App() {
                 onUpdateUserRole={handleUpdateUserRole}
                 onToggleUserRawPII={handleToggleUserRawPII}
                 canManageUsers={permissions.canManageUsers}
-                onNavigateToCadastro={() => setActiveTab('cadastro-usuario')}
-              />
-            )}
-
-            {activeTab === 'cadastro-usuario' && (
-              <CadastroUsuarioView
-                onCancel={() => setActiveTab('rbac')}
-                onUserCreated={(newUser) => {
-                  handleUserCreated(newUser);
-                  setActiveTab('rbac');
+                onNavigateToCadastro={() => {
+                  setAdminSection('cadastrar-usuario');
+                  setActiveTab('administracao');
                 }}
-                canManageUsers={permissions.canManageUsers}
               />
             )}
 
-            {activeTab === 'empresas' && (
-              <EmpresasView canManage={permissions.canManageUsers} />
+            {activeTab === 'administracao' && (
+              <AdministracaoView
+                section={adminSection}
+                onSelectSection={setAdminSection}
+                canManage={permissions.canManageUsers}
+                currentUserEmail={currentUser.email}
+                onUserCreated={handleUserCreated}
+              />
             )}
           </div>
         </main>

@@ -349,6 +349,30 @@ export async function updateEmpresaStatus(id: number, status: Empresa['status'])
   if (error) throw new Error(`Erro ao atualizar status da empresa: ${error.message}`);
 }
 
+/** Edição do cadastro da empresa. O slug não muda: identifica a empresa em outros lugares. */
+export async function updateEmpresa(id: number, payload: {
+  nome: string;
+  plano?: string | null;
+  status: Empresa['status'];
+  airbyteWorkspaceId?: string | null;
+}): Promise<Empresa> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { data, error } = await supabase
+    .from('empresas')
+    .update({
+      nome: payload.nome.trim(),
+      plano: payload.plano?.trim() || null,
+      status: payload.status,
+      airbyte_workspace_id: payload.airbyteWorkspaceId?.trim() || null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(`Erro ao atualizar empresa: ${error.message}`);
+  return mapEmpresaRow(data);
+}
+
 export async function vincularUsuarioAEmpresa(usuarioId: string, idEmpresa: number | null): Promise<void> {
   if (!supabase) throw new Error('Supabase não configurado.');
   const { error } = await supabase.from('usuarios').update({ id_empresa: idEmpresa }).eq('id', usuarioId);
