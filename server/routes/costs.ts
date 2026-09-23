@@ -29,6 +29,21 @@ export interface GcpResourceCost {
   basis: string;
 }
 
+/** Uma linha do detalhamento de custos (tabela abaixo do gráfico): serviço →
+ *  recurso → SKU. Com billing export vem da própria fatura (uso, custo bruto e
+ *  créditos por SKU); na estimativa, uma linha por recurso estimado (sem SKU). */
+export interface GcpCostDetail {
+  service: string;
+  category: GcpResourceCost['category'];
+  resource: string;
+  sku: string;
+  usageAmount: number | null;
+  usageUnit: string | null;
+  grossCostUsd: number;
+  creditsUsd: number;
+  netCostUsd: number;
+}
+
 export interface CostRecommendation {
   id: string;
   title: string;
@@ -48,6 +63,7 @@ export interface GcpCostReport {
   /** 'billing_export' = fatura oficial real (BigQuery Billing Export); 'estimate' = uso medido × preço de lista (fallback). */
   costSource: 'billing_export' | 'estimate';
   resources: GcpResourceCost[];
+  costDetails: GcpCostDetail[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];
   totalMonthlyCostUsd: number;
@@ -397,6 +413,7 @@ const BILLING_EXPORT_DATASET = process.env.GCP_BILLING_EXPORT_DATASET || 'billin
 
 interface RealBillingReport {
   resources: GcpResourceCost[];
+  costDetails: GcpCostDetail[];
   dailyTrend: GcpCostReport['dailyTrend'];
   totalMonthlyCostUsd: number;
 }
@@ -444,6 +461,75 @@ async function getBillingExportCoverageStart(projectId: string): Promise<string 
   const startLabel = rows?.[0]?.coverage_start?.value ?? null;
   if (startLabel) billingCoverageCache = { projectId, startLabel, expiresAt: Date.now() + BILLING_COVERAGE_CACHE_TTL_MS };
   return startLabel;
+}
+
+/** Nome legível do recurso de uma linha do export. `resource.name` vem em
+ *  formatos diferentes por serviço ("projects/<n>/instances/<vm>" na CPU/RAM da
+ *  VM, só "<vm>" no disco) — fica o último segmento, pra VM aparecer como UM
+ *  recurso. Jobs de consulta do BigQuery (um id por job, milhares de linhas de
+ *  centavos) viram um recurso só, "Consultas (jobs)". */
+function detailResourceName(service: string, sku: string, name: string | null): string {
+  if (service === 'BigQuery' && /^Analysis/i.test(sku)) return 'Consultas (jobs)';
+  if (!name) return '—';
+  return name.split('/').pop() || name;
+}
+
+/** Detalhamento por serviço → recurso → SKU, direto da fatura. Linhas sem custo
+ *  nem crédito (ex.: storage de dataset vazio, jobs que não cobraram nada) são
+ *  descartadas — são centenas e não mudam nenhum valor. */
+async function getBillingCostDetails(projectId: string, startLabel: string, endLabel: string): Promise<GcpCostDetail[]> {
+  const bq = getBigQueryClient();
+  const table = `\`${projectId}.${BILLING_EXPORT_DATASET}.gcp_billing_export_resource_v1_${BILLING_ACCOUNT_ID.replace(/-/g, '_')}\``;
+  type Row = { service_desc: string; resource_name: string | null; sku_desc: string; unit: string | null; qty: number | null; gross: number; credits: number };
+  const result = await bq.query({
+    query: `
+      SELECT
+        service.description AS service_desc,
+        COALESCE(resource.name, resource.global_name) AS resource_name,
+        sku.description AS sku_desc,
+        usage.pricing_unit AS unit,
+        SUM(usage.amount_in_pricing_units) AS qty,
+        SUM(cost) AS gross,
+        SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS credits
+      FROM ${table}
+      WHERE project.id = @projectId
+        AND DATE(usage_start_time, "America/Sao_Paulo") BETWEEN @start AND @end
+      GROUP BY service_desc, resource_name, sku_desc, unit
+    `,
+    params: { projectId, start: startLabel, end: endLabel },
+  });
+  const rows = result[0] as unknown as Row[];
+
+  const byKey = new Map<string, GcpCostDetail>();
+  for (const r of rows) {
+    const resource = detailResourceName(r.service_desc, r.sku_desc, r.resource_name);
+    const key = `${r.service_desc}::${resource}::${r.sku_desc}::${r.unit ?? ''}`;
+    const gross = Number(r.gross || 0);
+    const credits = Number(r.credits || 0);
+    const qty = r.qty == null ? null : Number(r.qty);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.grossCostUsd += gross;
+      existing.creditsUsd += credits;
+      existing.netCostUsd += gross + credits;
+      if (qty != null) existing.usageAmount = (existing.usageAmount ?? 0) + qty;
+    } else {
+      byKey.set(key, {
+        service: r.service_desc,
+        category: CATEGORY_BY_SERVICE[r.service_desc] || 'other',
+        resource,
+        sku: r.sku_desc,
+        usageAmount: qty,
+        usageUnit: r.unit,
+        grossCostUsd: gross,
+        creditsUsd: credits,
+        netCostUsd: gross + credits,
+      });
+    }
+  }
+  return [...byKey.values()]
+    .filter((d) => Math.abs(d.grossCostUsd) >= 0.005 || Math.abs(d.creditsUsd) >= 0.005)
+    .sort((a, b) => b.netCostUsd - a.netCostUsd);
 }
 
 const CATEGORY_BY_SERVICE: Record<string, GcpResourceCost['category']> = {
@@ -544,7 +630,16 @@ async function getRealBillingReport(
 
   const totalMonthlyCostUsd = resources.reduce((sum, r) => sum + r.monthlyCostUsd, 0);
 
-  return { resources, dailyTrend, totalMonthlyCostUsd };
+  // O detalhamento é complementar: se esta 2ª consulta falhar, a tela continua
+  // com o total real e só a tabela de detalhe fica vazia.
+  let costDetails: GcpCostDetail[] = [];
+  try {
+    costDetails = await getBillingCostDetails(projectId, startLabel, endLabel);
+  } catch (err) {
+    console.error('Falha ao detalhar custos por SKU no billing export:', err);
+  }
+
+  return { resources, costDetails, dailyTrend, totalMonthlyCostUsd };
 }
 
 // --- Rota principal --------------------------------------------------------------
@@ -900,6 +995,19 @@ costsRouter.get('/gcp', async (req, res) => {
       rangeEnd: endLabel,
       costSource: realBilling ? 'billing_export' : 'estimate',
       resources: realBilling ? realBilling.resources : resources,
+      // Sem fatura, não há SKU/crédito — uma linha por recurso estimado, com a
+      // descrição do cálculo no lugar do SKU.
+      costDetails: realBilling ? realBilling.costDetails : resources.map((r) => ({
+        service: r.label.split(' — ')[0],
+        category: r.category,
+        resource: r.label.includes(' — ') ? r.label.split(' — ').slice(1).join(' — ') : '—',
+        sku: r.detail,
+        usageAmount: null,
+        usageUnit: null,
+        grossCostUsd: r.monthlyCostUsd,
+        creditsUsd: 0,
+        netCostUsd: r.monthlyCostUsd,
+      })),
       dailyTrend: realBilling ? realBilling.dailyTrend : dailyTrend,
       recommendations: vmRecommendations,
       totalMonthlyCostUsd: realBilling ? realBilling.totalMonthlyCostUsd : totalMonthlyCostUsd,

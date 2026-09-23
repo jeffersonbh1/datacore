@@ -161,6 +161,20 @@ export interface GcpResourceCost {
   basis: string;
 }
 
+/** Linha do detalhamento de custos (server/routes/costs.ts::GcpCostDetail): serviço →
+ *  recurso → SKU. Campos "*Usd" são BRL, como no resto do relatório. */
+export interface GcpCostDetail {
+  service: string;
+  category: GcpResourceCost['category'];
+  resource: string;
+  sku: string;
+  usageAmount: number | null;
+  usageUnit: string | null;
+  grossCostUsd: number;
+  creditsUsd: number;
+  netCostUsd: number;
+}
+
 /** Recomendação real gerada no servidor a partir de uso medido (server/routes/costs.ts::CostRecommendation). */
 export interface CostRecommendation {
   id: string;
@@ -184,6 +198,8 @@ export interface GcpCostReport {
   /** 'billing_export' = fatura oficial real (BigQuery Billing Export); 'estimate' = uso medido × preço de lista (fallback). */
   costSource: 'billing_export' | 'estimate';
   resources: GcpResourceCost[];
+  /** Ausente em respostas de um gateway anterior a este campo — a tela trata como vazio. */
+  costDetails?: GcpCostDetail[];
   dailyTrend: { date: string; computeUsd: number; cloudRunUsd: number; bigqueryUsd: number }[];
   recommendations: CostRecommendation[];
   totalMonthlyCostUsd: number;

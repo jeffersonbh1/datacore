@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   DollarSign, TrendingDown, Sparkles, Server, Zap,
   CheckCircle, HelpCircle,
-  AlertCircle, RefreshCw, Loader2, ClipboardCopy, Check
+  AlertCircle, RefreshCw, Loader2, ClipboardCopy, Check, ChevronDown, ChevronRight, ListTree
 } from 'lucide-react';
-import { CostRecommendation, GcpCostReport, GcpResourceCost } from '../../types';
+import { CostRecommendation, GcpCostDetail, GcpCostReport, GcpResourceCost } from '../../types';
 import { fetchGcpCostReport } from '../../lib/airbyteGateway';
 import { fetchRecordsSyncedLast30Days } from '../../lib/supabase';
 
@@ -36,6 +36,182 @@ const CATEGORY_COLOR: Record<GcpResourceCost['category'], string> = {
 function formatDay(iso: string, showMonth = true): string {
   const [, m, d] = iso.split('-');
   return showMonth ? `${d}/${m}` : d;
+}
+
+const brl = (v: number) => `R$${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Unidade de cobrança do billing export (usage.pricing_unit) em português.
+const UNIT_LABEL: Record<string, string> = {
+  hour: 'h',
+  second: 's',
+  month: 'mês',
+  count: 'un.',
+  gibibyte: 'GiB',
+  tebibyte: 'TiB',
+  'gibibyte hour': 'GiB·h',
+  'gibibyte month': 'GiB·mês',
+  'gibibyte second': 'GiB·s',
+};
+
+function formatUsage(amount: number | null, unit: string | null): string {
+  if (amount == null) return '—';
+  const digits = Math.abs(amount) >= 100 ? 0 : Math.abs(amount) >= 1 ? 2 : 3;
+  const n = amount.toLocaleString('pt-BR', { maximumFractionDigits: digits });
+  return unit ? `${n} ${UNIT_LABEL[unit] ?? unit}` : n;
+}
+
+interface DetailResource { name: string; netCostUsd: number; lines: GcpCostDetail[] }
+interface DetailService {
+  service: string;
+  category: GcpResourceCost['category'];
+  grossCostUsd: number;
+  creditsUsd: number;
+  netCostUsd: number;
+  resources: DetailResource[];
+}
+
+/** Agrupa as linhas em serviço → recurso → SKU, cada nível ordenado pelo custo líquido. */
+function groupCostDetails(details: GcpCostDetail[]): DetailService[] {
+  const services = new Map<string, { svc: DetailService; byResource: Map<string, DetailResource> }>();
+  for (const d of details) {
+    let entry = services.get(d.service);
+    if (!entry) {
+      entry = { svc: { service: d.service, category: d.category, grossCostUsd: 0, creditsUsd: 0, netCostUsd: 0, resources: [] }, byResource: new Map() };
+      services.set(d.service, entry);
+    }
+    entry.svc.grossCostUsd += d.grossCostUsd;
+    entry.svc.creditsUsd += d.creditsUsd;
+    entry.svc.netCostUsd += d.netCostUsd;
+    let res = entry.byResource.get(d.resource);
+    if (!res) {
+      res = { name: d.resource, netCostUsd: 0, lines: [] };
+      entry.byResource.set(d.resource, res);
+    }
+    res.netCostUsd += d.netCostUsd;
+    res.lines.push(d);
+  }
+  return [...services.values()]
+    .map(({ svc, byResource }) => ({
+      ...svc,
+      resources: [...byResource.values()]
+        .map(r => ({ ...r, lines: [...r.lines].sort((a, b) => b.netCostUsd - a.netCostUsd) }))
+        .sort((a, b) => b.netCostUsd - a.netCostUsd),
+    }))
+    .sort((a, b) => b.netCostUsd - a.netCostUsd);
+}
+
+function CostDetailTable({ details, isEstimate }: { details: GcpCostDetail[]; isEstimate: boolean }) {
+  const services = groupCostDetails(details);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const total = services.reduce((sum, s) => sum + s.netCostUsd, 0);
+  const totalGross = services.reduce((sum, s) => sum + s.grossCostUsd, 0);
+  const totalCredits = services.reduce((sum, s) => sum + s.creditsUsd, 0);
+  const pct = (v: number) => (total > 0 ? `${((v / total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—');
+  const toggle = (service: string) => setCollapsed(prev => {
+    const next = new Set(prev);
+    if (next.has(service)) next.delete(service); else next.add(service);
+    return next;
+  });
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <ListTree className="w-5 h-5 text-indigo-600" />
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Detalhamento dos Custos por Recurso</h3>
+            <p className="text-xs text-slate-500">
+              {isEstimate
+                ? 'Estimativa por recurso (uso real medido × preço de lista) — o detalhe por SKU só existe na fatura oficial.'
+                : 'Fatura oficial do GCP por serviço, recurso e SKU no período do gráfico — uso cobrado, custo bruto, créditos e custo líquido.'}
+            </p>
+          </div>
+        </div>
+        {services.length > 0 && (
+          <div className="flex items-center gap-2 text-xs">
+            <button type="button" onClick={() => setCollapsed(new Set())} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium transition cursor-pointer">
+              Expandir tudo
+            </button>
+            <button type="button" onClick={() => setCollapsed(new Set(services.map(s => s.service)))} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium transition cursor-pointer">
+              Recolher tudo
+            </button>
+          </div>
+        )}
+      </div>
+
+      {services.length === 0 ? (
+        <p className="text-xs text-slate-500 py-4 text-center">Nenhum custo detalhado disponível para este período.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-200">
+                <th className="py-2 pr-3 font-medium">Serviço / Recurso</th>
+                <th className="py-2 pr-3 font-medium">{isEstimate ? 'Como foi calculado' : 'SKU'}</th>
+                <th className="py-2 pr-3 font-medium text-right">Uso</th>
+                <th className="py-2 pr-3 font-medium text-right">Custo bruto</th>
+                <th className="py-2 pr-3 font-medium text-right">Créditos</th>
+                <th className="py-2 pr-3 font-medium text-right">Custo líquido</th>
+                <th className="py-2 font-medium text-right">% do total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map(svc => {
+                const isCollapsed = collapsed.has(svc.service);
+                return (
+                  <React.Fragment key={svc.service}>
+                    <tr className="bg-slate-50 border-t border-slate-200 cursor-pointer hover:bg-slate-100/70" onClick={() => toggle(svc.service)}>
+                      <td className="py-2 pr-3 font-semibold text-slate-900" colSpan={3}>
+                        <span className="flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLOR[svc.category] }} />
+                          {svc.service}
+                          <span className="text-[11px] font-normal text-slate-400">
+                            {svc.resources.length} recurso{svc.resources.length > 1 ? 's' : ''}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono text-slate-600 whitespace-nowrap">{brl(svc.grossCostUsd)}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-emerald-700 whitespace-nowrap">{svc.creditsUsd !== 0 ? brl(svc.creditsUsd) : '—'}</td>
+                      <td className="py-2 pr-3 text-right font-mono font-semibold text-slate-900 whitespace-nowrap">{brl(svc.netCostUsd)}</td>
+                      <td className="py-2 text-right font-mono text-slate-600 whitespace-nowrap">{pct(svc.netCostUsd)}</td>
+                    </tr>
+                    {!isCollapsed && svc.resources.map(res => res.lines.map((line, i) => (
+                      <tr key={`${svc.service}:${res.name}:${line.sku}:${line.usageUnit ?? ''}`} className={i === 0 ? 'border-t border-slate-100' : ''}>
+                        <td className="py-1.5 pr-3 pl-7 align-top">
+                          {i === 0 && (
+                            <span className="block font-mono text-slate-800 break-all" title={res.name}>
+                              {res.name}
+                              {res.lines.length > 1 && <span className="block text-[10px] text-slate-400 font-sans">subtotal {brl(res.netCostUsd)}</span>}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-3 text-slate-600">{line.sku}</td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-slate-500 whitespace-nowrap">{formatUsage(line.usageAmount, line.usageUnit)}</td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-slate-500 whitespace-nowrap">{brl(line.grossCostUsd)}</td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-emerald-700 whitespace-nowrap">{line.creditsUsd !== 0 ? brl(line.creditsUsd) : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-slate-800 whitespace-nowrap">{brl(line.netCostUsd)}</td>
+                        <td className="py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{pct(line.netCostUsd)}</td>
+                      </tr>
+                    )))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 font-semibold text-slate-900">
+                <td className="py-2 pr-3" colSpan={3}>Total do período</td>
+                <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">{brl(totalGross)}</td>
+                <td className="py-2 pr-3 text-right font-mono text-emerald-700 whitespace-nowrap">{totalCredits !== 0 ? brl(totalCredits) : '—'}</td>
+                <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">{brl(total)}</td>
+                <td className="py-2 text-right font-mono">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CopyCommandButton({ command }: { command: string }) {
@@ -412,6 +588,9 @@ export const CostAnalytics: React.FC<CostAnalyticsProps> = ({ canViewFinOps, idE
               </div>
             </div>
           </div>
+
+          {/* Detalhamento serviço → recurso → SKU, logo abaixo do gráfico */}
+          <CostDetailTable details={report.costDetails || []} isEstimate={report.costSource !== 'billing_export'} />
 
           {/* Recommendations */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
