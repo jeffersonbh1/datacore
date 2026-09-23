@@ -1,8 +1,8 @@
 import React from 'react';
-import { CheckCircle2, Loader2, MinusCircle, XCircle } from 'lucide-react';
+import { CheckCircle2, FilePenLine, Loader2, MinusCircle, XCircle } from 'lucide-react';
 import {
   LAYER_LABEL, NODE_H, NODE_W,
-  type Focus, type GraphLayout, type LineageEdge, type LineageIndex, type LineageLayer,
+  type Focus, type GraphLayout, type LineageEdge, type LineageIndex, type LineageLayer, type LineageNode,
 } from '../../lib/lineage';
 import type { RunState } from '../../lib/lineageExecution';
 
@@ -37,9 +37,14 @@ interface LineageGraphProps {
   runStates: Map<string, RunState>;
   zoom: number;
   onSelectNode: (id: string) => void;
+  /** Abre o editor dbt do modelo direto do nó (Bronze, Silver e Gold). */
+  onOpenEditor?: (node: LineageNode) => void;
 }
 
-export const LineageGraph: React.FC<LineageGraphProps> = ({ index, edges, focus, layout, activeId, runStates, zoom, onSelectNode }) => {
+/** Camadas que têm modelo dbt — Origem e Raw vêm do Airbyte, sem SQL para editar. */
+const isDbtModel = (layer: LineageLayer) => layer === 'bronze' || layer === 'silver' || layer === 'gold';
+
+export const LineageGraph: React.FC<LineageGraphProps> = ({ index, edges, focus, layout, activeId, runStates, zoom, onSelectNode, onOpenEditor }) => {
   const upSet = new Set([...focus.upstream, focus.id]);
   const downSet = new Set([focus.id, ...focus.downstream]);
 
@@ -89,14 +94,15 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({ index, edges, focus,
           const rows = formatRows(n.rows);
           const when = formatWhen(n.lastModified);
           const isFocus = id === focus.id;
+          const canOpenEditor = !!onOpenEditor && isDbtModel(n.layer);
           return (
+            // Contêiner: o card e o botão de editar são irmãos (botão dentro de botão não é HTML válido).
+            <div key={id} style={{ left: pos.x, top: pos.y, width: NODE_W, height: NODE_H }} className="absolute">
             <button
-              key={id}
               type="button"
               data-node={id}
               onClick={() => onSelectNode(id)}
-              style={{ left: pos.x, top: pos.y, width: NODE_W, height: NODE_H }}
-              className={`absolute text-left rounded-xl border-2 px-3 py-2 shadow-sm transition cursor-pointer hover:shadow-md ${style.card} ${isFocus ? 'ring-4 ring-indigo-300' : ''} ${activeId === id ? 'outline outline-2 outline-slate-900' : ''}`}
+              className={`w-full h-full text-left rounded-xl border-2 px-3 py-2 shadow-sm transition cursor-pointer hover:shadow-md ${style.card} ${isFocus ? 'ring-4 ring-indigo-300' : ''} ${activeId === id ? 'outline outline-2 outline-slate-900' : ''}`}
               title={`${LAYER_LABEL[n.layer]} • ${n.dataset ? `${n.dataset}.` : ''}${n.name}`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -109,11 +115,24 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({ index, edges, focus,
                 )}
               </div>
               <p className="mt-1 text-xs font-semibold text-slate-900 truncate">{n.name}</p>
-              <p className="text-[10px] font-mono text-slate-500 truncate">{n.dataset || n.integrationName || ''}</p>
-              <p className="text-[10px] text-slate-500 truncate">
+              <p className={`text-[10px] font-mono text-slate-500 truncate ${canOpenEditor ? 'pr-7' : ''}`}>{n.dataset || n.integrationName || ''}</p>
+              <p className={`text-[10px] text-slate-500 truncate ${canOpenEditor ? 'pr-7' : ''}`}>
                 {n.built && rows !== null ? `${rows} linhas` : ''}{n.built && rows !== null && when ? ' · ' : ''}{n.built && when ? when : ''}
               </p>
             </button>
+            {canOpenEditor && (
+              <button
+                type="button"
+                data-node-edit={id}
+                onClick={() => onOpenEditor!(n)}
+                title="Editar no dbt"
+                aria-label={`Editar ${n.name} no dbt`}
+                className="absolute bottom-2 right-2 p-1 rounded-md bg-white/90 border border-slate-200 text-slate-600 hover:text-indigo-700 hover:border-indigo-300 hover:bg-white shadow-xs transition cursor-pointer"
+              >
+                <FilePenLine className="w-3.5 h-3.5" />
+              </button>
+            )}
+            </div>
           );
         })}
       </div>

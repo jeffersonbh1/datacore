@@ -223,7 +223,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
                 </div>
               </div>
             ) : focus && layout && index ? (
-              <LineageGraph index={index} edges={edges} focus={focus} layout={layout} activeId={activeId} runStates={runStates} zoom={zoom} onSelectNode={setActiveId} />
+              <LineageGraph index={index} edges={edges} focus={focus} layout={layout} activeId={activeId} runStates={runStates} zoom={zoom} onSelectNode={setActiveId} onOpenEditor={setEditingNode} />
             ) : lineage ? (
               <div className="h-full flex flex-col items-center justify-center text-center gap-5 p-6">
                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center"><Workflow className="w-6 h-6" /></div>
