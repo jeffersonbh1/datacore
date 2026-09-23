@@ -129,14 +129,17 @@ export interface ColumnDoc {
 
 /** As duas colunas de marca d'água que `renderBronzeSql` sempre acrescenta,
  *  fora da lista de colunas de negócio (ver ali). `source` aqui é o nome raw
- *  de verdade quando existe um (dt_ingestao_lake vem de _airbyte_extracted_at)
+ *  de verdade quando existe um (_dat_carga vem de _airbyte_extracted_at)
  *  — é o que permite ao Dicionário de Dados (server/bronzeColumnDocs.ts)
  *  reconhecer essa coluna ao navegar a tabela raw. */
+export const DAT_CARGA_DESCRIPTION =
+  'Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d\'água dos modelos incrementais (macro max_dat_carga).';
+
 const WATERMARK_COLUMNS: ColumnDoc[] = [
   {
-    name: 'dt_ingestao_lake',
+    name: '_dat_carga',
     source: '_airbyte_extracted_at',
-    description: 'Data de ingestão no lake — marca d\'água do Airbyte (derivada de _airbyte_extracted_at).',
+    description: DAT_CARGA_DESCRIPTION,
   },
   {
     name: '_dbt_loaded_at',
@@ -266,13 +269,16 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
         : `    , unique_key = [${pk.map((k) => `'${k}'`).join(', ')}]`,
     );
     cfg.push(`    , incremental_strategy = 'merge'`);
+    // sync_all_columns: a tabela acompanha o modelo quando colunas mudam (ex.:
+    // a troca de dt_ingestao_lake por _dat_carga) em vez de o merge quebrar.
+    cfg.push(`    , on_schema_change = 'sync_all_columns'`);
   }
 
   // Marca d'água (sempre acrescentada — ver `tipado`, abaixo) entra no MESMO
   // grupo de alinhamento das colunas de negócio, para o "AS" cair na mesma
   // coluna em toda a projeção (mesmo estilo de dbt/models/medallion/bronze/bronze_transacoes.sql).
   const watermarkCols: { left: string; alias: string }[] = [
-    { left: 'cast(_airbyte_extracted_at AS TIMESTAMP)', alias: 'dt_ingestao_lake' },
+    { left: 'cast(_airbyte_extracted_at AS TIMESTAMP)', alias: '_dat_carga' },
     { left: 'current_timestamp()', alias: '_dbt_loaded_at' },
   ];
 
@@ -303,10 +309,19 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
     watermark = watermarkCols.map((p, i) => `        ${p.left} AS ${p.alias}${i === watermarkCols.length - 1 ? '' : ','}`).join('\n');
   }
 
+  // Incremental: a maior _dat_carga já gravada é buscada no início do modelo
+  // (macro max_dat_carga, dbt/macros/max_dat_carga.sql) e a Raw é filtrada só
+  // com o que chegou depois dela — dados antigos não são reprocessados.
+  const watermarkLookup = incremental
+    ? `
+-- Marca d'água: maior _dat_carga já gravada nesta tabela (none na 1ª carga).
+{% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
+`
+    : '';
   const incrementalFilter = incremental
     ? `
-    {% if is_incremental() %}
-    WHERE _airbyte_extracted_at > (SELECT max(dt_ingestao_lake) FROM {{ this }})
+    {% if v_max_dat_carga is not none %}
+    WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}`
     : '';
 
@@ -318,7 +333,7 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY ${pk.join(', ')}
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 
@@ -336,7 +351,7 @@ ${cfg.join('\n')}
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('${SOURCE_NAME}', '${srcName}')  (dataset via DBT_RAW_DATASET)
 -- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)${renameComment}
-
+${watermarkLookup}
 WITH fonte AS (
     SELECT * FROM {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
 ),

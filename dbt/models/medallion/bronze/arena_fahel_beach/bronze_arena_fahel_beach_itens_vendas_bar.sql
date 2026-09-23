@@ -31,7 +31,7 @@ tipado AS (
         produto_id                                AS id_produto,
         adicionado_em                             AS dth_adicionado,
         quantidade                                AS qtd_item_venda_bar,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -41,7 +41,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_item_venda_bar
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

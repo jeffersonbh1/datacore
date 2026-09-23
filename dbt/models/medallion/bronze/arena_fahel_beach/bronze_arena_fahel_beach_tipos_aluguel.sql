@@ -25,7 +25,7 @@ tipado AS (
         id                                        AS id_tipo_aluguel,
         is_default                                AS ind_padrao,
         descricao                                 AS des_tipo_aluguel,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -35,7 +35,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_tipo_aluguel
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

@@ -26,9 +26,8 @@ models:
         description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -48,9 +47,8 @@ models:
       - name: id_dbt_modelo
         description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -71,9 +69,8 @@ models:
         description: "Campo raw correspondente: \"iniciado_em\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -99,9 +96,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -125,9 +121,8 @@ models:
         description: "Campo raw correspondente: \"slug\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -171,9 +166,8 @@ models:
         description: "Campo raw correspondente: \"dias_semana\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -197,9 +191,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -235,9 +228,8 @@ models:
         description: "Campo raw correspondente: \"status\"."
       - name: des_bytes_sincronizacao
         description: "Campo raw correspondente: \"bytes_synced\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -265,9 +257,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_layout_overrides
         description: "Campo raw correspondente: \"layout_overrides\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -293,9 +284,8 @@ models:
         description: "Campo raw correspondente: \"registrado_em\"."
       - name: tp_carga
         description: "Campo raw correspondente: \"tipo_carga\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
@@ -333,9 +323,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: des_papel
         description: "Campo raw correspondente: \"papel\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de
-          _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."

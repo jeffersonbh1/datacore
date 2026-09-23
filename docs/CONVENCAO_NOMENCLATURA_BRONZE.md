@@ -115,7 +115,7 @@ deixa claro é sempre uma aproximação, nunca uma leitura do tipo real.
 - `_em`/`_at` no **fim** do nome (idiomatismo comum de timestamp de evento de
   negócio: `criado_em`, `created_at`) vira `dth_`. Isso é **diferente** do
   sufixo técnico `_at` da tabela acima: aquele é reservado às duas colunas de
-  marca d'água que o próprio pipeline adiciona (`dt_ingestao_lake`,
+  marca d'água que o próprio pipeline adiciona (`_dat_carga`,
   `_dbt_loaded_at`) — essas nunca passam pela padronização, são geradas à
   parte no SQL.
 - Coluna `id`/`cod` isolada (sem nada sobrando depois de remover a

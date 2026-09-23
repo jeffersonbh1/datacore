@@ -50,7 +50,7 @@ tipado AS (
         id                                        AS id_integracao,
         dias_semana                               AS des_dias_semana,
         status                                    AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -60,7 +60,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_integracao
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

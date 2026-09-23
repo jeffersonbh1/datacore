@@ -3,6 +3,7 @@
     , alias = 'bronze_salesforce_usuarios'
     , unique_key = 'id_usuario'
     , incremental_strategy = 'merge'
+    , on_schema_change = 'sync_all_columns'
 ) }}
 
 -- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela usuarios.
@@ -24,10 +25,13 @@
 --   email -> des_email
 --   papel -> des_papel
 
+-- Marca d'água: maior _dat_carga já gravada nesta tabela (none na 1ª carga).
+{% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
+
 WITH fonte AS (
     SELECT * FROM {{ source('datacore_raw', 'usuarios') }}
-    {% if is_incremental() %}
-    WHERE _airbyte_extracted_at > (SELECT max(dt_ingestao_lake) FROM {{ this }})
+    {% if v_max_dat_carga is not none %}
+    WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}
 ),
 
@@ -48,7 +52,7 @@ tipado AS (
         ind_cadastro_ativo                        AS ind_cadastro_ativo,
         {{ tokenizar_email('email') }}            AS des_email,
         papel                                     AS des_papel,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -58,7 +62,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_usuario
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

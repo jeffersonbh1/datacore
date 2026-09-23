@@ -43,7 +43,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -83,7 +83,7 @@
           "source": "id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -125,7 +125,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -177,7 +177,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -225,7 +225,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -313,7 +313,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -361,7 +361,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -433,7 +433,7 @@
           "source": "bytes_synced"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -489,7 +489,7 @@
           "source": "layout_overrides"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -541,7 +541,7 @@
           "source": "tipo_carga"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -617,7 +617,7 @@
           "source": "papel"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -671,7 +671,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at (marca d'água do Airbyte)"
         },
         {
@@ -749,7 +749,7 @@
           "source": "id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -811,7 +811,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -849,7 +849,7 @@
           "source": "agendamento_id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -911,7 +911,7 @@
           "source": "avaliador_nome"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -953,7 +953,7 @@
           "source": "avaliador_nome"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -987,7 +987,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1041,7 +1041,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1107,7 +1107,7 @@
           "source": "numero_nota"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1145,7 +1145,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1207,7 +1207,7 @@
           "source": "custo_total"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1257,7 +1257,7 @@
           "source": "quantidade"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1315,7 +1315,7 @@
           "source": "agendamento_id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1365,7 +1365,7 @@
           "source": "agendamento_id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1431,7 +1431,7 @@
           "source": "compra_id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1477,7 +1477,7 @@
           "source": "id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1559,7 +1559,7 @@
           "source": "preco_custo"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1617,7 +1617,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1663,7 +1663,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1701,7 +1701,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1739,7 +1739,7 @@
           "source": "descricao"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1785,7 +1785,7 @@
           "source": "agendamento_id"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1835,7 +1835,7 @@
           "source": "perfil"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },
@@ -1925,7 +1925,7 @@
           "source": "status"
         },
         {
-          "name": "dt_ingestao_lake",
+          "name": "_dat_carga",
           "source": "_airbyte_extracted_at",
           "description": "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
         },

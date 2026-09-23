@@ -42,7 +42,7 @@ tipado AS (
         bronze_error                              AS des_bronze_erro,
         status                                    AS des_status,
         bytes_synced                              AS des_bytes_sincronizacao,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -52,7 +52,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_pipeline_run
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

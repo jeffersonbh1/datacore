@@ -16,5 +16,5 @@ models:
               values: ["APROVADO", "PENDENTE", "CANCELADO", "RECUSADO", "PAID", "SUCCESS", "CAPTURADO", "FAILED"]
               config:
                 severity: warn
-      - name: dt_ingestao_lake
+      - name: _dat_carga
         data_tests: [not_null]

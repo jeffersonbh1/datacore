@@ -6,5 +6,5 @@ models:
     columns:
       - name: id_transacao
         data_tests: [not_null]
-      - name: dt_ingestao_lake
+      - name: _dat_carga
         data_tests: [not_null]

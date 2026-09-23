@@ -29,7 +29,7 @@ tipado AS (
         sucesso                                   AS des_sucesso,
         iniciado_em                               AS dth_iniciado,
         status                                    AS des_status,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )

@@ -32,7 +32,7 @@ tipado AS (
         id                                        AS id_categoria_produto_bar,
         ind_cadastro_ativo                        AS ind_cadastro_ativo,
         descricao                                 AS des_categoria_produto_bar,
-        cast(_airbyte_extracted_at AS TIMESTAMP)  AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)  AS _dat_carga,
         current_timestamp()                       AS _dbt_loaded_at
     FROM fonte
 )
@@ -42,7 +42,7 @@ tipado AS (
     FROM tipado
     QUALIFY row_number() OVER (
         PARTITION BY id_categoria_produto_bar
-        ORDER BY dt_ingestao_lake DESC
+        ORDER BY _dat_carga DESC
     ) = 1
 )
 

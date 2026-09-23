@@ -23,7 +23,7 @@ renomeado AS (
         -- Timestamp do evento na origem (usado na ordenação da deduplicação CDC).
         cast(data_transacao AS TIMESTAMP)           AS dt_evento_origem,
         -- Timestamp em que o Airbyte extraiu a linha (marca d'água do incremental).
-        cast(_airbyte_extracted_at AS TIMESTAMP)    AS dt_ingestao_lake,
+        cast(_airbyte_extracted_at AS TIMESTAMP)    AS _dat_carga,
         _airbyte_raw_id                             AS _raw_id
     FROM fonte
 )

@@ -228,7 +228,7 @@ sequenceDiagram
     ST->>GW: POST /api/bigquery/bronze/build
     Note over GW: contexto por requisição<br/>DBT_RAW_DATASET · DBT_SCHEMA_BRONZE
     GW->>DBT: dbt build --select bronze_&lt;sistema&gt;_&lt;t&gt;
-    Note over DBT: 1 · lê source('datacore_raw', t)<br/>2 · renomeia + dt_ingestao_lake<br/>3 · LGPD Art. 46: mascara CPF, tokeniza e-mail, hash cartão/senha<br/>4 · dedup CDC por PK (qualify)<br/>5 · incremental merge (se PK)
+    Note over DBT: 1 · lê source('datacore_raw', t)<br/>2 · renomeia + _dat_carga<br/>3 · LGPD Art. 46: mascara CPF, tokeniza e-mail, hash cartão/senha<br/>4 · dedup CDC por PK (qualify)<br/>5 · incremental merge (se PK)
     DBT->>BQ: &lt;dataset&gt;.bronze_&lt;sistema&gt;_&lt;t&gt;
 ```
 
@@ -268,13 +268,15 @@ estado por *merge* — criar a integração B não apaga os modelos da A.
   [convenção de nomenclatura da Bronze](./CONVENCAO_NOMENCLATURA_BRONZE.md)
   (prefixo por tipo — `des_`, `vlr_`, `ind_`, `dat_`, `dth_`, `cod_`, `id_`,
   etc. — implementado em `server/bronzeNaming.ts`).
-- **Marca d'água:** `dt_ingestao_lake` (de `_airbyte_extracted_at`) e
-  `_dbt_loaded_at`.
+- **Marca d'água:** `_dat_carga` (de `_airbyte_extracted_at` — data da carga
+  pelo Airbyte) e `_dbt_loaded_at`. Modelos incrementais buscam no início a
+  maior `_dat_carga` já gravada (macro `max_dat_carga()`) e leem da Raw só o
+  que chegou depois dela.
 - **LGPD Art. 46** por heurística de nome de coluna — `dbt/macros/lgpd.sql`:
   `cpf|cnpj` → redação parcial; `email` → tokenização preservando o domínio;
   `cartao|telefone|rg|senha` → hash SHA-256.
 - **Deduplicação CDC:**
-  `qualify row_number() over (partition by <PK> order by dt_ingestao_lake desc) = 1`,
+  `qualify row_number() over (partition by <PK> order by _dat_carga desc) = 1`,
   quando há chave primária.
 - **Materialização:** `incremental` com estratégia `merge` quando a carga é
   incremental e há PK; caso contrário, `table`.

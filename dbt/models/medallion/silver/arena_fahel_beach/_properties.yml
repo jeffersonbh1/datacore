@@ -39,8 +39,8 @@ models:
       - name: id_agendamento
         description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_alunos
@@ -69,8 +69,8 @@ models:
         description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_aulas
@@ -87,8 +87,8 @@ models:
         data_tests: [unique, not_null]
       - name: id_agendamento
         description: "Campo raw correspondente: \"agendamento_id\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_avaliacao_jogo
@@ -117,8 +117,8 @@ models:
         description: "Campo raw correspondente: \"agendamento_id\"."
       - name: des_avaliador_nome
         description: "Campo raw correspondente: \"avaliador_nome\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_avaliacoes_jogadores
@@ -137,8 +137,8 @@ models:
         description: "Campo raw correspondente: \"agendamento_id\"."
       - name: des_avaliador_nome
         description: "Campo raw correspondente: \"avaliador_nome\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_categorias_bar
@@ -153,8 +153,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_categoria_bar
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_categorias_produtos_bar
@@ -179,8 +179,8 @@ models:
         description: "Campo raw correspondente: \"ind_cadastro_ativo\"."
       - name: des_categoria_produto_bar
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_compras_bar
@@ -211,8 +211,8 @@ models:
         description: "Campo raw correspondente: \"status\"."
       - name: num_nota
         description: "Campo raw correspondente: \"numero_nota\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_esportes
@@ -229,8 +229,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_esporte
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_itens_compras_bar
@@ -259,8 +259,8 @@ models:
         description: "Campo raw correspondente: \"compra_id\"."
       - name: des_custo_total
         description: "Campo raw correspondente: \"custo_total\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_itens_vendas_bar
@@ -283,8 +283,8 @@ models:
         description: "Campo raw correspondente: \"adicionado_em\"."
       - name: qtd_item_venda_bar
         description: "Campo raw correspondente: \"quantidade\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_jogadores
@@ -311,8 +311,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: id_agendamento
         description: "Campo raw correspondente: \"agendamento_id\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_jogadores_racha
@@ -335,8 +335,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: id_agendamento
         description: "Campo raw correspondente: \"agendamento_id\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_movimentacoes_estoque
@@ -367,8 +367,8 @@ models:
         description: "Campo raw correspondente: \"quantidade\"."
       - name: id_compra
         description: "Campo raw correspondente: \"compra_id\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_perguntas_avaliacao
@@ -389,8 +389,8 @@ models:
       - name: id_pergunta_avaliacao
         description: "Campo raw correspondente: \"id\"."
         data_tests: [unique, not_null]
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_produtos_bar
@@ -429,8 +429,8 @@ models:
         data_tests: [unique, not_null]
       - name: vlr_custo
         description: "Campo raw correspondente: \"preco_custo\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_professores
@@ -457,8 +457,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_quadras
@@ -479,8 +479,8 @@ models:
         description: "Campo raw correspondente: \"status\"."
       - name: des_quadra
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_tipos_aluguel
@@ -497,8 +497,8 @@ models:
         description: "Campo raw correspondente: \"is_default\"."
       - name: des_tipo_aluguel
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_tipos_quadra
@@ -515,8 +515,8 @@ models:
         data_tests: [unique, not_null]
       - name: des_tipo_quadra
         description: "Campo raw correspondente: \"descricao\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_torcedores
@@ -537,8 +537,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: id_agendamento
         description: "Campo raw correspondente: \"agendamento_id\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_usuarios
@@ -561,8 +561,8 @@ models:
         description: "Campo raw correspondente: \"email\"."
       - name: des_perfil
         description: "Campo raw correspondente: \"perfil\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."
   - name: silver_arena_fahel_beach_vendas_bar
@@ -605,7 +605,7 @@ models:
         description: "Campo raw correspondente: \"comanda_id\"."
       - name: des_status
         description: "Campo raw correspondente: \"status\"."
-      - name: dt_ingestao_lake
-        description: "Data de ingestão no lake — marca d'água do Airbyte (derivada de _airbyte_extracted_at)."
+      - name: _dat_carga
+        description: "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
       - name: _dbt_loaded_at
         description: "Data/hora em que este build do dbt foi executado (current_timestamp())."

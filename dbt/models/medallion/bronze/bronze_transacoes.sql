@@ -4,8 +4,9 @@
     materialized = "incremental",
     unique_key = "id_transacao",
     incremental_strategy = "merge",
+    on_schema_change = "sync_all_columns",
     partition_by = {
-      "field": "dt_ingestao_lake",
+      "field": "_dat_carga",
       "data_type": "timestamp",
       "granularity": "day"
     },
@@ -21,18 +22,21 @@
   - Schema enforcement + SAFE_CAST defensivo
   - Anonimização de PII (Art. 46 ANPD) via macros/lgpd.sql
   - Deduplicação determinística por id_transacao (registro mais recente)
-  - Carga incremental por marca d'água (dt_ingestao_lake)
+  - Carga incremental por marca d'água (_dat_carga, macro max_dat_carga)
   Equivale ao SQL gerado em DbtSqlEditorModal.tsx, agora executável.
   ========================================================================
 */
+
+-- Marca d'água: maior _dat_carga já gravada nesta tabela (none na 1ª carga).
+{% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
 
 WITH raw_source AS (
 
     SELECT * FROM {{ ref('stg_transacoes') }}
 
-    {% if is_incremental() %}
-      -- Micro-batch: só linhas ingeridas depois do último carregamento.
-      WHERE dt_ingestao_lake > (SELECT max(dt_ingestao_lake) FROM {{ this }})
+    {% if v_max_dat_carga is not none %}
+      -- Micro-batch: só linhas carregadas depois da última carga.
+      WHERE _dat_carga > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}
 
 ),
@@ -43,7 +47,7 @@ sanitizado AS (
         cast(id_transacao AS STRING)                             AS id_transacao,
 
         dt_evento_origem                                         AS dt_geracao_origem,
-        dt_ingestao_lake,
+        _dat_carga,
         current_timestamp()                                      AS _dbt_loaded_at,
 
         {{ cast_decimal('valor_bruto') }}                        AS valor_transacao,
@@ -65,7 +69,7 @@ deduplicado AS (
     FROM sanitizado
     QUALIFY row_number() OVER (
         PARTITION BY id_transacao
-        ORDER BY dt_geracao_origem DESC, dt_ingestao_lake DESC
+        ORDER BY dt_geracao_origem DESC, _dat_carga DESC
     ) = 1
 
 )

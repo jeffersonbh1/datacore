@@ -15,7 +15,7 @@ dbt/
 ├── requirements.txt                  # dbt-bigquery ~1.12
 ├── _generated_sources.json           # manifesto das tabelas da source (merge)
 ├── _generated_bronze.json            # manifesto {sistema -> {modelo -> tabela, PK}}
-├── macros/  (generate_schema_name, lgpd, cast_seguro)
+├── macros/  (generate_schema_name, lgpd, cast_seguro, max_dat_carga)
 └── models/
     ├── sources/
     │   └── _datacore_raw__sources.yml       # GERADO — source "datacore_raw"
@@ -48,12 +48,28 @@ dbt/
   seguindo a [convenção de nomenclatura da Bronze](../docs/CONVENCAO_NOMENCLATURA_BRONZE.md)
   (`server/bronzeNaming.ts` — prefixo por tipo: `des_`, `vlr_`, `ind_`, `qtd_`,
   `dat_`, `dth_`, `cod_`, `id_`, `num_`, `per_`, `tp_`) +
-  `cast(_airbyte_extracted_at as timestamp) as dt_ingestao_lake` +
+  `cast(_airbyte_extracted_at as timestamp) as _dat_carga` (data da carga pelo Airbyte) +
   `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de
   nome (`cpf|cnpj` → `mascarar_cpf`, `email` → `tokenizar_email`,
   `cartao|telefone|rg|senha` → `hash_sha256`); **dedup CDC**
-  (`qualify row_number() over (partition by <PK> order by dt_ingestao_lake desc)`)
+  (`qualify row_number() over (partition by <PK> order by _dat_carga desc)`)
   quando há PK; **incremental `merge`** quando `loadType=incremental` + PK, senão `table`.
+- **Incremental por marca d'água:** todo modelo incremental busca, no início
+  do SQL, a maior `_dat_carga` já gravada com a macro `max_dat_carga()`
+  (`macros/max_dat_carga.sql`) e filtra a fonte só com o que chegou depois
+  dela — dados antigos não são reprocessados:
+
+  ```sql
+  {% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
+  ...
+  {% if v_max_dat_carga is not none %}
+  WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
+  {% endif %}
+  ```
+
+  A macro devolve `none` (sem filtro, reprocessa tudo; o `merge` pela chave
+  evita duplicar) quando a tabela ainda não existe, está vazia ou ainda não
+  tem a coluna. Os incrementais usam `on_schema_change='sync_all_columns'`.
 - **Sem staging** para os gerados (a lógica está no próprio `bronze_<sistema>_<t>.sql`).
 - Silver/Gold: só os modelos de exemplo. Sem codegen.
 

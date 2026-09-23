@@ -18,7 +18,7 @@
 //
 // Importante: esta função só se aplica às COLUNAS DE NEGÓCIO selecionadas na
 // integração (`IntegrationTableSpec.columns`). As colunas técnicas que o
-// gerador acrescenta por conta própria (`dt_ingestao_lake`, `_dbt_loaded_at`)
+// gerador acrescenta por conta própria (`_dat_carga`, `_dbt_loaded_at`)
 // não passam por aqui — são a "marca d'água" de pipeline que o próprio
 // documento reserva para o sufixo `_at`.
 // -----------------------------------------------------------------------------
