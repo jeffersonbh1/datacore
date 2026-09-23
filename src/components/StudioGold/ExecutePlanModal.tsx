@@ -45,7 +45,10 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label={single ? 'Executar tabela' : 'Executar fluxo'}>
       <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="min-w-0 text-base font-bold text-slate-900 flex items-center flex-wrap gap-x-2"><Play className="w-4 h-4 text-indigo-600 shrink-0" /> <span>{single ? 'Executar tabela' : 'Executar fluxo até'}</span> <span className="font-mono text-sm break-all">{targetName}</span></h3>
+          <h3 className="min-w-0 text-base font-bold text-slate-900 flex items-center flex-wrap gap-x-2">
+            <Play className="w-4 h-4 text-indigo-600 shrink-0" /> <span>{single ? 'Executar tabela' : 'Executar fluxo até'}</span> <span className="font-mono text-sm break-all">{targetName}</span>
+            {plan.fullRefresh && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold uppercase tracking-wider">full-refresh</span>}
+          </h3>
           <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" aria-label="Fechar"><X className="w-4 h-4" /></button>
         </div>
 
@@ -53,7 +56,10 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
           <div className="p-5 space-y-4">
             {single ? (
               <>
-                <p className="text-xs text-slate-600">Vai executar de verdade <strong>só esta tabela</strong>, a partir do que já está construído nas camadas anteriores. Nada do que a alimenta é sincronizado nem reconstruído.</p>
+                <p className="text-xs text-slate-600">
+                  Vai executar de verdade <strong>só esta tabela</strong>, a partir do que já está construído nas camadas anteriores. Nada do que a alimenta é sincronizado nem reconstruído.
+                  {plan.fullRefresh && <> Com <strong>--full-refresh</strong>: reconstrói do zero, mesmo sendo incremental.</>}
+                </p>
                 <ol className="space-y-2 text-xs text-slate-800">
                   <li className="flex gap-2"><span className="font-bold text-slate-400 w-4">1.</span>
                     <span>Construir {LAYER_NOUN[targetLayer] ?? targetLayer} — <span className="font-mono break-all">{targetName}</span>{targetLayer === 'gold' ? ' (e rodar os testes do dbt)' : ''}</span></li>

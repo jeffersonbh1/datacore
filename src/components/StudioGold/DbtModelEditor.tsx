@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
-import { indentWithTab } from '@codemirror/commands';
+import { indentLess, insertTab } from '@codemirror/commands';
+import { Prec } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import {
   AlertCircle, Check, CheckCircle2, Copy, Download, FileCode, Loader2,
-  Play, RefreshCw, Sliders, Terminal, X,
+  Play, RefreshCw, RotateCcw, Sliders, Terminal, X,
 } from 'lucide-react';
 import {
   LAYER_LABEL, compileModel, fetchModelProperties, fetchModelSql, saveModelSql,
@@ -29,7 +30,14 @@ const LAYER_THEME: Record<'bronze' | 'silver' | 'gold', { badge: string; accent:
 
 const MATERIALIZATION_RE = /materialized\s*=\s*'([^']+)'/;
 
-const editorExtensions = [sql(), keymap.of([indentWithTab])];
+// O binding pronto `indentWithTab` do @codemirror/commands usa `indentMore` mesmo sem
+// seleção — que reindenta o INÍCIO da linha inteira, não insere no cursor (por isso a
+// palavra "pulava" mesmo com o cursor depois dela: a linha toda deslocava). `insertTab`
+// é o comando certo: insere no cursor quando não há seleção, e só cai para indentMore
+// quando várias linhas estão selecionadas (mesmo comportamento de editores de código).
+// Prec.highest: garante que este binding sempre vence, mesmo se outro keymap também
+// escutar Tab (ex.: aceitar sugestão do autocomplete).
+const editorExtensions = [sql(), Prec.highest(keymap.of([{ key: 'Tab', run: insertTab, shift: indentLess }]))];
 
 interface DbtModelEditorProps {
   node: LineageNode;
@@ -40,10 +48,12 @@ interface DbtModelEditorProps {
   isExecuting: boolean;
   /** Reusa o mesmo fluxo de execução de tabela única já existente na tela (abre a confirmação). */
   onExecute: (id: string) => void;
+  /** Mesmo fluxo, mas com --full-refresh (equivalente ao "Do zero" do Studio Visual ETL). */
+  onExecuteFullRefresh: (id: string) => void;
   onClose: () => void;
 }
 
-export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, editHint, isExecuting, onExecute, onClose }) => {
+export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, editHint, isExecuting, onExecute, onExecuteFullRefresh, onClose }) => {
   const [model, setModel] = useState<ModelSql | null>(null);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(true);
@@ -53,6 +63,7 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'editor' | 'compiled' | 'schema'>('editor');
 
@@ -100,7 +111,7 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
   }, [activeTab, propsLoaded, node.name]);
 
   const handleClose = () => {
-    if (isDirty && !window.confirm('Você tem alterações não salvas neste modelo. Fechar mesmo assim?')) return;
+    if (isDirty) { setShowCloseConfirm(true); return; }
     onClose();
   };
 
@@ -208,6 +219,17 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
           >
             {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isExecuting ? 'Em execução...' : 'Executar esta tabela'}</span>
+          </button>
+          <button
+            type="button"
+            id="btn-dbt-editor-execute-full-refresh"
+            onClick={() => onExecuteFullRefresh(node.id)}
+            disabled={!canEdit || isExecuting}
+            title={isExecuting ? 'Execução em andamento — acompanhe pelo sino no canto superior direito.' : canEdit ? 'Reconstrói esta tabela do zero (--full-refresh) — use quando o schema mudou ou na 1ª construção' : (editHint || 'Seu perfil não pode executar pipelines.')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-700 bg-amber-900/30 hover:bg-amber-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-amber-300 text-xs font-semibold transition cursor-pointer"
+          >
+            {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+            <span className="hidden md:inline">{isExecuting ? 'Em execução...' : 'Executar full-refresh'}</span>
           </button>
           <button
             type="button"
@@ -335,7 +357,10 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
                   editable={canEdit}
                   extensions={editorExtensions}
                   onChange={(value) => { setCode(value); setIsDirty(true); }}
-                  basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
+                  // autocompletion desligado: o atalho de Tab do autocomplete ("aceitar sugestão")
+                  // tem prioridade sobre o indentWithTab (extensions acima), então Tab completava
+                  // a palavra em vez de indentar — mesmo com o cursor já depois dela.
+                  basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, autocompletion: false, completionKeymap: false }}
                   style={{ height: '100%', fontSize: '13px' }}
                 />
               </div>
@@ -462,6 +487,36 @@ export const DbtModelEditor: React.FC<DbtModelEditorProps> = ({ node, canEdit, e
           </button>
         </div>
       </div>
+
+      {showCloseConfirm && (
+        <div className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2 text-amber-300">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <h3 className="text-sm font-bold text-white">Alterações não salvas</h3>
+            </div>
+            <p className="text-xs text-slate-400">Você tem alterações não salvas neste modelo dbt. Fechar agora vai descartá-las.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                id="btn-dbt-editor-close-confirm-cancel"
+                onClick={() => setShowCloseConfirm(false)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                id="btn-dbt-editor-close-confirm-discard"
+                onClick={() => { setShowCloseConfirm(false); onClose(); }}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition cursor-pointer"
+              >
+                Fechar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

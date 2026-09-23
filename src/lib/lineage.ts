@@ -78,8 +78,8 @@ export const fetchModelProperties = (model: string) =>
 /** `dbt compile` de verdade (não simulado) — renderiza o Jinja contra o dataset real, sem gravar no BigQuery. */
 export const compileModel = (model: string) =>
   gatewayUserRequest<{ sql: string }>('/api/lineage/compile', { method: 'POST', body: JSON.stringify({ model }) });
-export const buildGoldModels = (models: string[]) =>
-  gatewayUserRequest<{ results: GoldBuildResult[] }>('/api/lineage/gold/build', { method: 'POST', body: JSON.stringify({ models }) });
+export const buildGoldModels = (models: string[], fullRefresh?: boolean) =>
+  gatewayUserRequest<{ results: GoldBuildResult[] }>('/api/lineage/gold/build', { method: 'POST', body: JSON.stringify({ models, fullRefresh }) });
 
 // ---- Grafo --------------------------------------------------------------------------
 

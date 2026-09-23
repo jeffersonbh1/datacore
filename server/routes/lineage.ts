@@ -207,11 +207,13 @@ lineageRouter.post('/gold/build', async (req, res) => {
     res.status(403).json({ error: 'Seu perfil não pode construir modelos Gold (requer administrador ou engenheiro de dados).' });
     return;
   }
-  const raw = (req.body as { models?: unknown })?.models;
+  const body = req.body as { models?: unknown; fullRefresh?: unknown };
+  const raw = body.models;
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_BUILD_MODELS || raw.some((m) => typeof m !== 'string')) {
     res.status(400).json({ error: `Campo "models" (lista de 1 a ${MAX_BUILD_MODELS} nomes de modelo) é obrigatório.` });
     return;
   }
+  const fullRefresh = body.fullRefresh === true;
 
   try {
     const tenant = await loadTenantContext(user.idEmpresa);
@@ -244,6 +246,7 @@ lineageRouter.post('/gold/build', async (req, res) => {
         goldDataset: models[0].dataset,
         location: integ.location || undefined,
         select: models.map((m) => m.name).join(' '),
+        fullRefresh,
       });
       for (const m of models) {
         const own = run.models.find((r) => r.uniqueId.startsWith('model.') && r.name === m.name);

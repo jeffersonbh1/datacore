@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Code2, Crosshair, FilePenLine, Loader2, Play, X } from 'lucide-react';
-import { LAYER_LABEL, fetchModelSql, type LineageIndex, type LineageNode, type ModelSql } from '../../lib/lineage';
+import React from 'react';
+import { Crosshair, FilePenLine, Loader2, Play, X } from 'lucide-react';
+import { LAYER_LABEL, type LineageIndex, type LineageNode } from '../../lib/lineage';
 import { LAYER_STYLE, formatRows, formatWhen } from './LineageGraph';
 
 interface NodeDetailPanelProps {
@@ -28,25 +28,7 @@ const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value
 );
 
 export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, isFocus, onFocus, onExecute, canExecute, executeHint, isExecuting, onOpenEditor, onClose }) => {
-  const [sql, setSql] = useState<ModelSql | null>(null);
-  const [sqlOpen, setSqlOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const isModel = node.layer === 'bronze' || node.layer === 'silver' || node.layer === 'gold';
-
-  // Trocar de nó fecha o SQL do anterior.
-  useEffect(() => { setSql(null); setSqlOpen(false); setError(null); }, [node.id]);
-
-  const toggleSql = async () => {
-    if (sqlOpen) { setSqlOpen(false); return; }
-    setSqlOpen(true);
-    if (sql) return;
-    setLoading(true);
-    setError(null);
-    try { setSql(await fetchModelSql(node.name)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Falha ao ler o SQL.'); }
-    finally { setLoading(false); }
-  };
 
   const parents = (index.parents.get(node.id) ?? []).map((id) => index.byId.get(id)!).filter(Boolean);
   const children = (index.children.get(node.id) ?? []).map((id) => index.byId.get(id)!).filter(Boolean);
@@ -91,11 +73,6 @@ export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, i
             </button>
           )}
           {isModel && (
-            <button type="button" onClick={toggleSql} className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition">
-              <Code2 className="w-3.5 h-3.5" /> {sqlOpen ? 'Ocultar SQL' : 'Ver SQL'}
-            </button>
-          )}
-          {isModel && (
             <button
               type="button"
               onClick={() => onOpenEditor(node)}
@@ -118,16 +95,6 @@ export const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, index, i
             </button>
           )}
         </div>
-
-        {sqlOpen && (
-          <div>
-            {loading && <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando…</p>}
-            {error && <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 break-words">{error}</div>}
-            {sql && (sql.sql
-              ? <pre className="text-[11px] leading-relaxed font-mono bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto max-h-72 whitespace-pre">{sql.sql}</pre>
-              : <p className="text-xs text-slate-500">O arquivo .sql deste modelo não está disponível no gateway.</p>)}
-          </div>
-        )}
 
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Recebe dados de ({parents.length})</p>

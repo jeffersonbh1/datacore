@@ -41,6 +41,10 @@ export interface ExecPlan {
   gold: PlanGold[];
   /** Só no escopo 'tabela': entradas diretas que ainda não foram construídas no BigQuery (a construção tende a falhar). */
   unbuiltInputs: string[];
+  /** `--full-refresh`: reconstrói do zero (equivalente ao "Do zero" do Studio Visual ETL) — Bronze/Silver
+   *  incrementais reprocessam tudo em vez de só o incremento; Gold é sempre `table`, então na prática já
+   *  reconstrói inteiro a cada build, mas a flag é repassada mesmo assim por completude/consistência. */
+  fullRefresh?: boolean;
 }
 
 /**
@@ -48,7 +52,7 @@ export interface ExecPlan {
  * alimenta. Escopo 'tabela': SÓ ele — usa o que já está construído nas camadas anteriores, sem sincronizar nem
  * reconstruir nada além dele.
  */
-export function buildPlan(index: LineageIndex, focusId: string, integrations: LineageIntegration[], pipelines: Pipeline[], scope: ExecScope = 'fluxo'): ExecPlan {
+export function buildPlan(index: LineageIndex, focusId: string, integrations: LineageIntegration[], pipelines: Pipeline[], scope: ExecScope = 'fluxo', fullRefresh = false): ExecPlan {
   const ids = scope === 'tabela' ? new Set([focusId]) : new Set([...collect(index, focusId, 'up'), focusId]);
   const byIntegration = new Map<number, PlanIntegration>();
   const ensure = (id: number): PlanIntegration | null => {
@@ -92,7 +96,7 @@ export function buildPlan(index: LineageIndex, focusId: string, integrations: Li
     ? (index.parents.get(focusId) ?? []).map((id) => index.byId.get(id)).filter((n) => n && n.layer !== 'source' && n.built === false).map((n) => n!.name)
     : [];
 
-  return { focusId, scope, integrations: [...byIntegration.values()], gold, unbuiltInputs };
+  return { focusId, scope, integrations: [...byIntegration.values()], gold, unbuiltInputs, fullRefresh };
 }
 
 export interface RunHooks {
@@ -212,6 +216,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         const { results } = await buildBronzeLayer({
           projectId: integration.projectId, rawDataset: integration.rawDataset, bronzeDataset: integration.bronzeDataset,
           tables: bronze.map((b) => b.table), sistema: integration.sistemaNome, location: integration.location || undefined,
+          fullRefresh: plan.fullRefresh,
         });
         const byTable = new Map(results.map((r) => [r.table, r]));
         for (const b of bronze) {
@@ -254,7 +259,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         const { results } = await buildSilverLayer({
           projectId: integration.projectId, rawDataset: integration.rawDataset, bronzeDataset: integration.bronzeDataset,
           silverDataset: integration.silverDataset, tables: silver.map((s) => s.table), sistema: integration.sistemaNome,
-          location: integration.location || undefined,
+          location: integration.location || undefined, fullRefresh: plan.fullRefresh,
         });
         const byTable = new Map(results.map((r) => [r.table, r]));
         for (const s of silver) {
@@ -293,7 +298,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
       hooks.setState(buildable.map((g) => g.nodeId), 'running');
       hooks.log(`Construindo Gold (${buildable.length} modelo${buildable.length > 1 ? 's' : ''}) e rodando os testes do dbt…`);
       try {
-        const { results } = await buildGoldModels(buildable.map((g) => g.name));
+        const { results } = await buildGoldModels(buildable.map((g) => g.name), plan.fullRefresh);
         for (const g of buildable) {
           const r = results.find((x) => x.model === g.name);
           if (r?.status === 'ok') {

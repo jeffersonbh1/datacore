@@ -74,7 +74,8 @@ export interface StartJobArgs {
 export const MAX_JOBS = 30;
 const TOAST_MS: Record<ToastKind, number> = { started: 5000, success: 8000, failed: 12000, cancelled: 6000 };
 
-export const jobTitle = (scope: ExecScope, name: string) => (scope === 'tabela' ? `Executar tabela ${name}` : `Executar fluxo até ${name}`);
+export const jobTitle = (scope: ExecScope, name: string, fullRefresh?: boolean) =>
+  (scope === 'tabela' ? `Executar tabela ${name}` : `Executar fluxo até ${name}`) + (fullRefresh ? ' (full-refresh)' : '');
 
 export const isRunning = (j: ExecJob) => j.phase === 'running';
 /** Terminou e o usuário ainda não abriu o detalhe. */
@@ -128,7 +129,7 @@ export class ExecutionJobStore {
     const job: ExecJob = {
       id,
       scope: args.plan.scope,
-      title: jobTitle(args.plan.scope, targetName),
+      title: jobTitle(args.plan.scope, targetName, args.plan.fullRefresh),
       targetId: args.plan.focusId,
       targetName,
       targetLayer: !target || target.layer === 'source' ? 'raw' : target.layer,

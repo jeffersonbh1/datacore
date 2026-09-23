@@ -125,10 +125,11 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
 
   // ---- Execução
   const canRun = canExecute && !!focusNode && focusNode.layer !== 'source';
-  /** 'fluxo' = até a tabela (com tudo que a alimenta); 'tabela' = só ela. */
-  const openPlan = (targetId: string, scope: ExecScope) => {
+  /** 'fluxo' = até a tabela (com tudo que a alimenta); 'tabela' = só ela.
+   *  `fullRefresh`: equivalente ao "Do zero" do Studio Visual ETL — reconstrói Bronze/Silver do zero. */
+  const openPlan = (targetId: string, scope: ExecScope, fullRefresh = false) => {
     if (!index || !lineage || !index.byId.has(targetId)) return;
-    const next = buildPlan(index, targetId, lineage.integrations, pipelines, scope);
+    const next = buildPlan(index, targetId, lineage.integrations, pipelines, scope, fullRefresh);
     setPlan(next);
     setIncludeSync(scope === 'fluxo' && next.integrations.some((i) => i.pipeline?.airbyteConnectionId || i.integration.airbyteConnectionId));
   };
@@ -279,6 +280,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           editHint={canExecute ? undefined : 'Seu perfil não pode editar pipelines.'}
           isExecuting={jobs.some((j) => j.phase === 'running' && j.targetId === editingNode.id)}
           onExecute={(id) => openPlan(id, 'tabela')}
+          onExecuteFullRefresh={(id) => openPlan(id, 'tabela', true)}
           onClose={() => setEditingNode(null)}
         />
       )}
