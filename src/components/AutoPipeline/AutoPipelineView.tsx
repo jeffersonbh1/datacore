@@ -534,9 +534,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   // Default provider mapping
   const getProviderForSource = (type: SourceType): CloudProvider => {
     switch (type) {
-      case 'postgresql': case 'postgres': return 'aws';
+      case 'postgresql': case 'postgres': return 'generic';
       case 'mysql': return 'gcp';
-      case 's3': return 'aws';
+      case 's3': return 'generic';
       case 'kafka': return 'generic';
       case 'salesforce': return 'generic';
       case 'oracle': return 'generic';

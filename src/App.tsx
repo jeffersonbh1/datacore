@@ -494,7 +494,6 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} sessionExpiredNotice={sessionExpiredNotice} />;
   }
 
-  const activeCount = pipelines.filter(p => p.status === 'active').length;
   const openIncidentsCount = incidents.filter(i => i.status !== 'resolved').length;
   const pendingDsrCount = lgpdRequests.filter(r => r.status === 'pendente' || r.status === 'em_analise').length;
 
@@ -505,8 +504,6 @@ export default function App() {
       <Header
         currentRole={currentRole}
         onChangeRole={setCurrentRole}
-        activePipelinesCount={activeCount}
-        totalPipelinesCount={pipelines.length}
         currentUser={currentUser}
         onLogout={handleLogout}
         onLogoClick={() => setActiveTab('pipelines')}

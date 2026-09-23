@@ -11,8 +11,6 @@ import { ExecutionBell } from './Executions/ExecutionBell';
 interface HeaderProps {
   currentRole: UserRole;
   onChangeRole: (role: UserRole) => void;
-  activePipelinesCount: number;
-  totalPipelinesCount: number;
   currentUser?: TeamUser | null;
   onLogout?: () => void;
   /** Vai para a tela principal (Pipelines & Fluxos) ao clicar no logo. */
@@ -22,8 +20,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
   onChangeRole,
-  activePipelinesCount,
-  totalPipelinesCount,
   currentUser,
   onLogout,
   onLogoClick
@@ -49,29 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Operational Cards & User Controls Cluster (No overlap layout) */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-        {/* Card 1: Quantidade de Pipelines Ativos */}
-        <div 
-          id="header-card-active-pipelines"
-          className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs shrink-0 whitespace-nowrap shadow-2xs"
-          title="Pipelines ativos em operação"
-        >
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
-          <span className="text-slate-600 font-medium text-[11px] sm:text-xs">
-            <strong className="text-slate-900 font-bold">{activePipelinesCount}/{totalPipelinesCount}</strong> Pipelines Ativos
-          </span>
-        </div>
-
-        {/* Card 2: Região Cloud */}
-        <div 
-          id="header-card-region"
-          className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs shrink-0 whitespace-nowrap shadow-2xs text-slate-600"
-          title="Região primária do cluster de processamento"
-        >
-          <span className="text-slate-400 text-[11px] font-medium hidden lg:inline">Região:</span>
-          <strong className="text-slate-800 font-semibold text-[11px] sm:text-xs">AWS sa-east-1</strong>
-        </div>
-
-        {/* Card 3: Tipo de Usuário / Perfil (Administrador Global, etc.) */}
+        {/* Tipo de Usuário / Perfil (Administrador Global, etc.) */}
         <div 
           id="header-card-user-role"
           className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-2xs shrink-0"
@@ -102,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Sino de notificações: execuções do Studio Gold em segundo plano */}
         <ExecutionBell />
 
-        {/* Card 4: Identificação do Usuário e Logout */}
+        {/* Identificação do Usuário e Logout */}
         <div id="header-user-badge" className="flex items-center gap-2.5 border-l border-slate-200 pl-2.5 sm:pl-3 shrink-0">
           <div className="text-right hidden xl:block">
             <p className="text-xs font-bold text-slate-900 leading-tight">

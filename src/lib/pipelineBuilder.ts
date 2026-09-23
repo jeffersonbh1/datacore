@@ -121,7 +121,7 @@ export function buildPipelineFromIntegration(
     type: 'raw_data',
     title: 'Raw Data Landing Zone',
     subtitle: `s3://corp-lakehouse-raw/${source.database}/`,
-    provider: source.provider === 'generic' ? 'aws' : source.provider,
+    provider: destination.provider,
     iconName: 'FolderArchive',
     x: 330,
     y: 190,
@@ -264,7 +264,10 @@ export function buildPipelineFromIntegration(
     trigger: integration.syncFrequency === 'once' ? 'manual' : 'cron',
     cronExpression: cronExpr,
     mode: 'batch',
-    cloudProviders: Array.from(new Set([source.provider, destination.provider])),
+    // Só o provedor do destino: é onde o pipeline realmente roda (Raw/Bronze/
+    // Silver no BigQuery). O `provider` da origem é um palpite pelo tipo do
+    // conector (antes, todo PostgreSQL virava "AWS") e não descreve a infra real.
+    cloudProviders: destination.provider === 'generic' ? [] : [destination.provider],
     nodes,
     edges,
     lastRunAt: 'Pronto para execução',

@@ -157,7 +157,6 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           >
             <option value="all">Todas as Nuvens</option>
             <option value="gcp">Google Cloud (GCP)</option>
-            <option value="aws">Amazon Web Services (AWS)</option>
             <option value="snowflake">Snowflake</option>
             <option value="azure">Microsoft Azure</option>
           </select>
