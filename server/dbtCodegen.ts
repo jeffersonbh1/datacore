@@ -244,20 +244,12 @@ ${tables}
 `;
 }
 
-// --- modelo Bronze ---------------------------------------------------------
+// --- carga incremental (Bronze e Silver) -------------------------------------
+// Mesma regra nas duas camadas: incremental só quando a integração pede carga
+// incremental E a tabela tem chave — a chave vira a unique_key do merge.
 
-function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
-  const sys = sistemaSlug(spec.sistema);
-  const srcName = sanitizeIdent(t.name);
-  const modelAlias = `bronze_${sys}_${srcName}`;
-  const cols = t.columns && t.columns.length > 0;
-  // Padronização de nomes (server/bronzeNaming.ts): só é possível renomear
-  // quando a lista de colunas é conhecida — sem ela a projeção é `select *`
-  // (passthrough) e os nomes originais do source são preservados.
-  const renameMap = cols ? buildColumnRenameMap(t.columns!, t.name) : null;
-  const pk = resolvePrimaryKey(t, renameMap);
-  const incremental = t.loadType === 'incremental' && pk.length > 0;
-
+/** Linhas do config(): materialização + alias e, no incremental, merge pela chave. */
+function modelConfigLines(modelAlias: string, pk: string[], incremental: boolean): string[] {
   const cfg: string[] = [
     `    materialized = '${incremental ? 'incremental' : 'table'}'`,
     `    , alias = '${modelAlias}'`,
@@ -273,6 +265,48 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
     // a troca de dt_ingestao_lake por _dat_carga) em vez de o merge quebrar.
     cfg.push(`    , on_schema_change = 'sync_all_columns'`);
   }
+  return cfg;
+}
+
+/** Início do modelo incremental: a maior _dat_carga já gravada nesta tabela
+ *  (macro max_dat_carga). Fica none quando a tabela ainda não tem _dat_carga
+ *  (ou está vazia) — aí a origem é lida inteira uma vez; o merge pela chave
+ *  não duplica. `origem` só entra no comentário ("Raw", "Bronze"). */
+function watermarkLookupBlock(origem: string): string {
+  return `
+-- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
+-- max_dat_carga) para ler da ${origem} só os registros novos.
+{% if is_incremental() %}
+    {% set v_max_dat_carga = max_dat_carga() %}
+{% endif %}
+`;
+}
+
+/** WHERE da origem no incremental: só registros posteriores à marca d'água.
+ *  `coluna` é a data de carga NA ORIGEM (_airbyte_extracted_at na Raw,
+ *  _dat_carga na Bronze). `indent`: dentro de CTE (Bronze) ou no nível do topo (Silver). */
+function watermarkFilterBlock(coluna: string, indent = '    '): string {
+  return `
+${indent}{% if is_incremental() and v_max_dat_carga is not none %}
+${indent}WHERE ${coluna} > TIMESTAMP('{{ v_max_dat_carga }}')
+${indent}{% endif %}`;
+}
+
+// --- modelo Bronze ---------------------------------------------------------
+
+function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
+  const sys = sistemaSlug(spec.sistema);
+  const srcName = sanitizeIdent(t.name);
+  const modelAlias = `bronze_${sys}_${srcName}`;
+  const cols = t.columns && t.columns.length > 0;
+  // Padronização de nomes (server/bronzeNaming.ts): só é possível renomear
+  // quando a lista de colunas é conhecida — sem ela a projeção é `select *`
+  // (passthrough) e os nomes originais do source são preservados.
+  const renameMap = cols ? buildColumnRenameMap(t.columns!, t.name) : null;
+  const pk = resolvePrimaryKey(t, renameMap);
+  const incremental = t.loadType === 'incremental' && pk.length > 0;
+
+  const cfg = modelConfigLines(modelAlias, pk, incremental);
 
   // Marca d'água (sempre acrescentada — ver `tipado`, abaixo) entra no MESMO
   // grupo de alinhamento das colunas de negócio, para o "AS" cair na mesma
@@ -312,23 +346,8 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   // Incremental: a maior _dat_carga já gravada é buscada no início do modelo
   // (macro max_dat_carga, dbt/macros/max_dat_carga.sql) e a Raw é filtrada só
   // com o que chegou depois dela — dados antigos não são reprocessados.
-  // `v_max_dat_carga` fica none quando a tabela ainda não tem _dat_carga (ou está
-  // vazia) — aí a Raw é lida inteira uma vez; o merge pela chave não duplica.
-  const watermarkLookup = incremental
-    ? `
--- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
--- max_dat_carga) para ler da Raw só os registros novos.
-{% if is_incremental() %}
-    {% set v_max_dat_carga = max_dat_carga() %}
-{% endif %}
-`
-    : '';
-  const incrementalFilter = incremental
-    ? `
-    {% if is_incremental() and v_max_dat_carga is not none %}
-    WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
-    {% endif %}`
-    : '';
+  const watermarkLookup = incremental ? watermarkLookupBlock('Raw') : '';
+  const incrementalFilter = incremental ? watermarkFilterBlock('_airbyte_extracted_at') : '';
 
   return `{{ config(
 ${cfg.join('\n')}
@@ -354,8 +373,10 @@ SELECT * FROM tipado
 }
 
 // --- modelo Silver ----------------------------------------------------------
-// Curadoria mínima real: um modelo por tabela, materializado como table, lendo
-// do Bronze já tipado/sanitizado (LGPD). Sem regra de negócio
+// Curadoria mínima real: um modelo por tabela, lendo do Bronze já
+// tipado/sanitizado (LGPD). Incremental quando a Bronze é (mesma chave, já
+// padronizada): lê da Bronze só o que tem _dat_carga posterior à maior já
+// gravada na Silver e faz o merge pela chave; senão, table. Sem regra de negócio
 // específica — isso não dá pra gerar automaticamente —, mas é dbt de verdade,
 // executa contra o BigQuery real e fica em models/medallion/silver/<sistema>/
 // pronto para o usuário estender (o editor visual do Studio edita este mesmo
@@ -365,10 +386,17 @@ function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   const srcName = sanitizeIdent(t.name);
   const bronzeRef = bronzeModelName(spec.sistema, t.name);
   const modelAlias = `silver_${sys}_${srcName}`;
+  // Mesma chave e mesma decisão de incremental da Bronze — a Silver é
+  // passthrough, então a chave já vem com o nome padronizado.
+  const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
+  const pk = resolvePrimaryKey(t, renameMap);
+  const incremental = t.loadType === 'incremental' && pk.length > 0;
+  const cfg = modelConfigLines(modelAlias, pk, incremental);
+  const watermarkLookup = incremental ? watermarkLookupBlock('Bronze') : '';
+  const incrementalFilter = incremental ? watermarkFilterBlock('_dat_carga', '') : '';
 
   return `{{ config(
-    materialized = 'table'
-    , alias = '${modelAlias}'
+${cfg.join('\n')}
 ) }}
 
 -- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Silver, tabela ${t.name}.
@@ -377,8 +405,8 @@ function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
 -- negócio (joins, métricas, renomes analíticos) conforme necessário.
 -- Origem: ref('${bronzeRef}')
 -- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
-
-SELECT * FROM {{ ref('${bronzeRef}') }}
+${watermarkLookup}
+SELECT * FROM {{ ref('${bronzeRef}') }}${incrementalFilter}
 `;
 }
 

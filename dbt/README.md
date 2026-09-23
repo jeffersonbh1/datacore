@@ -26,7 +26,7 @@ dbt/
     │   │   └── <sistema>/                   # GERADO — uma pasta por sistema de origem
     │   │       ├── _properties.yml          #   todos os modelos do sistema (descrição + testes)
     │   │       └── bronze_<sistema>_<t>.sql  #   1 por tabela; alias = mesmo nome
-    │   ├── silver/  (só o exemplo — sem codegen; usará <sistema>/ quando tiver)
+    │   ├── silver/<sistema>/silver_<sistema>_<tabela>.sql  (gerados)
     │   └── gold/    (idem)
     └── staging/                             # EXEMPLO
 ```
@@ -72,7 +72,13 @@ dbt/
   evita duplicar) quando a tabela ainda não existe, está vazia ou ainda não
   tem a coluna. Os incrementais usam `on_schema_change='sync_all_columns'`.
 - **Sem staging** para os gerados (a lógica está no próprio `bronze_<sistema>_<t>.sql`).
-- Silver/Gold: só os modelos de exemplo. Sem codegen.
+- **`silver_<sistema>_<tabela>.sql`**: passthrough da Bronze
+  (`select * from ref('bronze_<sistema>_<tabela>')`), ponto de partida para as
+  regras de negócio. Mesma regra de carga da Bronze: **incremental `merge`**
+  pela mesma chave quando a Bronze é incremental — busca a maior `_dat_carga`
+  da Silver com `max_dat_carga()` e lê da Bronze só `_dat_carga` posterior;
+  senão, `table`.
+- Gold: sem codegen (modelos criados no Studio Gold / "Converse com os dados").
 
 ### Fluxo
 

@@ -319,8 +319,9 @@ projeto dbt, em [`../dbt/README.md`](../dbt/README.md).
 
 - **Modelos versionados no repo** (não em bucket) — simples de revisar, mas
   acopla a construção da Bronze ao ciclo de deploy da imagem.
-- **Silver e Gold** existem só como exemplo. Sem codegen; a mesma convenção
-  `<camada>/<sistema>/` se aplica quando forem implementadas.
+- **Silver** é gerada como passthrough da Bronze (`silver/<sistema>/`), incremental
+  pela mesma chave quando a Bronze é incremental (lê da Bronze só `_dat_carga`
+  posterior à maior já gravada na Silver). **Gold** não tem codegen.
 - **Tipos de coluna** não são propagados do *discovery* do Airbyte — a Bronze
   faz renome, não cast estrito.
 - **Excluir integração** no "Pipelines & Fluxos" apaga do banco (a integração, o
