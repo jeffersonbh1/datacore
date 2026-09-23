@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users, RefreshCw, AlertTriangle, CheckCircle2, Pencil, Save, X,
-  Eye, EyeOff, KeyRound, Search, Lock
+  Eye, EyeOff, KeyRound, Search, Lock, Link2
 } from 'lucide-react';
 import { Empresa, UserRole } from '../../types';
 import { ROLE_DEFINITIONS } from '../../data/initialData';
 import { isSupabaseConfigured, fetchEmpresas } from '../../lib/supabase';
-import { listUsuarios, updateUsuario, UsuarioAdmin, UpdateUsuarioPayload } from '../../lib/adminUsuarios';
+import { listUsuarios, updateUsuario, gerarLinkAcesso, UsuarioAdmin, UpdateUsuarioPayload } from '../../lib/adminUsuarios';
+import { LinkAcessoCard } from './LinkAcessoCard';
 
 interface UsuariosAdminViewProps {
   canManage?: boolean;
@@ -60,6 +61,9 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [linkGerado, setLinkGerado] = useState<{ nome: string; email: string; link: string } | null>(null);
+  const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null);
+
   const load = () => {
     if (!supabaseReady || !canManage) {
       setIsLoading(false);
@@ -90,6 +94,20 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
       u.nome.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.departamento.toLowerCase().includes(q)
     );
   }, [usuarios, busca]);
+
+  const handleGerarLink = async (u: UsuarioAdmin) => {
+    setGerandoLinkId(u.id);
+    setLoadError(null);
+    setSuccessMsg(null);
+    try {
+      const link = await gerarLinkAcesso(u.id);
+      setLinkGerado({ nome: u.nome, email: u.email, link });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Erro ao gerar o link de acesso.');
+    } finally {
+      setGerandoLinkId(null);
+    }
+  };
 
   const openEdit = (u: UsuarioAdmin) => {
     setEditing(u);
@@ -144,7 +162,9 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
     setIsSaving(true);
     try {
       const salvo = await updateUsuario(editing.id, payload);
-      setUsuarios(prev => prev.map(u => (u.id === salvo.id ? salvo : u)));
+      // O PATCH não devolve senha_pendente; só uma senha nova muda esse estado.
+      const senhaPendente = payload.senha ? false : editing.senhaPendente;
+      setUsuarios(prev => prev.map(u => (u.id === salvo.id ? { ...salvo, senhaPendente } : u)));
       const partes = [
         payload.email ? 'e-mail de login alterado' : null,
         payload.senha ? 'senha redefinida' : null,
@@ -194,6 +214,15 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
           </div>
           <button type="button" onClick={() => setLoadError(null)} className="text-rose-700 hover:text-rose-900 font-bold text-xs">✕</button>
         </div>
+      )}
+
+      {linkGerado && (
+        <LinkAcessoCard
+          nome={linkGerado.nome}
+          email={linkGerado.email}
+          link={linkGerado.link}
+          onClose={() => setLinkGerado(null)}
+        />
       )}
 
       {/* Edit form */}
@@ -279,7 +308,7 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
             </div>
             <p className="text-[11px] text-slate-500">
               {editing.authUserId
-                ? 'Deixe em branco para manter a senha atual.'
+                ? 'Deixe em branco para manter a senha atual. Para a própria pessoa escolher a senha, use "Gerar link" na lista.'
                 : 'Este cadastro ainda não tem login no Supabase Auth — definir uma senha cria o acesso.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -389,6 +418,9 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
                       {!u.ativo && (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200">Inativo</span>
                       )}
+                      {u.senhaPendente && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">Aguardando senha</span>
+                      )}
                       {!u.authUserId && (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">Sem login</span>
                       )}
@@ -401,14 +433,28 @@ export const UsuariosAdminView: React.FC<UsuariosAdminViewProps> = ({ canManage 
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openEdit(u)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 flex items-center gap-1.5 shrink-0 self-start sm:self-center"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Alterar
-                </button>
+                <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                  {u.authUserId && u.ativo && (
+                    <button
+                      type="button"
+                      onClick={() => handleGerarLink(u)}
+                      disabled={gerandoLinkId === u.id}
+                      title="Gera um link de uso único para a pessoa criar ou redefinir a própria senha"
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {gerandoLinkId === u.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                      Gerar link
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => openEdit(u)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 flex items-center gap-1.5"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Alterar
+                  </button>
+                </div>
               </div>
             ))}
           </div>

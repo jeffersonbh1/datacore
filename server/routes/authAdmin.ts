@@ -1,18 +1,45 @@
+import { randomBytes } from 'crypto';
 import { Router } from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { getSupabaseAdmin } from '../supabaseAdmin';
 
 export const authAdminRouter = Router();
 
+const PAPEIS_VALIDOS = ['admin', 'data_engineer', 'data_analyst', 'dpo_compliance', 'viewer'];
+
 interface RegisterBody {
   nome: string;
   email: string;
-  senha: string;
   papel: string;
   departamento?: string | null;
   mfa_habilitado?: boolean;
   pode_visualizar_pii_bruto?: boolean;
   id_empresa?: number | null;
+  redirect_to?: string;
+}
+
+// Marca no user_metadata do Supabase Auth que o usuário ainda não criou a
+// própria senha. Quem limpa é o próprio usuário, na tela de definir senha
+// (ResetPasswordScreen), no mesmo updateUser que grava a senha.
+const SENHA_PENDENTE = 'senha_pendente';
+
+/**
+ * Link de uso único para o usuário definir a própria senha. É um link de
+ * "recovery" gerado pela Admin API SEM enviar e-mail (o projeto ainda não tem
+ * SMTP próprio): o admin copia e manda por onde quiser. Ao abrir, o app cai na
+ * ResetPasswordScreen (hash type=recovery). Validade = "Email OTP Expiration"
+ * do Supabase Auth.
+ */
+async function gerarLinkDefinirSenha(email: string, redirectTo?: string): Promise<string> {
+  const { data, error } = await getSupabaseAdmin().auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: redirectTo && /^https?:\/\//.test(redirectTo) ? { redirectTo } : undefined,
+  });
+  if (error || !data?.properties?.action_link) {
+    throw new Error(error?.message || 'O Supabase não devolveu o link de acesso.');
+  }
+  return data.properties.action_link;
 }
 
 // Fase 4: the only place that creates a login-capable account. Creates the real
@@ -20,18 +47,20 @@ interface RegisterBody {
 // run in the browser) and the matching "usuarios" profile row in one call,
 // linked by auth_user_id. Rolls back the Auth user if the profile insert fails,
 // so a failed registration never leaves an orphaned login with no profile.
-authAdminRouter.post('/register', async (req, res) => {
+// O admin não define senha: a conta nasce com uma senha aleatória que ninguém
+// conhece, e a resposta traz o link para o próprio usuário criar a dele.
+authAdminRouter.post('/register', requireAdminSession, async (req, res) => {
   try {
     const body = req.body as RegisterBody;
     const email = body.email?.trim().toLowerCase();
     const nome = body.nome?.trim();
 
-    if (!nome || !email || !body.senha || !body.papel) {
-      res.status(400).json({ error: 'Campos "nome", "email", "senha" e "papel" são obrigatórios.' });
+    if (!nome || !email || !body.papel) {
+      res.status(400).json({ error: 'Campos "nome", "email" e "papel" são obrigatórios.' });
       return;
     }
-    if (body.senha.length < 6) {
-      res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres (mínimo exigido pelo Supabase Auth).' });
+    if (!PAPEIS_VALIDOS.includes(body.papel)) {
+      res.status(400).json({ error: `Papel inválido: "${body.papel}".` });
       return;
     }
 
@@ -39,8 +68,9 @@ authAdminRouter.post('/register', async (req, res) => {
 
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
       email,
-      password: body.senha,
+      password: randomBytes(32).toString('base64url'),
       email_confirm: true,
+      user_metadata: { [SENHA_PENDENTE]: true },
     });
     if (authError || !authData.user) {
       res.status(400).json({ error: authError?.message || 'Falha ao criar usuário no Supabase Auth.' });
@@ -85,7 +115,16 @@ authAdminRouter.post('/register', async (req, res) => {
       return;
     }
 
-    res.status(201).json(profileData);
+    // O usuário já existe; se só o link falhar, o admin gera outro na lista de Usuários.
+    let linkAcesso: string | null = null;
+    let linkErro: string | null = null;
+    try {
+      linkAcesso = await gerarLinkDefinirSenha(email, body.redirect_to);
+    } catch (err) {
+      linkErro = err instanceof Error ? err.message : 'Falha ao gerar o link de acesso.';
+    }
+
+    res.status(201).json({ ...profileData, link_acesso: linkAcesso, link_erro: linkErro });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Erro desconhecido ao registrar usuário.' });
   }
@@ -94,11 +133,10 @@ authAdminRouter.post('/register', async (req, res) => {
 // =============================================================================
 // Administração de usuários (listar / editar cadastro, e-mail e senha)
 // =============================================================================
-// Diferente do /register, estas rotas alteram credenciais de login de terceiros,
-// então não basta a chave do gateway (que vai no bundle do navegador): exigem a
-// sessão real do Supabase (X-User-Token) de um usuário com papel 'admin'.
+// Estas rotas (e o /register) criam ou alteram credenciais de login de
+// terceiros, então não basta a chave do gateway (que vai no bundle do
+// navegador): exigem a sessão real do Supabase (X-User-Token) de um admin.
 
-const PAPEIS_VALIDOS = ['admin', 'data_engineer', 'data_analyst', 'dpo_compliance', 'viewer'];
 // Supabase Auth não tem "desativar"; um ban longo é o equivalente — impede login
 // e renovação de sessão até ser removido com 'none'.
 const BAN_INATIVO = '876000h';
@@ -139,14 +177,56 @@ const USUARIO_COLUNAS =
 
 authAdminRouter.get('/usuarios', requireAdminSession, async (_req, res) => {
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from('usuarios')
-      .select(USUARIO_COLUNAS)
-      .order('nome', { ascending: true });
+    const admin = getSupabaseAdmin();
+    const [{ data, error }, authList] = await Promise.all([
+      admin.from('usuarios').select(USUARIO_COLUNAS).order('nome', { ascending: true }),
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ]);
     if (error) throw new Error(error.message);
-    res.json(data || []);
+
+    // "Aguardando senha" = conta criada pelo admin cujo dono ainda não abriu o
+    // link e definiu a própria senha (ver SENHA_PENDENTE).
+    const pendentes = new Set(
+      (authList.data?.users || [])
+        .filter(u => u.user_metadata?.[SENHA_PENDENTE] === true)
+        .map(u => u.id)
+    );
+    res.json((data || []).map(row => {
+      const r = row as unknown as Record<string, unknown>;
+      return { ...r, senha_pendente: pendentes.has(String(r.auth_user_id)) };
+    }));
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Erro ao listar usuários.' });
+  }
+});
+
+// Gera um novo link para o usuário definir a senha — convite vencido, ou
+// "esqueci a senha" resolvido pelo admin sem precisar de e-mail.
+authAdminRouter.post('/usuarios/:id/link-acesso', requireAdminSession, async (req, res) => {
+  try {
+    const { data: row, error } = await getSupabaseAdmin()
+      .from('usuarios')
+      .select('email, auth_user_id, ind_cadastro_ativo')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) {
+      res.status(404).json({ error: 'Usuário não encontrado.' });
+      return;
+    }
+    if (!row.auth_user_id) {
+      res.status(409).json({ error: 'Este cadastro ainda não tem login no Supabase Auth — defina uma senha em "Alterar" para criá-lo.' });
+      return;
+    }
+    if (row.ind_cadastro_ativo === false) {
+      res.status(409).json({ error: 'Cadastro inativo — reative o usuário antes de gerar um link de acesso.' });
+      return;
+    }
+    const redirectTo = (req.body as { redirect_to?: string } | undefined)?.redirect_to;
+    const link = await gerarLinkDefinirSenha(String(row.email), redirectTo);
+    res.json({ link_acesso: link });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Erro ao gerar o link de acesso.' });
   }
 });
 
@@ -218,7 +298,14 @@ authAdminRouter.patch('/usuarios/:id', requireAdminSession, async (req, res) => 
     if (authUserId) {
       const authUpdate: Record<string, unknown> = {};
       if (emailMudou) { authUpdate.email = email; authUpdate.email_confirm = true; }
-      if (senha) authUpdate.password = senha;
+      if (senha) {
+        authUpdate.password = senha;
+        // Senha definida pelo admin: deixa de estar "aguardando senha".
+        const { data: authUser } = await admin.auth.admin.getUserById(authUserId);
+        if (authUser?.user?.user_metadata?.[SENHA_PENDENTE]) {
+          authUpdate.user_metadata = { ...authUser.user.user_metadata, [SENHA_PENDENTE]: false };
+        }
+      }
       if (ativoMudou) authUpdate.ban_duration = body.ind_cadastro_ativo ? 'none' : BAN_INATIVO;
       if (Object.keys(authUpdate).length > 0) {
         const { error: authError } = await admin.auth.admin.updateUserById(authUserId, authUpdate);

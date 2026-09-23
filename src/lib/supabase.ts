@@ -204,8 +204,12 @@ export async function loginWithSupabaseAuth(
  * Fase 4: registers a new user through the gateway's Admin API route instead of
  * inserting into "usuarios" directly from the browser — creating a login-capable
  * account requires the Supabase service role key, which only the gateway holds.
+ * O admin não define senha: o gateway devolve um link de uso único para a
+ * própria pessoa criar a dela (a rota exige a sessão de um admin).
  */
-export async function registerUsuario(payload: NewUsuarioPayload): Promise<TeamUser> {
+export async function registerUsuario(
+  payload: NewUsuarioPayload
+): Promise<{ user: TeamUser; linkAcesso: string | null; linkErro: string | null }> {
   if (!isSupabaseConfigured()) {
     // Local demo simulation — unchanged from before, only used when Supabase isn't configured at all.
     const cleanEmail = payload.email.trim().toLowerCase();
@@ -214,15 +218,19 @@ export async function registerUsuario(payload: NewUsuarioPayload): Promise<TeamU
       cleanNome.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('')
       || cleanEmail.substring(0, 2).toUpperCase();
     return {
-      id: `usr-${Date.now()}`,
-      name: cleanNome,
-      email: cleanEmail,
-      role: payload.papel,
-      department: payload.departamento || 'Engenharia de Dados & Governança',
-      avatar: avatarIniciais,
-      lastActive: 'Agora',
-      mfaEnabled: Boolean(payload.mfa_habilitado),
-      canViewUnmaskedPII: Boolean(payload.pode_visualizar_pii_bruto),
+      user: {
+        id: `usr-${Date.now()}`,
+        name: cleanNome,
+        email: cleanEmail,
+        role: payload.papel,
+        department: payload.departamento || 'Engenharia de Dados & Governança',
+        avatar: avatarIniciais,
+        lastActive: 'Agora',
+        mfaEnabled: Boolean(payload.mfa_habilitado),
+        canViewUnmaskedPII: Boolean(payload.pode_visualizar_pii_bruto),
+      },
+      linkAcesso: null,
+      linkErro: null,
     };
   }
 
@@ -231,11 +239,14 @@ export async function registerUsuario(payload: NewUsuarioPayload): Promise<TeamU
   if (!gatewayUrl) {
     throw new Error('VITE_AIRBYTE_GATEWAY_URL não configurada — necessária para cadastrar usuários com login real.');
   }
+  const { data: sessionData } = await supabase!.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error('Sessão expirada — faça login novamente.');
 
   const res = await fetch(`${gatewayUrl}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gatewayApiKey}` },
-    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gatewayApiKey}`, 'X-User-Token': token },
+    body: JSON.stringify({ ...payload, redirect_to: window.location.origin }),
   });
 
   const text = await res.text();
@@ -245,7 +256,11 @@ export async function registerUsuario(payload: NewUsuarioPayload): Promise<TeamU
     throw new Error((json && json.error) || 'Erro ao cadastrar usuário.');
   }
 
-  return mapUsuarioRowToTeamUser(json as Record<string, unknown>);
+  return {
+    user: mapUsuarioRowToTeamUser(json as Record<string, unknown>),
+    linkAcesso: (json.link_acesso as string) || null,
+    linkErro: (json.link_erro as string) || null,
+  };
 }
 
 /**

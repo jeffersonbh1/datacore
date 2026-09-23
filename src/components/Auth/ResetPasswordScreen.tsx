@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { DataCoreLogo } from '../common/DataCoreLogo';
 import { supabase } from '../../lib/supabase';
@@ -21,6 +21,15 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onPass
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Conta criada pelo admin, primeiro acesso: o link é um convite, não uma
+  // redefinição (ver SENHA_PENDENTE em server/routes/authAdmin.ts).
+  const [primeiroAcesso, setPrimeiroAcesso] = useState(false);
+
+  useEffect(() => {
+    supabase?.auth.getUser().then(({ data }) => {
+      setPrimeiroAcesso(data.user?.user_metadata?.senha_pendente === true);
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +49,7 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onPass
     }
 
     setIsLoading(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await supabase.auth.updateUser({ password, data: { senha_pendente: false } });
     setIsLoading(false);
 
     if (updateError) {
@@ -69,10 +78,12 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onPass
                 <DataCoreLogo size="md" layout="stage" showWordmark={true} showTagline={true} />
               </div>
               <h3 className="text-lg font-bold text-slate-900 tracking-tight">
-                Defina sua Nova Senha
+                {primeiroAcesso ? 'Bem-vindo ao DataCore' : 'Defina sua Nova Senha'}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Você acessou por um link de redefinição de senha. Escolha uma senha nova para continuar.
+                {primeiroAcesso
+                  ? 'Seu acesso foi criado por um administrador. Crie sua senha para entrar.'
+                  : 'Você acessou por um link de redefinição de senha. Escolha uma senha nova para continuar.'}
               </p>
             </div>
 

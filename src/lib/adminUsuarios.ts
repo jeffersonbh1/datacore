@@ -20,6 +20,8 @@ export interface UsuarioAdmin {
   mfaHabilitado: boolean;
   podeVisualizarPiiBruto: boolean;
   ativo: boolean;
+  /** Conta criada pelo admin cujo dono ainda não abriu o link e criou a senha. */
+  senhaPendente: boolean;
   idEmpresa: number | null;
   ultimoAcessoEm: string | null;
 }
@@ -48,6 +50,7 @@ function mapRow(row: Record<string, unknown>): UsuarioAdmin {
     mfaHabilitado: Boolean(row.mfa_habilitado),
     podeVisualizarPiiBruto: Boolean(row.pode_visualizar_pii_bruto),
     ativo: row.ind_cadastro_ativo !== false,
+    senhaPendente: row.senha_pendente === true,
     idEmpresa: row.id_empresa !== null && row.id_empresa !== undefined ? Number(row.id_empresa) : null,
     ultimoAcessoEm: row.ultimo_acesso_em ? String(row.ultimo_acesso_em) : null,
   };
@@ -81,4 +84,13 @@ export async function updateUsuario(id: string, payload: UpdateUsuarioPayload): 
     body: JSON.stringify(payload),
   });
   return mapRow(row);
+}
+
+/** Novo link de uso único para o usuário (re)definir a senha — sem envio de e-mail. */
+export async function gerarLinkAcesso(id: string): Promise<string> {
+  const json = await request<{ link_acesso: string }>(`/usuarios/${encodeURIComponent(id)}/link-acesso`, {
+    method: 'POST',
+    body: JSON.stringify({ redirect_to: window.location.origin }),
+  });
+  return json.link_acesso;
 }

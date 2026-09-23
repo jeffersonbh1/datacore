@@ -353,7 +353,6 @@ export interface AutoIntegration {
 export interface NewUsuarioPayload {
   nome: string;
   email: string;
-  senha: string;
   papel: UserRole;
   departamento: string;
   mfa_habilitado: boolean;

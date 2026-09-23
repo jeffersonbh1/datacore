@@ -72,10 +72,8 @@ export const AdministracaoView: React.FC<AdministracaoViewProps> = ({
       {section === 'cadastrar-usuario' && (
         <CadastroUsuarioView
           canManageUsers={canManage}
-          onUserCreated={(newUser) => {
-            onUserCreated?.(newUser);
-            onSelectSection('usuarios');
-          }}
+          // Fica na tela: o link de acesso do novo usuário aparece aqui para copiar.
+          onUserCreated={onUserCreated}
           onCancel={() => onSelectSection('usuarios')}
         />
       )}

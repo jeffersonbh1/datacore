@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  UserPlus, Mail, Lock, Shield, Building, Eye, EyeOff,
+  UserPlus, Mail, Shield, Building,
   CheckCircle2, AlertTriangle, ArrowLeft, RefreshCw, Database,
-  Sliders, Key, Sparkles, Check, Info
+  Sliders, Sparkles, Check, Info
 } from 'lucide-react';
 import { UserRole, TeamUser, NewUsuarioPayload, Empresa } from '../../types';
 import { ROLE_DEFINITIONS } from '../../data/initialData';
 import { isSupabaseConfigured, registerUsuario, fetchEmpresas } from '../../lib/supabase';
+import { LinkAcessoCard } from '../Admin/LinkAcessoCard';
 
 interface CadastroUsuarioViewProps {
   onUserCreated?: (user: TeamUser) => void;
@@ -21,9 +22,6 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
 }) => {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
-  const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [showSenha, setShowSenha] = useState(false);
   const [papel, setPapel] = useState<UserRole>('viewer');
   const [departamento, setDepartamento] = useState('Engenharia de Dados');
   const [idEmpresa, setIdEmpresa] = useState<string>('');
@@ -33,6 +31,7 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [linkCriado, setLinkCriado] = useState<{ nome: string; email: string; link: string } | null>(null);
   const [showSqlSchema, setShowSqlSchema] = useState(false);
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -68,23 +67,12 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
       return;
     }
 
-    if (!senha || senha.length < 6) {
-      setErrorMsg('A senha deve possuir no mínimo 6 caracteres (exigência do Supabase Auth).');
-      return;
-    }
-
-    if (senha !== confirmarSenha) {
-      setErrorMsg('A confirmação de senha não coincide com a senha digitada.');
-      return;
-    }
-
     setIsLoading(true);
 
     try {
       const payload: NewUsuarioPayload = {
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
-        senha,
         papel,
         departamento: departamento.trim(),
         mfa_habilitado: mfaHabilitado,
@@ -92,14 +80,23 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
         id_empresa: idEmpresa.trim() ? Number(idEmpresa.trim()) : null
       };
 
-      const newUser = await registerUsuario(payload);
+      const { user: newUser, linkAcesso, linkErro } = await registerUsuario(payload);
 
       setIsLoading(false);
-      setSuccessMsg(`Usuário "${newUser.name}" (${newUser.email}) criado com sucesso — já pode fazer login com a senha definida.`);
-      
-      // Reset sensitive fields
-      setSenha('');
-      setConfirmarSenha('');
+      setLinkCriado(null);
+      if (linkAcesso) {
+        setSuccessMsg(`Usuário "${newUser.name}" (${newUser.email}) criado. Envie o link abaixo para a pessoa criar a própria senha.`);
+        setLinkCriado({ nome: newUser.name, email: newUser.email, link: linkAcesso });
+      } else {
+        setSuccessMsg(
+          `Usuário "${newUser.name}" (${newUser.email}) criado, mas o link de acesso não foi gerado` +
+          `${linkErro ? ` (${linkErro})` : ''}. Gere um novo em Usuários.`
+        );
+      }
+
+      // Limpa o formulário para o próximo cadastro
+      setNome('');
+      setEmail('');
 
       if (onUserCreated) {
         onUserCreated(newUser);
@@ -174,11 +171,12 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
             <span className="text-[10px] text-slate-500 uppercase">Admin API / PostgreSQL</span>
           </div>
           <pre className="text-[11px] text-emerald-300 leading-relaxed overflow-x-auto select-all p-2 bg-slate-950/80 rounded border border-slate-800/80">
-{`1. Gateway (service role) chama supabase.auth.admin.createUser({ email, password })
-   -> cria a identidade real no Supabase Auth (senha nunca toca as tabelas da app)
+{`1. Gateway (service role) chama supabase.auth.admin.createUser({ email })
+   -> cria a identidade real no Supabase Auth, com senha aleatória que ninguém conhece
 2. Gateway insere em public.usuarios: { auth_user_id, nome, papel, id_empresa, ... }
    -> perfil da aplicação, vinculado 1:1 à identidade acima
-3. Se o passo 2 falhar, o usuário criado no passo 1 é revertido (rollback)`}
+3. Se o passo 2 falhar, o usuário criado no passo 1 é revertido (rollback)
+4. Gateway gera um link de uso único (auth.admin.generateLink) para o usuário criar a senha`}
           </pre>
           <p className="text-[11px] text-slate-400">
             A coluna <code className="text-amber-300">senha_hash</code> em <code className="text-amber-300">usuarios</code> está obsoleta — mantida só por compatibilidade de schema, nunca lida.
@@ -201,6 +199,15 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
             ✕
           </button>
         </div>
+      )}
+
+      {linkCriado && (
+        <LinkAcessoCard
+          nome={linkCriado.nome}
+          email={linkCriado.email}
+          link={linkCriado.link}
+          onClose={() => setLinkCriado(null)}
+        />
       )}
 
       {errorMsg && (
@@ -331,73 +338,13 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
           </div>
         </div>
 
-        {/* Section 2: Credenciais e Senha_Hash */}
-        <div className="space-y-4 pt-2">
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-            <Key className="w-4 h-4 text-indigo-600" />
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide text-[11px]">
-              2. Segurança & Senha (senha_hash)
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Senha */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Senha de Acesso <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  id="input-user-senha"
-                  type={showSenha ? 'text' : 'password'}
-                  required
-                  placeholder="Mínimo de 3 caracteres"
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                  className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSenha(!showSenha)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                >
-                  {showSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                Armazenada criptografada em <code className="font-mono text-slate-600">senha_hash</code>
-              </span>
-            </div>
-
-            {/* Confirmar Senha */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Confirmar Senha <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  id="input-user-confirmar-senha"
-                  type={showSenha ? 'text' : 'password'}
-                  required
-                  placeholder="Repita a senha"
-                  value={confirmarSenha}
-                  onChange={(e) => setConfirmarSenha(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-              </div>
-              {confirmarSenha && senha !== confirmarSenha && (
-                <span className="text-[10px] text-rose-600 mt-1 block font-medium">
-                  As senhas não coincidem.
-                </span>
-              )}
-            </div>
-          </div>
+        {/* Section 2: Acesso */}
+        <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600 flex items-start gap-2">
+          <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-px" />
+          <span>
+            Você não define a senha. Ao salvar, o DataCore gera um <strong>link de acesso</strong> para você enviar à pessoa —
+            ela abre o link e cria a própria senha. O link é de uso único e expira.
+          </span>
         </div>
 
         {/* Section 3: Papel de Acesso (papel_usuario) e Governança LGPD */}
@@ -405,7 +352,7 @@ export const CadastroUsuarioView: React.FC<CadastroUsuarioViewProps> = ({
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <Shield className="w-4 h-4 text-indigo-600" />
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide text-[11px]">
-              3. Papel de Acesso & Controles de Privacidade
+              2. Papel de Acesso & Controles de Privacidade
             </h3>
           </div>
 
