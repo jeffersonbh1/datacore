@@ -1169,7 +1169,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       : selectedExistingDest || { name: 'Destino', type: 'bigquery' as DestinationType, databaseOrDataset: 'analytics' };
 
   return (
-    <div id="auto-pipeline-container" className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div id="auto-pipeline-container" className="space-y-6 pb-12">
       {/* Top Header Card */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
