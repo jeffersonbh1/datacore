@@ -15,7 +15,7 @@ import { LAYER_STYLE } from '../StudioGold/LineageGraph';
 // então uma execução em andamento já aparece aqui, mesmo se o usuário trocar de tela.
 // -----------------------------------------------------------------------------
 
-/** Mesmo tamanho de página do histórico de cada pipeline (RUNS_PER_PAGE em ExecutionsView). */
+/** Execuções mostradas por página. */
 const PAGE = 12;
 const POLL_MS = 4000;
 const LAYER_ORDER: ExecItemLayer[] = ['raw', 'bronze', 'silver', 'gold'];

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Search, Filter, Play, Pause, ExternalLink, ShieldCheck,
+  Search, Filter, Play, Pause, ShieldCheck,
   Layers, Clock, DollarSign, Database, CheckCircle, AlertTriangle,
   Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2
 } from 'lucide-react';
@@ -12,11 +12,9 @@ interface PipelinesOverviewProps {
    *  (Supabase + métricas reais do Airbyte) — evita mostrar "Nenhum pipeline
    *  criado ainda" antes da busca real terminar. */
   isLoading?: boolean;
-  onSelectPipeline: (pipeline: Pipeline) => void;
   onToggleStatus: (pipelineId: string) => void;
   onTriggerRun: (pipelineId: string) => void;
   onDeletePipeline?: (pipeline: Pipeline) => void;
-  onCreatePipeline?: (newPipeline: Pipeline) => void;
   onNavigateToAutoPipeline?: () => void;
   canCreate: boolean;
   canEdit: boolean;
@@ -26,11 +24,9 @@ interface PipelinesOverviewProps {
 export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   pipelines,
   isLoading = false,
-  onSelectPipeline,
   onToggleStatus,
   onTriggerRun,
   onDeletePipeline,
-  onCreatePipeline,
   onNavigateToAutoPipeline,
   canCreate,
   canEdit,
@@ -201,8 +197,7 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
               <div className="flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-emerald-500 ring-4 ring-emerald-50' : 'bg-slate-400'}`} />
-                  <h3 className="text-base font-semibold text-slate-900 hover:text-indigo-600 cursor-pointer transition"
-                      onClick={() => onSelectPipeline(pipeline)}>
+                  <h3 className="text-base font-semibold text-slate-900">
                     {pipeline.name}
                   </h3>
                   <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono font-medium border border-slate-200">
@@ -293,15 +288,6 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
                     {isActive ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4" />}
                   </button>
                 )}
-
-                <button
-                  id={`btn-open-studio-${pipeline.id}`}
-                  onClick={() => onSelectPipeline(pipeline)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Abrir no Studio
-                </button>
 
                 {canEdit && onDeletePipeline && (
                   <button

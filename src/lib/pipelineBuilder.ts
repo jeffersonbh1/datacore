@@ -16,30 +16,6 @@ export const WEEKDAYS = [
   { key: 'dom', label: 'Dom', full: 'Domingo', cronVal: '0' },
 ];
 
-// Movida de VisualCanvas.tsx: viver num arquivo que só exporta o componente
-// quebra o Fast Refresh do Vite a cada edição (força remontar o canvas
-// inteiro, perdendo o estado local de uma execução em andamento).
-export const isMedallionDbtNode = (node: CanvasNode | null | undefined): boolean => {
-  if (!node) return false;
-  const typeLower = (node.type || '').toLowerCase();
-  const titleLower = (node.title || '').toLowerCase();
-  const subtitleLower = (node.subtitle || '').toLowerCase();
-
-  return (
-    typeLower === 'bronze' ||
-    typeLower === 'silver' ||
-    typeLower === 'gold' ||
-    titleLower.includes('bronze') ||
-    titleLower.includes('silver') ||
-    titleLower.includes('gold') ||
-    subtitleLower.includes('bronze') ||
-    subtitleLower.includes('silver') ||
-    subtitleLower.includes('gold') ||
-    titleLower.includes('ouro') ||
-    titleLower.includes('prata')
-  );
-};
-
 function buildCronExpression(integration: AutoIntegration): string | undefined {
   const { syncFrequency, executionTimes, weeklyDays, monthlyDay } = integration;
   if (!executionTimes || executionTimes.length === 0) return undefined;
@@ -78,7 +54,7 @@ function buildNextRunText(integration: AutoIntegration): string {
  * Silver topology) for an AutoIntegration. Used both right after a wizard
  * submission and when reloading integrations persisted in Supabase, so a
  * pipeline never depends on being freshly created in the current session to
- * show up in Pipelines & Fluxos / Studio Visual ETL.
+ * show up in Pipelines & Fluxos / Studio Visual ETL Gold.
  *
  * Node/edge ids are namespaced with pipelineId so two pipelines never collide,
  * but are otherwise stable — safe to call again for the same integration.
@@ -359,20 +335,9 @@ export function summarizeTableFailures(failed: { table: string; error?: string |
   return `Falha em ${failed.length} ${failed.length > 1 ? 'tabelas' : 'tabela'} (${failed.map((f) => f.table).join(', ')}) — ver o log de cada uma para o erro completo.`;
 }
 
-/** True quando as tabelas que falharam nesta camada compartilham a mesma causa —
- *  usado para decidir se mostra o card de "erro geral" na tela Execuções. */
-export function isGeneralLayerFailure(tables: TableBuildResult[] | null): boolean {
-  const failed = (tables || []).filter((t) => t.status === 'error' && t.error);
-  if (failed.length < 2) return false;
-  return new Set(failed.map((t) => normalizeTableError(t.table, t.error as string))).size === 1;
-}
-
 const FINISHED_STATUSES: PipelineRunSummary['status'][] = ['succeeded', 'failed', 'cancelled', 'incomplete'];
 
-/** Mesmo mapeamento usado por applyRealMetrics — exportado para o polling ao vivo
- *  do Studio Visual ETL (VisualCanvas), que consulta o Airbyte diretamente sem
- *  passar pelo pipeline_runs/Supabase. */
-export function mapSyncStatusToNodeStatus(status: PipelineRunSummary['status']): NodeStatus {
+function mapSyncStatusToNodeStatus(status: PipelineRunSummary['status']): NodeStatus {
   return status === 'succeeded' ? 'success'
     : status === 'failed' ? 'error'
     : status === 'running' ? 'running'

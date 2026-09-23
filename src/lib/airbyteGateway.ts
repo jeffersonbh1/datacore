@@ -349,29 +349,6 @@ export async function buildSilverLayer(payload: {
   });
 }
 
-/**
- * Lê o .sql real de um modelo Bronze/Silver gerado (o mesmo arquivo que `dbt
- * build` executa) — usado pelo editor visual do Studio ao abrir um nó Bronze
- * ou Silver, em vez do template genérico de demonstração.
- */
-export async function getBronzeModelSql(sistema: string, table: string, layer: 'bronze' | 'silver' = 'bronze'): Promise<{ name: string; sql: string }> {
-  const qs = new URLSearchParams({ sistema, table, layer });
-  return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`);
-}
-
-/**
- * Sobrescreve o .sql de um modelo Bronze/Silver já gerado. Edição manual: a
- * próxima regeração da integração (criação/re-sync) sobrescreve de novo, como
- * qualquer outro arquivo gerado por server/dbtCodegen.ts.
- */
-export async function saveBronzeModelSql(sistema: string, table: string, sql: string, layer: 'bronze' | 'silver' = 'bronze'): Promise<{ ok: boolean; name: string }> {
-  const qs = new URLSearchParams({ sistema, table, layer });
-  return gatewayFetch(`/api/dbt/models/by-table/sql?${qs.toString()}`, {
-    method: 'PUT',
-    body: JSON.stringify({ sql }),
-  });
-}
-
 export interface RawColumnInfo {
   name: string;
   dataType: string;
@@ -407,36 +384,6 @@ export async function fetchRawTableColumns(payload: {
   });
   if (payload.location) qs.set('location', payload.location);
   return gatewayFetch(`/api/raw-catalog/columns?${qs.toString()}`);
-}
-
-export interface RawTableCount {
-  table: string;
-  status: 'ok' | 'error';
-  rowsAffected: number | null;
-  error: string | null;
-}
-
-/**
- * Contagem de linhas AO VIVO de uma ou mais tabelas raw_<table> no BigQuery —
- * usado pela tela Execuções para listar as tabelas da Raw junto com Bronze e
- * Silver. Ao contrário do detalhe de Bronze/Silver (que é um retrato de CADA
- * execução, gravado em pipeline_runs), a Raw é sincronizada pelo Airbyte, não
- * pelo dbt, então não existe um retrato por run — a contagem é sempre o
- * estado atual da tabela.
- */
-export async function fetchRawTableCounts(payload: {
-  projectId: string;
-  rawDataset: string;
-  tables: string[];
-  location?: string;
-}): Promise<{ counts: RawTableCount[] }> {
-  const qs = new URLSearchParams({
-    projectId: payload.projectId,
-    rawDataset: payload.rawDataset,
-    tables: payload.tables.join(','),
-  });
-  if (payload.location) qs.set('location', payload.location);
-  return gatewayFetch(`/api/raw-catalog/row-counts?${qs.toString()}`);
 }
 
 /**

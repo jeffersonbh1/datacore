@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Wand2, Database, Server, Layers, Check, ArrowRight, ArrowLeft,
   Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle,
-  Lock, Unlock, Key, Network, Eye, ExternalLink, Plus, Trash2,
+  Lock, Unlock, Key, Eye, ExternalLink, Plus, Trash2,
   HardDrive, Cpu, Radio, Zap, Globe, FileText, ChevronRight, ChevronDown,
   FolderArchive, Boxes, Clock, Calendar, CalendarDays, CalendarRange,
   PlayCircle, X
@@ -41,7 +41,6 @@ interface AutoPipelineViewProps {
    *  sem isso, executar a integração recém-criada nesta mesma sessão roda de verdade
    *  no Airbyte/dbt mas não fica registrado em pipeline_runs. */
   onUpdatePipeline: (pipeline: Pipeline) => void;
-  onNavigateToStudio: (pipelineId: string) => void;
   canCreate: boolean;
 }
 
@@ -55,7 +54,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   onAddDestination,
   onCreateIntegration,
   onUpdatePipeline,
-  onNavigateToStudio,
   canCreate
 }) => {
   // Navigation mode: 'wizard' | 'overview'
@@ -482,7 +480,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   // Creation & Success Modal
   const [isCreating, setIsCreating] = useState(false);
-  const [createdPipelineId, setCreatedPipelineId] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Form error notification
@@ -1077,7 +1074,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     const newPipeline = buildPipelineFromIntegration(newPipeId, newIntegration, activeSource, activeDest);
 
     onCreateIntegration(newIntegration, newPipeline);
-    setCreatedPipelineId(newPipeId);
     setIsCreating(false);
     setShowSuccessModal(true);
 
@@ -1188,7 +1184,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
           </div>
           <p className="text-sm text-slate-500 max-w-2xl">
             Configure o conector de origem e destino, selecione as tabelas desejadas e gere instantaneamente 
-            o pipeline de dados pronto com sanitização LGPD e topologia no <strong>Studio Visual ETL</strong>.
+            o pipeline de dados pronto com sanitização LGPD, disponível no <strong>Studio Visual ETL Gold</strong>.
           </p>
         </div>
 
@@ -2151,11 +2147,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                     </span>
                   </div>
                   <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded border border-indigo-200">
-                    4 Componentes no Studio Visual ETL
+                    4 Componentes no Pipeline
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 mb-3">
-                  Ao criar esta integração automática, o sistema gerará 4 componentes sequenciais conectados no Studio Visual ETL:
+                  Ao criar esta integração automática, o sistema gerará 4 componentes sequenciais conectados:
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                   <div className="p-2.5 bg-white/95 rounded-lg border border-blue-200 shadow-2xs">
@@ -2202,7 +2198,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Este nome identificará o pipeline correspondente no <strong>Studio Visual ETL</strong>.
+                  Este nome identificará o pipeline correspondente em <strong>Pipelines &amp; Fluxos</strong>.
                 </p>
               </div>
 
@@ -2850,7 +2846,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
                   <div className="text-[11px] uppercase tracking-wider text-slate-400 font-mono font-bold flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Prévia da Topologia no Studio Visual ETL (4 Componentes Interligados)</span>
+                    <span>Prévia da Topologia (4 Componentes Interligados)</span>
                   </div>
                   <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80 self-start sm:self-auto">
                     Medallion Architecture 100% Compatível
@@ -2963,7 +2959,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   <span>Voltar para Destino</span>
                 </button>
 
-                {/* Primary Button as specifically requested in prompt: "quando clicar em um botão de criar integração o sistema cria a integração que ficará disponvel também na tela Studio Visual ETL" */}
                 <button
                   id="btn-create-integration"
                   type="button"
@@ -3000,7 +2995,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               <div>
                 <h2 className="text-base font-bold text-slate-900">Integrações Cadastradas ({integrations.length})</h2>
                 <p className="text-xs text-slate-500">
-                  Todas as integrações automáticas criadas estão disponíveis no Studio Visual ETL.
+                  Todas as integrações automáticas criadas estão disponíveis em Pipelines &amp; Fluxos e no Studio Visual ETL Gold.
                 </p>
               </div>
 
@@ -3069,15 +3064,6 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end md:self-auto">
-                      <button
-                        onClick={() => onNavigateToStudio(int.pipelineId)}
-                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-indigo-200"
-                      >
-                        <Network className="w-3.5 h-3.5" />
-                        <span>Abrir no Studio Visual</span>
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -3136,7 +3122,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* SUCCESS MODAL (Prompt requirement: immediately open in Studio Visual ETL)   */}
+      {/* SUCCESS MODAL                                                                */}
       {/* ========================================================================= */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -3148,7 +3134,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             <div>
               <h3 className="text-lg font-bold text-slate-900">Integração Criada com Sucesso!</h3>
               <p className="text-xs text-slate-500 mt-1">
-                O pipeline automático foi sintetizado com a arquitetura de 4 passos no Studio Visual ETL:
+                O pipeline automático foi sintetizado com a arquitetura de 4 passos:
                 <strong> 1. Source ➔ 2. Raw Data ➔ 3. Bronze ➔ 4. Silver</strong>.
               </p>
             </div>
@@ -3170,7 +3156,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Disponibilidade:</span>
-                <span className="font-bold text-emerald-600">Disponível no Studio Visual ETL</span>
+                <span className="font-bold text-emerald-600">Disponível no Studio Visual ETL Gold</span>
               </div>
             </div>
 
@@ -3179,23 +3165,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 type="button"
                 onClick={() => {
                   setShowSuccessModal(false);
-                  if (createdPipelineId) {
-                    onNavigateToStudio(createdPipelineId);
-                  }
-                }}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-indigo-200"
-              >
-                <Network className="w-4 h-4" />
-                <span>Abrir e Visualizar no Studio Visual ETL</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSuccessModal(false);
                   setActiveSubTab('overview');
                 }}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition cursor-pointer shadow-md shadow-indigo-200"
               >
                 Ver Todas as Integrações
               </button>

@@ -13,8 +13,6 @@ import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { DataChatView } from './components/DataChat/DataChatView';
 import { StudioGoldView } from './components/StudioGold/StudioGoldView';
-import { VisualCanvas } from './components/PipelineCanvas/VisualCanvas';
-import { StudioPipelineHeader } from './components/PipelineCanvas/StudioPipelineHeader';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
 import { PipelinesOverview } from './components/PipelinesList/PipelinesOverview';
 import { ExecutionsView } from './components/Executions/ExecutionsView';
@@ -25,7 +23,7 @@ import { RbacManager } from './components/Security/RbacManager';
 import { AdministracaoView, AdminSection } from './components/Admin/AdministracaoView';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { ResetPasswordScreen } from './components/Auth/ResetPasswordScreen';
-import { Network, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2, Loader2 } from 'lucide-react';
+import { Workflow, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
 import {
   isSupabaseConfigured, supabase, logoutFromSupabase,
   fetchUsuarioPorAuthId, mapUsuarioRowToTeamUser,
@@ -155,7 +153,6 @@ export default function App() {
   // Core Data States
   // Pipelines only exist once a real Auto Pipeline integration creates one — no demo/mock seed here.
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [alertRules, setAlertRules] = useState(INITIAL_ALERT_RULES);
   const [incidents, setIncidents] = useState(INITIAL_INCIDENTS);
@@ -263,16 +260,9 @@ export default function App() {
   const roleDef = ROLE_DEFINITIONS[currentRole] || ROLE_DEFINITIONS.admin;
   const permissions = roleDef.permissions;
 
-  const currentPipeline = pipelines.find(p => p.id === selectedPipelineId) || pipelines[0];
-
   // Pipeline handlers
   const handleUpdatePipeline = (updated: Pipeline) => {
     setPipelines(prev => prev.map(p => p.id === updated.id ? updated : p));
-  };
-
-  const handleSelectPipeline = (pipeline: Pipeline) => {
-    setSelectedPipelineId(pipeline.id);
-    setActiveTab('studio');
   };
 
   const handleTogglePipelineStatus = (pipelineId: string) => {
@@ -342,19 +332,12 @@ export default function App() {
       i.pipelineId !== pipeline.id &&
       (pipeline.integrationId === undefined || i.id !== String(pipeline.integrationId))
     ));
-    if (selectedPipelineId === pipeline.id) setSelectedPipelineId('');
 
     if (pipeline.integrationId !== undefined) {
       deletarIntegracao(pipeline.integrationId).catch(err =>
         console.error('Erro ao excluir a integração no banco:', err)
       );
     }
-  };
-
-  const handleCreatePipeline = (newPipe: Pipeline) => {
-    setPipelines(prev => [newPipe, ...prev]);
-    setSelectedPipelineId(newPipe.id);
-    setActiveTab('studio');
   };
 
   // Auto Pipeline handlers
@@ -368,13 +351,7 @@ export default function App() {
 
   const handleCreateAutoIntegration = (integration: AutoIntegration, generatedPipeline: Pipeline) => {
     setPipelines(prev => [generatedPipeline, ...prev]);
-    setSelectedPipelineId(generatedPipeline.id);
     setIntegrations(prev => [integration, ...prev]);
-  };
-
-  const handleNavigateToStudio = (pipelineId: string) => {
-    setSelectedPipelineId(pipelineId);
-    setActiveTab('studio');
   };
 
   // Monitoring handlers
@@ -522,57 +499,6 @@ export default function App() {
         {/* Dynamic Center Stage */}
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#f8fafc] flex flex-col justify-between min-h-0">
           <div>
-            {activeTab === 'studio' && (
-              <div className="space-y-4">
-                {/* Studio Pipeline Header with Combobox and Pipeline Automático Action */}
-                <StudioPipelineHeader
-                  pipelines={pipelines}
-                  selectedPipelineId={selectedPipelineId}
-                  onSelectPipeline={(id) => setSelectedPipelineId(id)}
-                  onNavigateToAutoPipeline={() => setActiveTab('auto-pipeline')}
-                  canCreate={permissions.canCreatePipelines}
-                  onToggleStatus={handleTogglePipelineStatus}
-                />
-
-                {/* Visual Studio Node Canvas (only once a real pipeline exists/is selected) */}
-                {currentPipeline ? (
-                  <VisualCanvas
-                    pipeline={currentPipeline}
-                    onUpdatePipeline={handleUpdatePipeline}
-                    canEdit={permissions.canEditPipelines}
-                    canExecute={permissions.canTriggerExecutions}
-                    canViewRawPII={permissions.canViewRawPII}
-                    idEmpresa={currentUser.idEmpresa}
-                  />
-                ) : isLoadingEmpresaData ? (
-                  <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
-                    <Loader2 className="w-8 h-8 text-indigo-400 mx-auto animate-spin" />
-                    <h4 className="text-base font-semibold text-slate-800">Carregando pipelines...</h4>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      Buscando as integrações e pipelines persistidos da sua empresa.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="bg-white border border-slate-200 rounded-xl p-16 text-center text-slate-500 space-y-3 shadow-sm">
-                    <Layers className="w-10 h-10 text-slate-300 mx-auto" />
-                    <h4 className="text-base font-semibold text-slate-800">Nenhum pipeline criado ainda</h4>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      Crie sua primeira integração no Pipeline Automático para gerar um pipeline e visualizá-lo aqui no Studio Visual ETL.
-                    </p>
-                    {permissions.canCreatePipelines && (
-                      <button
-                        onClick={() => setActiveTab('auto-pipeline')}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
-                      >
-                        <Wand2 className="w-4 h-4" />
-                        Novo Pipeline Automático
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
             {activeTab === 'studio-gold' && (
               <StudioGoldView
                 pipelines={pipelines}
@@ -593,7 +519,6 @@ export default function App() {
                 onAddDestination={handleAddDestination}
                 onCreateIntegration={handleCreateAutoIntegration}
                 onUpdatePipeline={handleUpdatePipeline}
-                onNavigateToStudio={handleNavigateToStudio}
                 canCreate={permissions.canCreatePipelines}
               />
             )}
@@ -602,11 +527,9 @@ export default function App() {
               <PipelinesOverview
                 pipelines={pipelines}
                 isLoading={isLoadingEmpresaData}
-                onSelectPipeline={handleSelectPipeline}
                 onToggleStatus={handleTogglePipelineStatus}
                 onTriggerRun={handleTriggerRun}
                 onDeletePipeline={handleDeletePipeline}
-                onCreatePipeline={handleCreatePipeline}
                 onNavigateToAutoPipeline={() => setActiveTab('auto-pipeline')}
                 canCreate={permissions.canCreatePipelines}
                 canEdit={permissions.canEditPipelines}
@@ -615,12 +538,7 @@ export default function App() {
             )}
 
             {activeTab === 'execucoes' && (
-              <ExecutionsView
-                pipelines={pipelines}
-                isLoading={isLoadingEmpresaData}
-                onNavigateToStudio={handleNavigateToStudio}
-                idEmpresa={currentUser.idEmpresa}
-              />
+              <ExecutionsView />
             )}
 
             {activeTab === 'chat-dados' && (
@@ -695,11 +613,11 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar */}
       <nav id="mobile-nav" className="md:hidden bg-white border-t border-slate-200 px-2 py-2 flex items-center justify-around z-30">
         <button
-          onClick={() => setActiveTab('studio')}
-          className={`flex flex-col items-center gap-1 text-[10px] ${activeTab === 'studio' ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}
+          onClick={() => setActiveTab('studio-gold')}
+          className={`flex flex-col items-center gap-1 text-[10px] ${activeTab === 'studio-gold' ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}
         >
-          <Network className="w-4 h-4" />
-          <span>Studio</span>
+          <Workflow className="w-4 h-4" />
+          <span>Studio Gold</span>
         </button>
         <button
           onClick={() => setActiveTab('auto-pipeline')}
