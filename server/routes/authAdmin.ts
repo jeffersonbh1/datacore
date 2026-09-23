@@ -261,12 +261,12 @@ authAdminRouter.patch('/usuarios/:id', requireAdminSession, async (req, res) => 
       update.senha_hash = `supabase-auth:${authUserId}`;
     }
 
-    const { data: salvo, error: saveError } = await admin
-      .from('usuarios')
-      .update(update)
-      .eq('id', usuarioId)
-      .select(USUARIO_COLUNAS)
-      .single();
+    // Só a senha mudou (ela vive no Supabase Auth, não em "usuarios"): não há o
+    // que gravar no perfil. Um UPDATE vazio no PostgREST não devolve linha
+    // nenhuma e o .single() falharia, então só relê o perfil.
+    const { data: salvo, error: saveError } = Object.keys(update).length > 0
+      ? await admin.from('usuarios').update(update).eq('id', usuarioId).select(USUARIO_COLUNAS).single()
+      : await admin.from('usuarios').select(USUARIO_COLUNAS).eq('id', usuarioId).single();
 
     if (saveError) {
       // Desfaz o que foi mexido no Auth pra não deixar login e perfil divergentes.
