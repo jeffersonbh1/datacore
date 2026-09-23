@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, Clock, Loader2, MinusCircle, RefreshCw, Workflow, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, Clock, Loader2, MinusCircle, RefreshCw, XCircle } from 'lucide-react';
 import {
   MISSING_TABLE_HINT, fetchStudioExecutions, isMissingExecutionsTable, isStaleRunning,
   type ExecItem, type ExecItemLayer, type StudioExecution,
@@ -133,7 +133,6 @@ export const StudioExecutionsSection: React.FC<StudioExecutionsSectionProps> = (
   const [missing, setMissing] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-  const [open, setOpen] = useState(true);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -170,130 +169,121 @@ export const StudioExecutionsSection: React.FC<StudioExecutionsSectionProps> = (
   const shown = executions.slice(pageStart, pageStart + PAGE);
 
   return (
-    <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden" aria-label="Execuções do Studio Visual ETL Gold">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-slate-50/60 transition cursor-pointer">
-        <div className="flex items-center gap-3 min-w-0">
-          {open ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Workflow className="w-4 h-4 text-indigo-600" /> Studio Visual ETL Gold</p>
-            <p className="text-[11px] text-slate-500">
-              Tudo que foi executado pelo Studio — o fluxo inteiro ou uma única tabela, em qualquer camada (inclusive Gold), com o resultado de cada tabela.
-            </p>
-          </div>
+    <section className="space-y-3" aria-label="Execuções">
+      {missing && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>{MISSING_TABLE_HINT}</span>
         </div>
-        <span className="text-[11px] text-slate-400 shrink-0">
-          {loading ? 'carregando…' : missing ? '' : `${executions.length} execuç${executions.length === 1 ? 'ão' : 'ões'}`}
-          {hasRunning && <span className="ml-2 text-amber-600 font-medium">· em andamento</span>}
-        </span>
-      </button>
+      )}
+      {error && (
+        <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span className="break-words">{error}</span>
+        </div>
+      )}
 
-      {open && (
-        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3 space-y-3">
-          {missing && (
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-lg px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>{MISSING_TABLE_HINT}</span>
-            </div>
-          )}
-          {error && (
-            <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span className="break-words">{error}</span>
-            </div>
-          )}
+      {loading && executions.length === 0 && (
+        <p className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> Carregando execuções…
+        </p>
+      )}
 
-          {!missing && !error && !loading && executions.length === 0 && (
-            <p className="text-xs text-slate-500 py-2">
-              Nenhuma execução registrada ainda. Use “Executar esta tabela” ou “Executar fluxo até aqui” no Studio Visual ETL Gold e o resultado aparece aqui.
-            </p>
-          )}
+      {!missing && !error && !loading && executions.length === 0 && (
+        <p className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-xs text-slate-500">
+          Nenhuma execução registrada ainda. Use “Executar esta tabela” ou “Executar fluxo até aqui” no Studio Visual ETL Gold e o resultado aparece aqui.
+        </p>
+      )}
 
-          {shown.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-slate-400 uppercase text-[10px] tracking-wider">
-                    <th className="py-1.5 pr-1 font-medium w-5"></th>
-                    <th className="py-1.5 pr-3 font-medium">Início</th>
-                    <th className="py-1.5 pr-3 font-medium">Execução</th>
-                    <th className="py-1.5 pr-3 font-medium">Tabela</th>
-                    <th className="py-1.5 pr-3 font-medium">Resultado</th>
-                    <th className="py-1.5 pr-3 font-medium">Status</th>
-                    <th className="py-1.5 pr-3 font-medium">Duração</th>
-                    <th className="py-1.5 pr-3 font-medium">Por</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((e) => {
-                    const isOpen = expandedId === e.id;
-                    const st = displayStatus(e);
-                    const s = summarize(e.itens);
-                    const duration = e.finalizadoEm ? new Date(e.finalizadoEm).getTime() - new Date(e.iniciadoEm).getTime() : null;
-                    return (
-                      <React.Fragment key={e.id}>
-                        <tr className="border-t border-slate-200/70 hover:bg-slate-50/60 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : e.id)}>
-                          <td className="py-1.5 pr-1">{isOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}</td>
-                          <td className="py-1.5 pr-3 text-slate-600 whitespace-nowrap">{formatDateTime(e.iniciadoEm)}</td>
-                          <td className="py-1.5 pr-3 whitespace-nowrap">
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${e.escopo === 'tabela' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>{scopeLabel(e)}</span>
-                          </td>
-                          <td className="py-1.5 pr-3 min-w-0">
-                            <span className="flex items-center gap-1.5 min-w-0">
-                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${LAYER_STYLE[e.alvoCamada].badge}`}>{LAYER_LABEL[e.alvoCamada]}</span>
-                              <span className="font-mono text-slate-800 truncate max-w-[22rem]" title={e.alvoNome}>{e.alvoNome}</span>
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3 text-slate-600 whitespace-nowrap">
-                            {e.itens.length === 0 ? '—' : (
-                              <>
-                                <span className="text-emerald-700">{s.ok} ok</span>
-                                {s.error > 0 && <span className="text-rose-700"> · {s.error} falha{s.error > 1 ? 's' : ''}</span>}
-                                {s.skipped > 0 && <span className="text-slate-400"> · {s.skipped} não executada{s.skipped > 1 ? 's' : ''}</span>}
-                              </>
-                            )}
-                          </td>
-                          <td className="py-1.5 pr-3"><StatusBadge status={st} /></td>
-                          <td className="py-1.5 pr-3 text-slate-600 font-mono whitespace-nowrap">{formatDuration(duration)}</td>
-                          <td className="py-1.5 pr-3 text-slate-500 truncate max-w-[10rem]" title={e.executadoPor ?? ''}>{e.executadoPor ?? '—'}</td>
-                        </tr>
-                        {isOpen && (
-                          <tr className="border-t border-slate-200/70 bg-white">
-                            <td colSpan={8} className="p-3">
-                              <ItemsList execution={e} />
-                            </td>
-                          </tr>
+      {shown.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto px-4 py-2">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-400 uppercase text-[10px] tracking-wider">
+                <th className="py-1.5 pr-1 font-medium w-5"></th>
+                <th className="py-1.5 pr-3 font-medium">Início</th>
+                <th className="py-1.5 pr-3 font-medium">Execução</th>
+                <th className="py-1.5 pr-3 font-medium">Tabela</th>
+                <th className="py-1.5 pr-3 font-medium">Resultado</th>
+                <th className="py-1.5 pr-3 font-medium">Status</th>
+                <th className="py-1.5 pr-3 font-medium">Duração</th>
+                <th className="py-1.5 pr-3 font-medium">Por</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((e) => {
+                const isOpen = expandedId === e.id;
+                const st = displayStatus(e);
+                const s = summarize(e.itens);
+                const duration = e.finalizadoEm ? new Date(e.finalizadoEm).getTime() - new Date(e.iniciadoEm).getTime() : null;
+                return (
+                  <React.Fragment key={e.id}>
+                    <tr className="border-t border-slate-200/70 hover:bg-slate-50/60 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : e.id)}>
+                      <td className="py-1.5 pr-1">{isOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}</td>
+                      <td className="py-1.5 pr-3 text-slate-600 whitespace-nowrap">{formatDateTime(e.iniciadoEm)}</td>
+                      <td className="py-1.5 pr-3 whitespace-nowrap">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${e.escopo === 'tabela' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>{scopeLabel(e)}</span>
+                      </td>
+                      <td className="py-1.5 pr-3 min-w-0">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${LAYER_STYLE[e.alvoCamada].badge}`}>{LAYER_LABEL[e.alvoCamada]}</span>
+                          <span className="font-mono text-slate-800 truncate max-w-[22rem]" title={e.alvoNome}>{e.alvoNome}</span>
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-3 text-slate-600 whitespace-nowrap">
+                        {e.itens.length === 0 ? '—' : (
+                          <>
+                            <span className="text-emerald-700">{s.ok} ok</span>
+                            {s.error > 0 && <span className="text-rose-700"> · {s.error} falha{s.error > 1 ? 's' : ''}</span>}
+                            {s.skipped > 0 && <span className="text-slate-400"> · {s.skipped} não executada{s.skipped > 1 ? 's' : ''}</span>}
+                          </>
                         )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                      </td>
+                      <td className="py-1.5 pr-3"><StatusBadge status={st} /></td>
+                      <td className="py-1.5 pr-3 text-slate-600 font-mono whitespace-nowrap">{formatDuration(duration)}</td>
+                      <td className="py-1.5 pr-3 text-slate-500 truncate max-w-[10rem]" title={e.executadoPor ?? ''}>{e.executadoPor ?? '—'}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="border-t border-slate-200/70 bg-slate-50/70">
+                        <td colSpan={8} className="p-3">
+                          <ItemsList execution={e} />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
+      {executions.length > 0 && (
+        <div className="flex items-center justify-between text-[11px] text-slate-500">
+          <span>
+            {totalPages > 1
+              ? <>Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE, executions.length)} de {executions.length} execuções</>
+              : `${executions.length} execuç${executions.length === 1 ? 'ão' : 'ões'}`}
+            {hasRunning && <span className="ml-2 text-amber-600 font-medium">· em andamento</span>}
+          </span>
           {totalPages > 1 && (
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>
-                Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE, executions.length)} de {executions.length} execuções
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={currentPage === 0}
-                  onClick={() => { setPage(currentPage - 1); setExpandedId(null); }}
-                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
-                >
-                  Anterior
-                </button>
-                <span className="font-mono">Página {currentPage + 1} de {totalPages}</span>
-                <button
-                  type="button"
-                  disabled={currentPage >= totalPages - 1}
-                  onClick={() => { setPage(currentPage + 1); setExpandedId(null); }}
-                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
-                >
-                  Próxima
-                </button>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage === 0}
+              onClick={() => { setPage(currentPage - 1); setExpandedId(null); }}
+              className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+            >
+              Anterior
+            </button>
+            <span className="font-mono">Página {currentPage + 1} de {totalPages}</span>
+            <button
+              type="button"
+              disabled={currentPage >= totalPages - 1}
+              onClick={() => { setPage(currentPage + 1); setExpandedId(null); }}
+              className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+            >
+              Próxima
+            </button>
+          </div>
           )}
         </div>
       )}
