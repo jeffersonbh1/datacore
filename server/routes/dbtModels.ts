@@ -102,7 +102,7 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
       return;
     }
 
-    // PKs do Airbyte (best-effort — sem elas o modelo sai sem deduplicação CDC).
+    // PKs do Airbyte (best-effort — sem elas o modelo não pode ser incremental: falta a unique_key do merge).
     const pkByStream = new Map<string, string[]>();
     const sourceId = origem?.airbyte_source_id;
     if (sourceId) {

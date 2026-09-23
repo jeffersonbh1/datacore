@@ -53,7 +53,7 @@ models:
         description: "Data/hora em que este build do dbt foi executado
           (current_timestamp())."
   - name: silver_salesforce_dbt_ultima_execucao
-    description: "Silver gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+    description: "Silver gerado — tabela dbt_ultima_execucao (sem PK; sem carga incremental)."
     columns:
       - name: id_modelo
         description: "Campo raw correspondente: \"modelo_id\"."

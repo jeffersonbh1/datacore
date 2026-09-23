@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "arena fahel beach", camada Bronze, tabela aulas.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'aulas')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_aulas  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_aulas  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   aluno_id -> id_aluno
 --   professor_id -> id_professor
@@ -30,13 +30,4 @@ tipado AS (
     FROM fonte
 )
 
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY id_aula
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
+SELECT * FROM tipado

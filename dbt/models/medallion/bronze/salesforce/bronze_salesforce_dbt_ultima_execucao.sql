@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela dbt_ultima_execucao.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'dbt_ultima_execucao')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_dbt_ultima_execucao  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_dbt_ultima_execucao  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   modelo_id -> id_modelo
 --   execucao_id -> id_execucao

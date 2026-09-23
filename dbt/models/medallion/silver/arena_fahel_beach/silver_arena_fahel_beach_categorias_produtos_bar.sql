@@ -5,7 +5,7 @@
 
 -- GERADO por server/dbtCodegen.ts — sistema "arena fahel beach", camada Silver, tabela categorias_produtos_bar.
 -- A regeração sobrescreve este arquivo. Ponto de partida: passthrough do Bronze
--- já tipado/deduplicado/sanitizado — adicione aqui as regras de curadoria do
+-- já tipado/sanitizado — adicione aqui as regras de curadoria do
 -- negócio (joins, métricas, renomes analíticos) conforme necessário.
 -- Origem: ref('bronze_arena_fahel_beach_categorias_produtos_bar')
 -- Saída : <DBT_SCHEMA_SILVER>.silver_arena_fahel_beach_categorias_produtos_bar

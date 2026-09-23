@@ -125,9 +125,9 @@ deixa claro é sempre uma aproximação, nunca uma leitura do tipo real.
 - Duas colunas de origem diferentes que caiam no mesmo nome padronizado
   (colisão) recebem um sufixo numérico (`_2`, `_3`, ...) para nunca gerar SQL
   com alias duplicado.
-- A PK usada em `unique_key` (incremental) e no `partition by` da deduplicação
-  CDC é resolvida para o nome **já padronizado** — dedup e merge sempre
-  apontam para a coluna que de fato existe na projeção.
+- A PK usada em `unique_key` (merge incremental) é resolvida para o nome
+  **já padronizado** — o merge sempre aponta para a coluna que de fato existe
+  na projeção.
 - Todo campo cujo nome é efetivamente renomeado aparece num comentário no
   topo do `.sql` gerado (`-- Padronização de nomes: original -> novo`), para
   auditoria rápida sem precisar comparar com o schema do source.

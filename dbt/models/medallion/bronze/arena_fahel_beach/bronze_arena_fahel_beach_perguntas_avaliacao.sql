@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "arena fahel beach", camada Bronze, tabela perguntas_avaliacao.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'perguntas_avaliacao')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_perguntas_avaliacao  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_perguntas_avaliacao  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   ativo -> ind_ativo
 --   criado_em -> dth_criado
@@ -34,13 +34,4 @@ tipado AS (
     FROM fonte
 )
 
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY id_pergunta_avaliacao
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
+SELECT * FROM tipado

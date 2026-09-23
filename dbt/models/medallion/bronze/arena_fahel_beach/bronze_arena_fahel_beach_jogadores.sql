@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "arena fahel beach", camada Bronze, tabela jogadores.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'jogadores')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_jogadores  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_jogadores  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   telefone -> des_telefone
 --   criado_em -> dth_criado
@@ -40,13 +40,4 @@ tipado AS (
     FROM fonte
 )
 
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY id_jogadore
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
+SELECT * FROM tipado

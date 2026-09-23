@@ -27,14 +27,17 @@
   ========================================================================
 */
 
--- Marca d'água: maior _dat_carga já gravada nesta tabela (none na 1ª carga).
-{% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
+-- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
+-- max_dat_carga) para ler da Raw só os registros novos.
+{% if is_incremental() %}
+    {% set v_max_dat_carga = max_dat_carga() %}
+{% endif %}
 
 WITH raw_source AS (
 
     SELECT * FROM {{ ref('stg_transacoes') }}
 
-    {% if v_max_dat_carga is not none %}
+    {% if is_incremental() and v_max_dat_carga is not none %}
       -- Micro-batch: só linhas carregadas depois da última carga.
       WHERE _dat_carga > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}

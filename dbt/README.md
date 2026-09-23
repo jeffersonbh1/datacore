@@ -51,11 +51,12 @@ dbt/
   `cast(_airbyte_extracted_at as timestamp) as _dat_carga` (data da carga pelo Airbyte) +
   `current_timestamp() as _dbt_loaded_at`; **LGPD Art. 46** por heurística de
   nome (`cpf|cnpj` → `mascarar_cpf`, `email` → `tokenizar_email`,
-  `cartao|telefone|rg|senha` → `hash_sha256`); **dedup CDC**
-  (`qualify row_number() over (partition by <PK> order by _dat_carga desc)`)
-  quando há PK; **incremental `merge`** quando `loadType=incremental` + PK, senão `table`.
+  `cartao|telefone|rg|senha` → `hash_sha256`); **incremental `merge`** pela
+  PK (`unique_key`) quando `loadType=incremental` + PK, senão `table`. Sem
+  deduplicação no modelo: no incremental só entram os registros novos (filtro
+  por `_dat_carga`) e o `merge` atualiza/insere pela chave.
 - **Incremental por marca d'água:** todo modelo incremental busca, no início
-  do SQL, a maior `_dat_carga` já gravada com a macro `max_dat_carga()`
+  do SQL (dentro de `{% if is_incremental() %}`), a maior `_dat_carga` já gravada com a macro `max_dat_carga()`
   (`macros/max_dat_carga.sql`) e filtra a fonte só com o que chegou depois
   dela — dados antigos não são reprocessados:
 

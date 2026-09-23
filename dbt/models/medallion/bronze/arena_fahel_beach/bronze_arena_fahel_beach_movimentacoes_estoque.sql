@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "arena fahel beach", camada Bronze, tabela movimentacoes_estoque.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'movimentacoes_estoque')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_movimentacoes_estoque  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_arena_fahel_beach_movimentacoes_estoque  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   valor_total -> vlr_total
 --   nome_usuario -> des_nome_usuario
@@ -44,13 +44,4 @@ tipado AS (
     FROM fonte
 )
 
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY id_movimentacao_estoque
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
+SELECT * FROM tipado

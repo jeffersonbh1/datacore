@@ -25,7 +25,7 @@ export interface IntegrationTableSpec {
   name: string;
   /** Colunas selecionadas. Vazio => passthrough `select *` sem LGPD. */
   columns?: string[];
-  /** Chave primária (do stream Airbyte). Habilita dedup CDC + unique_key. */
+  /** Chave primária (do stream Airbyte). Vira a unique_key do merge incremental. */
   primaryKey?: string[];
   cursorField?: string | null;
   loadType?: 'full_refresh' | 'incremental';
@@ -109,7 +109,7 @@ function primaryKeyBaseNames(t: IntegrationTableSpec): string[] {
 
 /** Resolve os nomes da PK para o nome PADRONIZADO (ver server/bronzeNaming.ts):
  *  se a tabela tem `columns` (o caso normal), a PK vira o alias que a
- *  projeção da Bronze de fato gera — dedup/incremental têm que apontar para a
+ *  projeção da Bronze de fato gera — o merge incremental tem que apontar para a
  *  coluna que existe, não para o nome original do source. Sem `columns`
  *  (passthrough `select *`, sem renome possível), mantém o nome original. */
 function resolvePrimaryKey(t: IntegrationTableSpec, renameMap: Map<string, string> | null): string[] {
@@ -312,36 +312,23 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   // Incremental: a maior _dat_carga já gravada é buscada no início do modelo
   // (macro max_dat_carga, dbt/macros/max_dat_carga.sql) e a Raw é filtrada só
   // com o que chegou depois dela — dados antigos não são reprocessados.
+  // `v_max_dat_carga` fica none quando a tabela ainda não tem _dat_carga (ou está
+  // vazia) — aí a Raw é lida inteira uma vez; o merge pela chave não duplica.
   const watermarkLookup = incremental
     ? `
--- Marca d'água: maior _dat_carga já gravada nesta tabela (none na 1ª carga).
-{% set v_max_dat_carga = max_dat_carga() if is_incremental() else none %}
+-- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
+-- max_dat_carga) para ler da Raw só os registros novos.
+{% if is_incremental() %}
+    {% set v_max_dat_carga = max_dat_carga() %}
+{% endif %}
 `
     : '';
   const incrementalFilter = incremental
     ? `
-    {% if v_max_dat_carga is not none %}
+    {% if is_incremental() and v_max_dat_carga is not none %}
     WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}`
     : '';
-
-  const dedup =
-    pk.length > 0
-      ? `
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY ${pk.join(', ')}
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
-`
-      : `
-SELECT * FROM tipado
-`;
 
   return `{{ config(
 ${cfg.join('\n')}
@@ -350,7 +337,7 @@ ${cfg.join('\n')}
 -- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Bronze, tabela ${t.name}.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('${SOURCE_NAME}', '${srcName}')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46 + dedup CDC)${renameComment}
+-- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46)${renameComment}
 ${watermarkLookup}
 WITH fonte AS (
     SELECT * FROM {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
@@ -361,12 +348,14 @@ tipado AS (
 ${projection}${watermark}
     FROM fonte
 )
-${dedup}`;
+
+SELECT * FROM tipado
+`;
 }
 
 // --- modelo Silver ----------------------------------------------------------
 // Curadoria mínima real: um modelo por tabela, materializado como table, lendo
-// do Bronze já tipado/deduplicado/sanitizado (LGPD). Sem regra de negócio
+// do Bronze já tipado/sanitizado (LGPD). Sem regra de negócio
 // específica — isso não dá pra gerar automaticamente —, mas é dbt de verdade,
 // executa contra o BigQuery real e fica em models/medallion/silver/<sistema>/
 // pronto para o usuário estender (o editor visual do Studio edita este mesmo
@@ -384,7 +373,7 @@ function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
 
 -- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Silver, tabela ${t.name}.
 -- A regeração sobrescreve este arquivo. Ponto de partida: passthrough do Bronze
--- já tipado/deduplicado/sanitizado — adicione aqui as regras de curadoria do
+-- já tipado/sanitizado — adicione aqui as regras de curadoria do
 -- negócio (joins, métricas, renomes analíticos) conforme necessário.
 -- Origem: ref('${bronzeRef}')
 -- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
@@ -480,7 +469,7 @@ function layerModelBlock(
           combination_of_columns:
 ${pk.map((k) => `            - ${k}`).join('\n')}${cols}`;
   }
-  const semPk = pk.length === 0 ? ' (sem PK; sem deduplicação)' : '';
+  const semPk = pk.length === 0 ? ' (sem PK; sem carga incremental)' : '';
   return `  - name: ${name}
     description: "${layer} gerado — tabela ${table}${semPk}."${cols}`;
 }

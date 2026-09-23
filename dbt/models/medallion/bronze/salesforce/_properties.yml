@@ -69,7 +69,7 @@ models:
         description: "Identificador de geração da sincronização do Airbyte (Destination
           v2)."
   - name: bronze_salesforce_dbt_ultima_execucao
-    description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem deduplicação)."
+    description: "Bronze gerado — tabela dbt_ultima_execucao (sem PK; sem carga incremental)."
     columns:
       - name: id_modelo
         description: "Campo raw correspondente: \"modelo_id\"."

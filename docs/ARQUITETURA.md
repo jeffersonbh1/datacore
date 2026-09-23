@@ -78,7 +78,7 @@ dados.
 | Camada | O que é |
 | --- | --- |
 | **RAW** | **Cópia fiel** do que veio da origem, sem transformação. Escrita pelo Airbyte. Tabelas com prefixo `raw_`. |
-| **BRONZE** | **Higienizada.** Colunas renomeadas, marca d'água de ingestão, deduplicação por chave (CDC) e **anonimização LGPD** (Art. 46). É a camada que a DataCore gera automaticamente, com dbt. |
+| **BRONZE** | **Higienizada.** Colunas renomeadas, marca d'água de ingestão (`_dat_carga`), carga incremental por chave e **anonimização LGPD** (Art. 46). É a camada que a DataCore gera automaticamente, com dbt. |
 | **SILVER** | **Curada.** Regras de negócio, junções, dimensões conformadas. Hoje existe apenas como exemplo — ainda sem geração automática. |
 | **GOLD** | **Pronta para consumo.** Métricas e KPIs agregados para dashboards. Também apenas exemplo por enquanto. |
 
@@ -228,7 +228,7 @@ sequenceDiagram
     ST->>GW: POST /api/bigquery/bronze/build
     Note over GW: contexto por requisição<br/>DBT_RAW_DATASET · DBT_SCHEMA_BRONZE
     GW->>DBT: dbt build --select bronze_&lt;sistema&gt;_&lt;t&gt;
-    Note over DBT: 1 · lê source('datacore_raw', t)<br/>2 · renomeia + _dat_carga<br/>3 · LGPD Art. 46: mascara CPF, tokeniza e-mail, hash cartão/senha<br/>4 · dedup CDC por PK (qualify)<br/>5 · incremental merge (se PK)
+    Note over DBT: 1 · lê source('datacore_raw', t)<br/>2 · renomeia + _dat_carga<br/>3 · LGPD Art. 46: mascara CPF, tokeniza e-mail, hash cartão/senha<br/>4 · só registros novos (_dat_carga &gt; max_dat_carga)<br/>5 · incremental merge (se PK)
     DBT->>BQ: &lt;dataset&gt;.bronze_&lt;sistema&gt;_&lt;t&gt;
 ```
 
@@ -275,9 +275,9 @@ estado por *merge* — criar a integração B não apaga os modelos da A.
 - **LGPD Art. 46** por heurística de nome de coluna — `dbt/macros/lgpd.sql`:
   `cpf|cnpj` → redação parcial; `email` → tokenização preservando o domínio;
   `cartao|telefone|rg|senha` → hash SHA-256.
-- **Deduplicação CDC:**
-  `qualify row_number() over (partition by <PK> order by _dat_carga desc) = 1`,
-  quando há chave primária.
+- **Sem deduplicação no modelo:** no incremental, a Raw é filtrada pelos
+  registros com `_dat_carga` posterior à maior já gravada e o `merge` usa a
+  chave primária (`unique_key`) para atualizar/inserir só esses registros.
 - **Materialização:** `incremental` com estratégia `merge` quando a carga é
   incremental e há PK; caso contrário, `table`.
 

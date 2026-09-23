@@ -6,7 +6,7 @@
 -- GERADO por server/dbtCodegen.ts — sistema "salesforce", camada Bronze, tabela destinos.
 -- A regeração sobrescreve este arquivo.
 -- Origem: source('datacore_raw', 'destinos')  (dataset via DBT_RAW_DATASET)
--- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_destinos  (renome + LGPD Art. 46 + dedup CDC)
+-- Saída : <DBT_SCHEMA_BRONZE>.bronze_salesforce_destinos  (renome + LGPD Art. 46)
 -- Padronização de nomes (docs/CONVENCAO_NOMENCLATURA_BRONZE.md):
 --   tipo -> tp_destino
 --   criado_em -> dth_criado
@@ -37,13 +37,4 @@ tipado AS (
     FROM fonte
 )
 
-, deduplicado AS (
-    SELECT *
-    FROM tipado
-    QUALIFY row_number() OVER (
-        PARTITION BY id_destino
-        ORDER BY _dat_carga DESC
-    ) = 1
-)
-
-SELECT * FROM deduplicado
+SELECT * FROM tipado
