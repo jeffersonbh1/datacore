@@ -15,7 +15,8 @@ import { LAYER_STYLE } from '../StudioGold/LineageGraph';
 // então uma execução em andamento já aparece aqui, mesmo se o usuário trocar de tela.
 // -----------------------------------------------------------------------------
 
-const PAGE = 10;
+/** Mesmo tamanho de página do histórico de cada pipeline (RUNS_PER_PAGE em ExecutionsView). */
+const PAGE = 12;
 const POLL_MS = 4000;
 const LAYER_ORDER: ExecItemLayer[] = ['raw', 'bronze', 'silver', 'gold'];
 
@@ -131,7 +132,7 @@ export const StudioExecutionsSection: React.FC<StudioExecutionsSectionProps> = (
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [visible, setVisible] = useState(PAGE);
+  const [page, setPage] = useState(0);
   const [open, setOpen] = useState(true);
 
   const load = useCallback(async (silent = false) => {
@@ -162,7 +163,11 @@ export const StudioExecutionsSection: React.FC<StudioExecutionsSectionProps> = (
     return () => clearInterval(t);
   }, [hasRunning, load]);
 
-  const shown = executions.slice(0, visible);
+  const totalPages = Math.max(1, Math.ceil(executions.length / PAGE));
+  // Clampa caso a lista encolha (refresh) com o usuário numa página que deixou de existir.
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageStart = currentPage * PAGE;
+  const shown = executions.slice(pageStart, pageStart + PAGE);
 
   return (
     <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden" aria-label="Execuções do Studio Visual ETL Gold">
@@ -264,10 +269,30 @@ export const StudioExecutionsSection: React.FC<StudioExecutionsSectionProps> = (
             </div>
           )}
 
-          {executions.length > visible && (
+          {totalPages > 1 && (
             <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>Mostrando {shown.length} de {executions.length} execuções</span>
-              <button type="button" onClick={() => setVisible((v) => v + PAGE)} className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 cursor-pointer font-medium">Mostrar mais</button>
+              <span>
+                Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE, executions.length)} de {executions.length} execuções
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage === 0}
+                  onClick={() => { setPage(currentPage - 1); setExpandedId(null); }}
+                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                >
+                  Anterior
+                </button>
+                <span className="font-mono">Página {currentPage + 1} de {totalPages}</span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages - 1}
+                  onClick={() => { setPage(currentPage + 1); setExpandedId(null); }}
+                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                >
+                  Próxima
+                </button>
+              </div>
             </div>
           )}
         </div>
