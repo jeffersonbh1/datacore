@@ -228,6 +228,21 @@ connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
   }
 });
 
+// O GET da conexão devolve campos vazios que o PATCH não aceita de volta — ex.:
+// selectedFields: [] (= "todas as colunas" na leitura) é recusado no PATCH como
+// "No fields selected for stream X". Reenvia só a configuração que importa e
+// omite listas vazias, que o Airbyte interpreta como o padrão (todas as colunas,
+// cursor/PK definidos pela origem).
+function toStreamPatch(stream: Record<string, unknown> & { name: string }): Record<string, unknown> {
+  const out: Record<string, unknown> = { name: stream.name };
+  if (stream.syncMode) out.syncMode = stream.syncMode;
+  for (const key of ['cursorField', 'primaryKey', 'selectedFields', 'mappers'] as const) {
+    const value = stream[key];
+    if (Array.isArray(value) && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
 // Edição de uma integração (tela Pipeline Automático, modo edição): inclui e/ou
 // remove tabelas (streams) de uma conexão existente. As streams que ficam são
 // devolvidas ao Airbyte exatamente como estão (mesmo syncMode/cursor/PK/colunas);
@@ -269,7 +284,7 @@ connectionsRouter.put('/:connectionId/streams', async (req, res) => {
 
     const data = await airbyteFetch(`/connections/${connectionId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ configurations: { streams: [...kept, ...added] } }),
+      body: JSON.stringify({ configurations: { streams: [...kept.map(toStreamPatch), ...added] } }),
     });
     res.json(data);
   } catch (err) {
