@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { airbyteFetch } from '../airbyteClient';
 import { getSupabaseAdmin } from '../supabaseAdmin';
 import { buildBronzeForTables } from './bronze';
+import { diagnoseSyncFailure, recordRawFailure } from '../rawFailurePolicy';
 
 export const bronzeAutoSyncRouter = Router();
 
@@ -35,6 +36,7 @@ const OPEN_JOB_STATUSES = new Set(['pending', 'running']);
 interface IntegracaoRow {
   id: number;
   id_empresa: number;
+  nome: string;
   airbyte_connection_id: string | null;
   tabelas_selecionadas: string[];
   // Dataset desta integração específica — ver sql/012_integracoes_dataset_override.sql.
@@ -47,7 +49,7 @@ interface IntegracaoRow {
 
 interface StepResult {
   integracaoId: number;
-  action: 'skipped' | 'bronze_built' | 'bronze_failed';
+  action: 'skipped' | 'raw_failed' | 'bronze_built' | 'bronze_failed';
   detail: string;
 }
 
@@ -69,7 +71,7 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
     const supabase = getSupabaseAdmin();
     const { data: integracoes, error } = await supabase
       .from('integracoes')
-      .select('id, id_empresa, airbyte_connection_id, tabelas_selecionadas, dataset_override, destinos(tipo, configuracao), origens(nome), pipelines(id)')
+      .select('id, id_empresa, nome, airbyte_connection_id, tabelas_selecionadas, dataset_override, destinos(tipo, configuracao), origens(nome), pipelines(id)')
       .eq('status', 'active')
       .not('airbyte_connection_id', 'is', null);
 
@@ -139,6 +141,31 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         finalizado_em: OPEN_JOB_STATUSES.has(job.status) ? null : (job.lastUpdatedTime || null),
       }));
       await supabase.from('pipeline_runs').upsert(runRows, { onConflict: 'pipeline_id,airbyte_job_id' });
+
+      // Política de falha da Raw (server/rawFailurePolicy.ts): sync que falhou
+      // ganha o motivo real em pipeline_runs + um alerta para a empresa, e a
+      // Bronze NÃO é construída — ela continua com o último dado bom.
+      if (latest.status === 'failed' || latest.status === 'incomplete') {
+        const { data: alreadyRecorded } = await supabase
+          .from('pipeline_runs')
+          .select('raw_erro')
+          .eq('pipeline_id', pipelineRow.id)
+          .eq('airbyte_job_id', latest.jobId)
+          .maybeSingle();
+        if (!alreadyRecorded?.raw_erro) {
+          const diagnosis = await diagnoseSyncFailure(integ.airbyte_connection_id, latest.jobId);
+          await recordRawFailure(supabase, {
+            idEmpresa: integ.id_empresa,
+            integracaoId: integ.id,
+            integracaoNome: integ.nome,
+            pipelineId: pipelineRow.id,
+            jobId: latest.jobId,
+            diagnosis,
+          });
+        }
+        results.push({ integracaoId: integ.id, action: 'raw_failed', detail: `job ${latest.jobId} com status "${latest.status}" — Bronze mantida no último dado bom` });
+        continue;
+      }
 
       if (latest.status !== 'succeeded') {
         results.push({ integracaoId: integ.id, action: 'skipped', detail: `último job com status "${latest.status}"` });

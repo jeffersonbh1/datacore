@@ -71,6 +71,33 @@ export async function airbyteFetch<T = unknown>(path: string, init: RequestInit 
   return json as T;
 }
 
+/**
+ * API interna (Config API, /api/v1) do Airbyte — mesma autenticação da pública.
+ * Usada só para o que a API pública não expõe: o motivo real da falha de um job
+ * (attempts[].failureSummary) e se a conexão tem mudança de schema incompatível
+ * (connections/get → breakingChange). Todos os endpoints dela são POST com JSON.
+ */
+export async function airbyteConfigFetch<T = unknown>(path: string, body: unknown): Promise<T> {
+  const baseUrl = process.env.AIRBYTE_BASE_URL;
+  const token = await getAccessToken();
+
+  const res = await fetch(`${baseUrl}/api/v1${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : null;
+
+  if (!res.ok) {
+    const message = extractAirbyteErrorMessage(json) || res.statusText;
+    throw new AirbyteApiError(message, res.status, json);
+  }
+
+  return json as T;
+}
+
 function extractAirbyteErrorMessage(json: unknown): string | null {
   if (!json || typeof json !== 'object') return null;
   const body = json as Record<string, unknown>;

@@ -234,6 +234,19 @@ export async function fetchConnectionJobs(connectionId: string, limit = 30): Pro
   return data.data;
 }
 
+/** Espelho de RawFailureDiagnosis (server/rawFailurePolicy.ts). */
+export interface RawFailureDiagnosis {
+  categoria: 'schema_incompativel' | 'configuracao' | 'origem' | 'destino' | 'transitorio' | 'plataforma' | 'desconhecido';
+  severidade: 'critica' | 'alta';
+  mensagem: string;
+  detalhe: string | null;
+}
+
+/** Motivo real (classificado) da falha de um job de sync — a API pública do Airbyte só diz 'failed'. */
+export async function fetchSyncFailureDiagnosis(connectionId: string, jobId: number): Promise<RawFailureDiagnosis> {
+  return gatewayFetch(`/api/airbyte/connections/${connectionId}/jobs/${jobId}/diagnosis`);
+}
+
 export interface BronzeTableResult {
   table: string;
   status: 'ok' | 'error';

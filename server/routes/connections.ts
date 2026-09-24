@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { airbyteFetch } from '../airbyteClient';
 import { handleAirbyteError } from '../handleAirbyteError';
+import { SCHEMA_CHANGE_POLICY, diagnoseSyncFailure } from '../rawFailurePolicy';
+import { getSupabaseAdmin } from '../supabaseAdmin';
 import type { AirbyteStream } from './streams';
 
 export const connectionsRouter = Router();
@@ -152,6 +154,8 @@ connectionsRouter.post('/', async (req, res) => {
         configurations: { streams },
         schedule: buildAirbyteSchedule(schedule),
         prefix: 'raw_',
+        // Política de mudança de schema da Raw — ver server/rawFailurePolicy.ts.
+        ...SCHEMA_CHANGE_POLICY,
         ...namespaceFields,
       }),
     });
@@ -208,6 +212,50 @@ connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
     res.json(data);
   } catch (err) {
     handleAirbyteError(res, err);
+  }
+});
+
+// Motivo real da falha de um job de sync (a API pública só devolve 'failed'),
+// já classificado e com a ação recomendada — ver server/rawFailurePolicy.ts.
+connectionsRouter.get('/:connectionId/jobs/:jobId/diagnosis', async (req, res) => {
+  const jobId = Number(req.params.jobId);
+  if (!Number.isInteger(jobId) || jobId <= 0) {
+    res.status(400).json({ error: 'jobId inválido.' });
+    return;
+  }
+  res.json(await diagnoseSyncFailure(req.params.connectionId, jobId));
+});
+
+// Aplica a política de mudança de schema (SCHEMA_CHANGE_POLICY) às conexões que
+// já existiam antes dela. Sem corpo: todas as integrações com conexão no
+// Airbyte; com { connectionIds: [...] }: só essas. Idempotente.
+connectionsRouter.post('/schema-policy', async (req, res) => {
+  try {
+    let connectionIds = (req.body as { connectionIds?: string[] } | undefined)?.connectionIds;
+    if (!connectionIds?.length) {
+      const { data, error } = await getSupabaseAdmin()
+        .from('integracoes')
+        .select('airbyte_connection_id')
+        .not('airbyte_connection_id', 'is', null);
+      if (error) throw new Error(error.message);
+      connectionIds = Array.from(new Set((data || []).map(r => String(r.airbyte_connection_id))));
+    }
+
+    const results: Array<{ connectionId: string; ok: boolean; error?: string }> = [];
+    for (const connectionId of connectionIds) {
+      try {
+        await airbyteFetch(`/connections/${connectionId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(SCHEMA_CHANGE_POLICY),
+        });
+        results.push({ connectionId, ok: true });
+      } catch (err) {
+        results.push({ connectionId, ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    res.json({ policy: SCHEMA_CHANGE_POLICY, results });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao aplicar a política de schema.' });
   }
 });
 

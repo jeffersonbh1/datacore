@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, RefreshCw } from 'lucide-react';
 import { StudioExecutionsSection } from './StudioExecutionsSection';
+import { IngestionAlertsSection } from './IngestionAlertsSection';
 
 /**
  * Tela Execuções: só o histórico do Studio Visual ETL Gold (tabela
@@ -8,7 +9,7 @@ import { StudioExecutionsSection } from './StudioExecutionsSection';
  * camada. O antigo histórico por pipeline (pipeline_runs) saiu daqui junto com
  * o Studio Visual ETL.
  */
-export const ExecutionsView: React.FC = () => {
+export const ExecutionsView: React.FC<{ userName: string | null; canResolveAlerts: boolean }> = ({ userName, canResolveAlerts }) => {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(() => new Date());
 
   return (
@@ -38,6 +39,8 @@ export const ExecutionsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <IngestionAlertsSection refreshKey={lastRefreshedAt.getTime()} userName={userName} canResolve={canResolveAlerts} />
 
       <StudioExecutionsSection refreshKey={lastRefreshedAt.getTime()} />
     </div>

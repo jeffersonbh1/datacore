@@ -26,6 +26,7 @@ lakehouse no BigQuery.
 8. [A camada Bronze em detalhe](#8-a-camada-bronze-em-detalhe)
 9. [Deploy e operação](#9-deploy-e-operação)
 10. [Decisões e lacunas conhecidas](#10-decisões-e-lacunas-conhecidas)
+11. [Política de falha da Raw](#11-política-de-falha-da-raw)
 
 ---
 
@@ -331,3 +332,40 @@ projeto dbt, em [`../dbt/README.md`](../dbt/README.md).
   deve usar a chave de aplicação, não um JWT de sessão.
 - Falha de *teste* dbt marca a resposta como não-ok (HTTP 207) mas não vira erro
   por tabela — o `bronze_status` do histórico segue como `built`.
+
+---
+
+## 11. Política de falha da Raw
+
+> O que acontece quando a sincronização da Raw (Airbyte) falha — por mudança de
+> schema na origem ou qualquer outro erro. Código: `server/rawFailurePolicy.ts`;
+> banco: `sql/015_raw_failure_policy.sql`.
+
+**Mudança de schema na origem** (`nonBreakingSchemaUpdatesBehavior = propagate_columns`,
+aplicado em toda conexão nova e, nas existentes, por
+`POST /api/airbyte/connections/schema-policy`):
+
+| Mudança | O que acontece na Raw | E na Bronze/Silver |
+|---|---|---|
+| Coluna nova | Propagada automaticamente, sync segue | Nada muda — a Bronze lista as colunas; para incluí-la, regenerar os modelos dbt da integração |
+| Coluna removida | Propagada; a coluna fica nula na Raw | Continua construindo (valor nulo) |
+| Tipo de coluna alterado | Propagado | O `dbt build` pode falhar na tabela → erro por tabela; reconstruir com "Do zero" |
+| Chave primária ou cursor alterado/removido (**incompatível**) | O Airbyte **bloqueia a conexão** (não há como evitar) | Não é construída — alerta "Schema incompatível" |
+
+**Qualquer sync que falhe** (schema, credencial, origem fora do ar, BigQuery, rede):
+
+1. **Motivo real:** o gateway lê a falha do job na API interna do Airbyte
+   (`GET /api/airbyte/connections/:id/jobs/:jobId/diagnosis`), classifica
+   (`schema_incompativel`, `configuracao`, `origem`, `destino`, `transitorio`,
+   `plataforma`, `desconhecido`) e monta a ação recomendada.
+2. **Registro:** o motivo vai para `pipeline_runs.raw_erro`/`raw_erro_categoria`
+   e para o item Raw da execução na tela Execuções.
+3. **Alerta:** uma linha em `alertas_ingestao` (uma por job), exibida para toda a
+   empresa no topo da tela Execuções até alguém clicar em "Resolvido". Ainda não
+   há e-mail/Slack (sem SMTP/domínio).
+4. **Último dado bom:** Bronze e Silver da integração **não** são construídas —
+   continuam com os dados da última carga que deu certo. O Gold que depende delas
+   também é pulado.
+5. **Nova tentativa:** o próprio Airbyte já repete as tentativas dentro do job;
+   o DataCore não repete sozinho. Depois de corrigir a causa, basta "Executar" de novo.
+

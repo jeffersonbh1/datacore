@@ -1,5 +1,6 @@
 import { Pipeline } from '../types';
-import { buildBronzeLayer, buildSilverLayer, fetchConnectionJobs, triggerAirbyteSync, type AirbyteJob } from './airbyteGateway';
+import { buildBronzeLayer, buildSilverLayer, fetchConnectionJobs, fetchSyncFailureDiagnosis, triggerAirbyteSync, type AirbyteJob } from './airbyteGateway';
+import { rawErrorText, recordRawFailure } from './ingestionAlerts';
 import { summarizeTableFailures } from './pipelineBuilder';
 import { updatePipelineRunLayerStatus, upsertPipelineRuns } from './supabase';
 import { buildGoldModels, collect, topoOrder, type LineageIndex, type LineageIntegration } from './lineage';
@@ -175,8 +176,22 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         }
         if (state === 'cancelled') { cancelled = true; hooks.setState(pi.syncNodeIds, 'skipped'); return { ok: false, jobId: triggered.jobId }; }
         hooks.setState(pi.syncNodeIds, 'error');
-        hooks.log(`${name}: ${state === 'timeout' ? 'a sincronização não terminou a tempo' : 'a sincronização falhou'} — Bronze/Silver desta integração não serão construídas.`, 'error');
-        rec('raw', name, name, 'error', { error: state === 'timeout' ? 'A sincronização não terminou a tempo (10 min).' : 'A sincronização falhou no Airbyte.' });
+        // Política de falha da Raw (server/rawFailurePolicy.ts): busca o motivo real
+        // da falha, registra o alerta para a empresa e mantém Bronze/Silver no último
+        // dado bom (não são construídas). Timeout não tem motivo — o job segue rodando.
+        let errorText = 'A sincronização não terminou a tempo (10 min).';
+        if (state === 'error') {
+          const diagnosis = await fetchSyncFailureDiagnosis(connectionId, triggered.jobId).catch(() => null);
+          errorText = diagnosis ? rawErrorText(diagnosis) : 'A sincronização falhou no Airbyte.';
+          if (diagnosis && opts.idEmpresa) {
+            await safe('o alerta da falha da Raw', () => recordRawFailure({
+              idEmpresa: opts.idEmpresa!, integracaoId: pi.integration.id, integracaoNome: name,
+              pipelineDbId: pi.pipeline?.dbId ?? null, jobId: triggered.jobId, diagnosis,
+            }));
+          }
+        }
+        hooks.log(`${name}: ${errorText} — Bronze/Silver desta integração não serão construídas (seguem com o último dado bom).`, 'error');
+        rec('raw', name, name, 'error', { error: errorText });
         for (const b of [...pi.bronze, ...pi.silver]) failed.add(b.nodeId);
         for (const id of pi.syncNodeIds) failed.add(id);
         return { ok: false, jobId: triggered.jobId };

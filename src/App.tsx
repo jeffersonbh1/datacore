@@ -538,7 +538,7 @@ export default function App() {
             )}
 
             {activeTab === 'execucoes' && (
-              <ExecutionsView />
+              <ExecutionsView userName={currentUser.name} canResolveAlerts={permissions.canTriggerExecutions} />
             )}
 
             {activeTab === 'chat-dados' && (
