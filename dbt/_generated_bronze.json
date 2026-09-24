@@ -2280,6 +2280,63 @@
           "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
         }
       ]
+    },
+    "bronze_arena_fahel_beach_tb_datacore_schemas": {
+      "table": "tb_datacore_schemas",
+      "pk": [
+        "id_tb_datacore_schema"
+      ],
+      "columns": [
+        {
+          "name": "cod_produto",
+          "source": "cod_produto"
+        },
+        {
+          "name": "qtd_produto",
+          "source": "quantidade_produto"
+        },
+        {
+          "name": "vlr_unitario_produto",
+          "source": "valor_unitario_produto"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "des_nome_cliente",
+          "source": "nome_cliente"
+        },
+        {
+          "name": "id_tb_datacore_schema",
+          "source": "id"
+        },
+        {
+          "name": "_dat_carga",
+          "source": "_airbyte_extracted_at",
+          "description": "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        },
+        {
+          "name": "_airbyte_raw_id",
+          "source": "_airbyte_raw_id",
+          "description": "Identificador único gerado pelo Airbyte para o registro bruto."
+        },
+        {
+          "name": "_airbyte_meta",
+          "source": "_airbyte_meta",
+          "description": "Metadados internos do Airbyte sobre a sincronização deste registro (erros por coluna, etc.)."
+        },
+        {
+          "name": "_airbyte_generation_id",
+          "source": "_airbyte_generation_id",
+          "description": "Identificador de geração da sincronização do Airbyte (Destination v2)."
+        }
+      ]
     }
   }
 }

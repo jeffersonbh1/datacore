@@ -97,5 +97,8 @@
   },
   "vendas_bar": {
     "identifier": "raw_vendas_bar"
+  },
+  "tb_datacore_schemas": {
+    "identifier": "raw_tb_datacore_schemas"
   }
 }

@@ -1935,6 +1935,48 @@
           "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
         }
       ]
+    },
+    "silver_arena_fahel_beach_tb_datacore_schemas": {
+      "table": "tb_datacore_schemas",
+      "pk": [
+        "id_tb_datacore_schema"
+      ],
+      "columns": [
+        {
+          "name": "cod_produto",
+          "source": "cod_produto"
+        },
+        {
+          "name": "qtd_produto",
+          "source": "quantidade_produto"
+        },
+        {
+          "name": "vlr_unitario_produto",
+          "source": "valor_unitario_produto"
+        },
+        {
+          "name": "dth_criacao",
+          "source": "created_at"
+        },
+        {
+          "name": "des_nome_cliente",
+          "source": "nome_cliente"
+        },
+        {
+          "name": "id_tb_datacore_schema",
+          "source": "id"
+        },
+        {
+          "name": "_dat_carga",
+          "source": "_airbyte_extracted_at",
+          "description": "Data/hora em que o Airbyte carregou o registro (_airbyte_extracted_at) — marca d'água dos modelos incrementais (macro max_dat_carga)."
+        },
+        {
+          "name": "_dbt_loaded_at",
+          "source": "current_timestamp()",
+          "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
+        }
+      ]
     }
   }
 }

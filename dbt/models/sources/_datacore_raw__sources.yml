@@ -122,6 +122,10 @@ sources:
         identifier: raw_tabelas_carregadas
         config:
           loaded_at_field: _airbyte_extracted_at
+      - name: tb_datacore_schemas
+        identifier: raw_tb_datacore_schemas
+        config:
+          loaded_at_field: _airbyte_extracted_at
       - name: tipos_aluguel
         identifier: raw_tipos_aluguel
         config:
