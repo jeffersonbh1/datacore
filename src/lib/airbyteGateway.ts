@@ -191,6 +191,20 @@ export async function createAirbyteConnection(payload: {
   });
 }
 
+/**
+ * Edição de integração: inclui/remove tabelas (streams) de uma conexão existente.
+ * As tabelas que continuam mantêm a configuração atual no Airbyte.
+ */
+export async function updateAirbyteConnectionStreams(
+  connectionId: string,
+  payload: { add: AirbyteConnectionStreamInput[]; remove: string[]; writeMode: 'append' | 'merge_upsert' | 'overwrite' }
+): Promise<AirbyteConnection> {
+  return gatewayFetch<AirbyteConnection>(`/api/airbyte/connections/${connectionId}/streams`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Pauses ('inactive') or resumes ('active') a connection's own Airbyte schedule. */
 export async function updateAirbyteConnectionStatus(
   connectionId: string,

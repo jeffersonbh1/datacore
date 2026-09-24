@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Wand2, Database, Server, Layers, Check, ArrowRight, ArrowLeft,
   Sparkles, RefreshCw, Table, ShieldCheck, CheckCircle2, AlertCircle,
@@ -16,9 +16,10 @@ import {
 import {
   AirbyteDestination, AirbyteSource, AirbyteConnectionStreamInput, createAirbyteConnection, createAirbyteSource, createBigQueryDestination,
   deleteAirbyteDestination, deleteAirbyteSource, fetchExistingDestinations, fetchExistingSources,
-  fetchSourceCatalog, fetchStreams, generateDbtModels, regenerateDbtModelsFromIntegration, triggerAirbyteSync
+  fetchSourceCatalog, fetchStreams, generateDbtModels, regenerateDbtModelsFromIntegration, triggerAirbyteSync,
+  updateAirbyteConnectionStreams
 } from '../../lib/airbyteGateway';
-import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline } from '../../lib/supabase';
+import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline, updateIntegracaoTabelas } from '../../lib/supabase';
 import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,6 +43,11 @@ interface AutoPipelineViewProps {
    *  no Airbyte/dbt mas não fica registrado em pipeline_runs. */
   onUpdatePipeline: (pipeline: Pipeline) => void;
   canCreate: boolean;
+  /** Modo edição (botão Editar em Pipelines & Fluxos): o assistente abre no Passo 3
+   *  com origem/destino/tabelas desta integração; só a seleção de tabelas muda. */
+  editIntegration?: AutoIntegration | null;
+  onIntegrationEdited?: (integration: AutoIntegration) => void;
+  onExitEdit?: (goTo: 'pipelines' | 'stay') => void;
 }
 
 export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
@@ -54,8 +60,17 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   onAddDestination,
   onCreateIntegration,
   onUpdatePipeline,
-  canCreate
+  canCreate,
+  editIntegration = null,
+  onIntegrationEdited,
+  onExitEdit,
 }) => {
+  const isEditMode = Boolean(editIntegration);
+  // Lido dentro de callbacks assíncronos (descoberta de streams) sem refazer o efeito.
+  const editIntegrationRef = useRef(editIntegration);
+  editIntegrationRef.current = editIntegration;
+  /** Tabelas que a integração editada já sincroniza (vazio no modo cadastro). */
+  const originalTables = editIntegration?.selectedTables ?? [];
   // Navigation mode: 'wizard' | 'overview'
   const [activeSubTab, setActiveSubTab] = useState<'wizard' | 'overview'>('wizard');
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -311,7 +326,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       .then(streams => {
         if (cancelled) return;
         setRealStreams(streams);
-        setSelectedTables(streams.map(s => s.streamName));
+        // Modo edição: mantém a seleção atual da integração — tabelas novas da
+        // origem aparecem na lista, mas desmarcadas.
+        if (!editIntegrationRef.current) setSelectedTables(streams.map(s => s.streamName));
       })
       .catch(err => {
         if (cancelled) return;
@@ -1156,6 +1173,150 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     }
   };
 
+  // --------------------------------------------------------------------------
+  // EDIT MODE: prefill from the integration & save table changes
+  // --------------------------------------------------------------------------
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editSavedMessage, setEditSavedMessage] = useState<string | null>(null);
+  const wasEditingRef = useRef(false);
+
+  useEffect(() => {
+    if (editIntegration) {
+      wasEditingRef.current = true;
+      setActiveSubTab('wizard');
+      setSourceMode('existing');
+      setSelectedSourceId(editIntegration.sourceConnectorId);
+      setDestMode('existing');
+      setSelectedDestId(editIntegration.destinationConnectorId);
+      setExistingDestDatasetId((editIntegration.datasetOverride || '').replace(/^raw_/, ''));
+      setIntegrationName(editIntegration.name);
+      setSelectedTables(editIntegration.selectedTables);
+      setTableSyncConfigs(editIntegration.tableSyncConfigs || {});
+      setApplyLgpdSanitization(editIntegration.applyLgpdSanitization);
+      setRealStreams([]);
+      setStreamsFetchedForSourceId(null);
+      setExpandedTable(null);
+      setErrorMessage(null);
+      setEditSavedMessage(null);
+      setWizardStep(3);
+    } else if (wasEditingRef.current) {
+      // Saiu da edição: volta o assistente ao estado de cadastro.
+      wasEditingRef.current = false;
+      setIntegrationName('');
+      setSelectedTables([]);
+      setTableSyncConfigs({});
+      setRealStreams([]);
+      setStreamsFetchedForSourceId(null);
+      setExistingDestDatasetId('');
+      setEditSavedMessage(null);
+      setWizardStep(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editIntegration?.id]);
+
+  const addedTables = isEditMode ? selectedTables.filter(t => !originalTables.includes(t)) : [];
+  const removedTables = isEditMode ? originalTables.filter(t => !selectedTables.includes(t)) : [];
+
+  const handleSaveIntegrationEdit = async () => {
+    if (!editIntegration) return;
+    setErrorMessage(null);
+    setEditSavedMessage(null);
+
+    if (addedTables.length === 0 && removedTables.length === 0) {
+      setErrorMessage('Nenhuma alteração: marque uma tabela nova para incluir ou desmarque uma tabela para remover.');
+      return;
+    }
+    if (selectedTables.length === 0) {
+      setErrorMessage('A integração precisa manter pelo menos uma tabela.');
+      return;
+    }
+    for (const tableName of addedTables) {
+      const cfg = getTableSyncConfig(tableName);
+      if (cfg.loadType === 'incremental' && !cfg.cursorField) {
+        setErrorMessage(`Selecione o campo de cursor da tabela "${tableName}" — obrigatório para carga incremental.`);
+        return;
+      }
+    }
+    const connectionId = editIntegration.airbyteConnectionId;
+    if (!connectionId) {
+      setErrorMessage('Esta integração não tem conexão real no Airbyte — não é possível alterar as tabelas.');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      // 1) Airbyte: inclui as novas e remove as desmarcadas (as demais ficam como estão).
+      await updateAirbyteConnectionStreams(connectionId, {
+        add: addedTables.map(tableName => {
+          const cfg = getTableSyncConfig(tableName);
+          const allColumns = getTableColumns(tableName);
+          return {
+            name: tableName,
+            loadType: cfg.loadType,
+            cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : undefined,
+            columns: cfg.selectedColumns.length < allColumns.length ? cfg.selectedColumns : undefined,
+          };
+        }),
+        remove: removedTables,
+        writeMode: destWriteMode,
+      });
+
+      // 2) Banco: nova lista de tabelas + configuração de carga (as removidas saem).
+      const nextConfigs: Record<string, TableSyncConfig> = {};
+      for (const tableName of selectedTables) nextConfigs[tableName] = getTableSyncConfig(tableName);
+      const updated: AutoIntegration = {
+        ...editIntegration,
+        selectedTables,
+        tableSyncConfigs: nextConfigs,
+        tablesCount: selectedTables.length,
+      };
+      await updateIntegracaoTabelas(editIntegration, selectedTables, nextConfigs);
+      onIntegrationEdited?.(updated);
+
+      // 3) dbt: modelos Bronze/Silver só das tabelas NOVAS — as existentes não são
+      // regeradas para não sobrescrever regras de curadoria editadas no Studio.
+      let dbtWarning = '';
+      const dest = destinations.find(d => d.id === editIntegration.destinationConnectorId);
+      const rawDs = editIntegration.datasetOverride || dest?.databaseOrDataset;
+      if (addedTables.length > 0 && dest?.type === 'bigquery' && dest.accountOrProject && rawDs) {
+        try {
+          await generateDbtModels({
+            sistema: editIntegration.sourceConnectorName,
+            projectId: dest.accountOrProject,
+            rawDataset: rawDs,
+            bronzeDataset: rawDs.replace(/^raw_/, 'bronze_'),
+            applyLgpd: editIntegration.applyLgpdSanitization,
+            tables: addedTables.map(tableName => {
+              const cfg = nextConfigs[tableName];
+              const stream = getStreamSummary(tableName);
+              return {
+                name: tableName,
+                columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
+                primaryKey: (stream?.primaryKey || []).map(pk => pk.join('.')),
+                cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
+                loadType: cfg.loadType,
+              };
+            }),
+          });
+        } catch (err) {
+          dbtWarning = ` Atenção: a geração dos modelos dbt das tabelas novas falhou (${err instanceof Error ? err.message : 'erro desconhecido'}) — a Bronze delas não poderá ser construída até regerar os modelos.`;
+        }
+      }
+
+      const parts: string[] = [];
+      if (addedTables.length) parts.push(`${addedTables.length} tabela(s) incluída(s): ${addedTables.join(', ')}`);
+      if (removedTables.length) parts.push(`${removedTables.length} tabela(s) removida(s): ${removedTables.join(', ')}`);
+      setEditSavedMessage(
+        `Integração alterada — ${parts.join('; ')}. As mudanças valem a partir da próxima execução ("Executar" no Studio Visual ETL Gold).${dbtWarning}`,
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Falha ao alterar a integração.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   // Active source/dest instances for preview in step 3
   const currentActiveSource = sourceMode === 'new' 
     ? { name: sourceName || 'Nova Origem', type: sourceType, host: sourceHost }
@@ -1177,18 +1338,29 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700">
               <Wand2 className="w-5 h-5" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Cadastro de Pipeline Automático</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              {isEditMode ? 'Editar Integração' : 'Cadastro de Pipeline Automático'}
+            </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
               Auto-Ingestão
             </span>
           </div>
+          {isEditMode && (
+            <p className="text-sm text-slate-500 max-w-2xl">
+              Editando <strong>{editIntegration?.name}</strong>. Origem, destino e configuração das tabelas já
+              integradas ficam bloqueados — marque as tabelas que devem entrar e desmarque as que devem sair.
+            </p>
+          )}
+          {!isEditMode && (
           <p className="text-sm text-slate-500 max-w-2xl">
             Configure o conector de origem e destino, selecione as tabelas desejadas e gere instantaneamente 
             o pipeline de dados pronto com sanitização LGPD, disponível no <strong>Studio Visual ETL Gold</strong>.
           </p>
+          )}
         </div>
 
-        {/* View Switcher Tabs */}
+        {/* View Switcher Tabs (escondido no modo edição) */}
+        {!isEditMode && (
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium self-start md:self-auto">
           <button
             onClick={() => setActiveSubTab('wizard')}
@@ -1213,6 +1385,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             <span>Integrações Salvas ({integrations.length})</span>
           </button>
         </div>
+        )}
       </div>
 
       {/* ERROR ALERT BANNER */}
@@ -1231,6 +1404,22 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         </div>
       )}
 
+      {/* EDIT SAVED BANNER */}
+      {editSavedMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <span>{editSavedMessage}</span>
+          </div>
+          <button
+            onClick={() => onExitEdit?.('pipelines')}
+            className="shrink-0 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-lg text-xs font-semibold cursor-pointer"
+          >
+            Voltar para Pipelines &amp; Fluxos
+          </button>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* MODE 1: STEP-BY-STEP WIZARD                                               */}
       {/* ========================================================================= */}
@@ -1242,7 +1431,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               {/* Step 1 Tab */}
               <button
                 onClick={() => setWizardStep(1)}
-                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer ${
+                disabled={isEditMode}
+                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                   wizardStep === 1 
                     ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-2 ring-indigo-500/20' 
                     : wizardStep > 1
@@ -1262,13 +1452,19 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 <div>
                   <div className="text-[11px] uppercase tracking-wider font-semibold opacity-70">Passo 1</div>
                   <div className="text-xs font-bold text-slate-900">Conector de Origem</div>
+                  {isEditMode && (
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                      <Lock className="w-3 h-3" /> Bloqueado na edição
+                    </div>
+                  )}
                 </div>
               </button>
 
               {/* Step 2 Tab */}
               <button
                 onClick={() => setWizardStep(2)}
-                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer ${
+                disabled={isEditMode}
+                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                   wizardStep === 2 
                     ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-2 ring-indigo-500/20' 
                     : wizardStep > 2
@@ -1288,6 +1484,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 <div>
                   <div className="text-[11px] uppercase tracking-wider font-semibold opacity-70">Passo 2</div>
                   <div className="text-xs font-bold text-slate-900">Conector de Destino</div>
+                  {isEditMode && (
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                      <Lock className="w-3 h-3" /> Bloqueado na edição
+                    </div>
+                  )}
                 </div>
               </button>
 
@@ -1296,7 +1497,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 onClick={() => {
                   if (wizardStep >= 2) setWizardStep(3);
                 }}
-                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer ${
+                className={`flex items-center gap-3 p-3 rounded-xl text-left transition border cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                   wizardStep === 3 
                     ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-2 ring-indigo-500/20' 
                     : 'border-slate-200 bg-slate-50/50 text-slate-500'
@@ -2103,10 +2304,12 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Layers className="w-5 h-5 text-indigo-600" />
-                  <span>Passo 3: Cadastro da Integração & Seleção de Tabelas</span>
+                  <span>{isEditMode ? 'Passo 3: Tabelas da Integração' : 'Passo 3: Cadastro da Integração & Seleção de Tabelas'}</span>
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Dê um nome à integração, confirme a origem e destino selecionados e marque as tabelas que farão parte do fluxo ETL automático.
+                  {isEditMode
+                    ? 'Tabelas marcadas já fazem parte da integração. Tabelas novas da origem aparecem desmarcadas — marque para incluir; desmarque uma tabela integrada para removê-la.'
+                    : 'Dê um nome à integração, confirme a origem e destino selecionados e marque as tabelas que farão parte do fluxo ETL automático.'}
                 </p>
               </div>
 
@@ -2194,8 +2397,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   type="text"
                   value={integrationName}
                   onChange={(e) => setIntegrationName(e.target.value)}
+                  disabled={isEditMode}
                   placeholder="Ex: Sincronização Vendas Postgres -> BigQuery DW"
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
                   Este nome identificará o pipeline correspondente em <strong>Pipelines &amp; Fluxos</strong>.
@@ -2247,6 +2451,32 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   </div>
                 )}
 
+                {/* Modo edição: tabela integrada que a origem não expõe mais */}
+                {isEditMode && !isLoadingStreams && usingRealStreams && (() => {
+                  const missing = originalTables.filter(t => !realStreams.some(s => s.streamName === t));
+                  if (missing.length === 0) return null;
+                  return (
+                    <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {missing.length === 1 ? 'A tabela integrada' : 'As tabelas integradas'} <strong className="font-mono">{missing.join(', ')}</strong>{' '}
+                        não {missing.length === 1 ? 'foi encontrada' : 'foram encontradas'} na origem.{' '}
+                        {missing.some(t => selectedTables.includes(t)) ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTables(prev => prev.filter(t => !missing.includes(t)))}
+                            className="underline font-semibold cursor-pointer"
+                          >
+                            Remover da integração
+                          </button>
+                        ) : (
+                          <span className="font-semibold">Será removida ao salvar.</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })()}
+
                 {/* Sem descoberta real e sem tabelas adicionadas manualmente:
                     nada a exibir — o usuário precisa concluir os Passos 1 e 2. */}
                 {!isLoadingStreams && !usingRealStreams && discoveredTables.length === 0 && (
@@ -2283,7 +2513,14 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                   onChange={() => {}} // Handled by parent div
                                   className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
                                 />
-                                <div className="text-xs font-bold text-slate-900 font-mono">{stream.streamName}</div>
+                                <div className="text-xs font-bold text-slate-900 font-mono truncate">{stream.streamName}</div>
+                                {isEditMode && (() => {
+                                  const integrated = originalTables.includes(stream.streamName);
+                                  const [label, cls] = integrated
+                                    ? (isChecked ? ['Integrada', 'bg-emerald-50 text-emerald-700 border-emerald-200'] : ['Será removida', 'bg-rose-50 text-rose-700 border-rose-200'])
+                                    : (isChecked ? ['Será incluída', 'bg-indigo-50 text-indigo-700 border-indigo-200'] : ['Nova', 'bg-amber-50 text-amber-700 border-amber-200']);
+                                  return <span className={`ml-auto shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cls}`}>{label}</span>;
+                                })()}
                               </div>
                               <div className="mt-2.5 pt-2 border-t border-slate-100/80 text-[11px] text-slate-500 truncate">
                                 Campos: {stream.columns.slice(0, 4).join(', ')}{stream.columns.length > 4 ? '...' : ''}
@@ -2377,6 +2614,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       const stream = getStreamSummary(tableName);
                       const cursorLocked = Boolean(stream?.sourceDefinedCursorField);
                       const cursorMissing = cfg.loadType === 'incremental' && !cfg.cursorField;
+                      // Modo edição: a configuração de carga de uma tabela já integrada não muda aqui.
+                      const lockedCfg = isEditMode && originalTables.includes(tableName);
 
                       return (
                         <div key={tableName} className="bg-white">
@@ -2393,13 +2632,19 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                               <span className="text-[10px] text-slate-400 font-medium shrink-0">
                                 ({cfg.selectedColumns.length}/{columns.length} colunas)
                               </span>
+                              {lockedCfg && (
+                                <span className="text-[10px] text-slate-500 flex items-center gap-1 shrink-0">
+                                  <Lock className="w-3 h-3" /> configuração mantida
+                                </span>
+                              )}
                             </button>
 
                             <div className="flex items-center gap-2 shrink-0">
                               <select
                                 value={cfg.loadType}
                                 onChange={(e) => handleChangeLoadType(tableName, e.target.value as TableLoadType)}
-                                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                                disabled={lockedCfg}
+                                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer disabled:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-80"
                               >
                                 <option value="full_refresh">Full Refresh (Carga Completa)</option>
                                 <option value="incremental">Incremental</option>
@@ -2409,10 +2654,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                 <select
                                   value={cfg.cursorField}
                                   onChange={(e) => handleChangeCursorField(tableName, e.target.value)}
-                                  disabled={cursorLocked}
+                                  disabled={cursorLocked || lockedCfg}
                                   className={`px-2.5 py-1.5 bg-white border rounded-lg text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500 min-w-36 ${
                                     cursorMissing ? 'border-rose-300 text-rose-600' : 'border-slate-300 text-slate-800'
-                                  } ${cursorLocked ? 'bg-slate-50 cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+                                  } ${cursorLocked || lockedCfg ? 'bg-slate-50 cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
                                 >
                                   <option value="">Selecione o cursor...</option>
                                   {columns.map(col => (
@@ -2434,7 +2679,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                 <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
                                   Colunas ({columns.length})
                                 </span>
-                                <div className="flex items-center gap-3">
+                                <div className={`flex items-center gap-3 ${lockedCfg ? 'hidden' : ''}`}>
                                   <button
                                     type="button"
                                     onClick={() => updateTableSyncConfig(tableName, { selectedColumns: columns })}
@@ -2463,7 +2708,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                         type="checkbox"
                                         checked={checked}
                                         onChange={() => handleToggleColumn(tableName, col)}
-                                        disabled={isCursorColumn}
+                                        disabled={isCursorColumn || lockedCfg}
                                         className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
                                       />
                                       <span className={`font-mono truncate ${isCursorColumn ? 'text-indigo-700 font-semibold' : ''}`}>{col}</span>
@@ -2835,7 +3080,8 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       type="checkbox"
                       checked={applyLgpdSanitization}
                       onChange={(e) => setApplyLgpdSanitization(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                      disabled={isEditMode}
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -2948,8 +3194,45 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 </div>
               </div>
 
+              {/* Modo edição: resumo do que muda ao salvar */}
+              {isEditMode && (
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-1.5">
+                  <div className="font-bold text-slate-900">Alterações a salvar</div>
+                  {addedTables.length === 0 && removedTables.length === 0 ? (
+                    <div className="text-slate-500">Nenhuma alteração ainda.</div>
+                  ) : (
+                    <>
+                      {addedTables.length > 0 && (
+                        <div className="text-indigo-700">
+                          <strong>Incluir ({addedTables.length}):</strong> <span className="font-mono">{addedTables.join(', ')}</span>
+                        </div>
+                      )}
+                      {removedTables.length > 0 && (
+                        <div className="text-rose-700">
+                          <strong>Remover ({removedTables.length}):</strong> <span className="font-mono">{removedTables.join(', ')}</span>
+                        </div>
+                      )}
+                      <div className="text-slate-500 pt-1">
+                        Tabelas incluídas entram na próxima execução (modelos dbt Bronze/Silver são gerados para elas).
+                        Tabelas removidas deixam de ser sincronizadas; os dados já carregados e os modelos dbt delas são mantidos.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Bottom Actions with PRIMARY CREATE INTEGRATION BUTTON */}
               <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                {isEditMode ? (
+                  <button
+                    type="button"
+                    onClick={() => onExitEdit?.('pipelines')}
+                    className="px-4 py-2.5 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer w-full sm:w-auto justify-center"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>{editSavedMessage ? 'Fechar edição' : 'Cancelar edição'}</span>
+                  </button>
+                ) : (
                 <button
                   type="button"
                   onClick={() => setWizardStep(2)}
@@ -2958,7 +3241,29 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                   <ArrowLeft className="w-4 h-4" />
                   <span>Voltar para Destino</span>
                 </button>
+                )}
 
+                {isEditMode ? (
+                  <button
+                    id="btn-save-integration-edit"
+                    type="button"
+                    onClick={handleSaveIntegrationEdit}
+                    disabled={isSavingEdit || (addedTables.length === 0 && removedTables.length === 0)}
+                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                  >
+                    {isSavingEdit ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Salvando alterações...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Salvar Alterações</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
                 <button
                   id="btn-create-integration"
                   type="button"
@@ -2978,6 +3283,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                     </>
                   )}
                 </button>
+                )}
               </div>
             </div>
           )}

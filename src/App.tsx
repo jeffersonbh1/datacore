@@ -163,6 +163,9 @@ export default function App() {
   const [sources, setSources] = useState<SourceConnectorConfig[]>(INITIAL_SOURCES);
   const [destinations, setDestinations] = useState<DestinationConnectorConfig[]>(INITIAL_DESTINATIONS);
   const [integrations, setIntegrations] = useState<AutoIntegration[]>(INITIAL_INTEGRATIONS);
+  // Integração aberta no modo edição da tela Pipeline Automático (botão Editar em
+  // Pipelines & Fluxos). Null = assistente no modo cadastro.
+  const [editingIntegration, setEditingIntegration] = useState<AutoIntegration | null>(null);
 
   // Empresa's own Airbyte workspace (Fase 3 — isolates each tenant's connectors
   // from every other tenant's). Null until resolved, which still works: the
@@ -354,6 +357,46 @@ export default function App() {
     setIntegrations(prev => [integration, ...prev]);
   };
 
+  // A integração por trás de um pipeline: pelo id do banco (pipelines recarregados)
+  // ou pelo pipelineId (integração criada nesta sessão, ainda com id local).
+  const findIntegrationForPipeline = (pipeline: Pipeline): AutoIntegration | undefined =>
+    (pipeline.integrationId !== undefined ? integrations.find(i => i.id === String(pipeline.integrationId)) : undefined)
+    || integrations.find(i => i.pipelineId === pipeline.id);
+
+  // Sair da tela Pipeline Automático encerra a edição — ao voltar pelo menu, o
+  // assistente abre no modo cadastro.
+  useEffect(() => {
+    if (activeTab !== 'auto-pipeline') setEditingIntegration(null);
+  }, [activeTab]);
+
+  const handleEditPipeline = (pipeline: Pipeline) => {
+    const integration = findIntegrationForPipeline(pipeline);
+    if (!integration) return;
+    setEditingIntegration(integration);
+    setActiveTab('auto-pipeline');
+  };
+
+  // Depois de salvar a edição: atualiza a integração e reconstrói o pipeline dela
+  // (topologia derivada da lista de tabelas — ver buildPipelineFromIntegration),
+  // mantendo o mesmo id/dbId para não perder o vínculo com pipeline_runs.
+  const handleIntegrationEdited = (updated: AutoIntegration) => {
+    setIntegrations(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+    const oldPipeline = pipelines.find(p =>
+      (p.integrationId !== undefined && String(p.integrationId) === updated.id) || p.id === updated.pipelineId
+    );
+    const source = sources.find(s => s.id === updated.sourceConnectorId);
+    const destination = destinations.find(d => d.id === updated.destinationConnectorId);
+    if (!oldPipeline || !source || !destination) return;
+    const rebuilt = buildPipelineFromIntegration(oldPipeline.id, updated, source, destination, oldPipeline.dbId);
+    setPipelines(prev => prev.map(p => (p.id === oldPipeline.id ? { ...rebuilt, status: oldPipeline.status } : p)));
+    const idEmpresa = currentUser.idEmpresa;
+    if (idEmpresa && oldPipeline.dbId && updated.airbyteConnectionId) {
+      refreshPipelineMetrics(idEmpresa, oldPipeline.dbId, updated.airbyteConnectionId, rebuilt)
+        .then(withMetrics => setPipelines(prev => prev.map(p => (p.id === oldPipeline.id ? { ...withMetrics, status: oldPipeline.status } : p))))
+        .catch(err => console.error('Erro ao atualizar as métricas do pipeline editado:', err));
+    }
+  };
+
   // Monitoring handlers
   const handleToggleAlertRule = (ruleId: string) => {
     setAlertRules(prev => prev.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
@@ -520,6 +563,12 @@ export default function App() {
                 onCreateIntegration={handleCreateAutoIntegration}
                 onUpdatePipeline={handleUpdatePipeline}
                 canCreate={permissions.canCreatePipelines}
+                editIntegration={editingIntegration}
+                onIntegrationEdited={handleIntegrationEdited}
+                onExitEdit={(goTo) => {
+                  setEditingIntegration(null);
+                  if (goTo === 'pipelines') setActiveTab('pipelines');
+                }}
               />
             )}
 
@@ -530,7 +579,9 @@ export default function App() {
                 onToggleStatus={handleTogglePipelineStatus}
                 onTriggerRun={handleTriggerRun}
                 onDeletePipeline={handleDeletePipeline}
-                onNavigateToAutoPipeline={() => setActiveTab('auto-pipeline')}
+                onEditPipeline={permissions.canEditPipelines ? handleEditPipeline : undefined}
+                isEditablePipeline={(p) => Boolean(findIntegrationForPipeline(p)?.airbyteConnectionId)}
+                onNavigateToAutoPipeline={() => { setEditingIntegration(null); setActiveTab('auto-pipeline'); }}
                 canCreate={permissions.canCreatePipelines}
                 canEdit={permissions.canEditPipelines}
                 canTrigger={permissions.canTriggerExecutions}

@@ -83,6 +83,39 @@ function pickSyncMode(writeMode: WriteMode, loadType: LoadType, hasPrimaryKey: b
   return 'full_refresh_overwrite';
 }
 
+// Configuração de cada stream no formato do Airbyte (syncMode, cursor, PK e
+// colunas) a partir do que o assistente pede. Usado na criação da conexão e na
+// inclusão de tabelas numa conexão existente (PUT /:connectionId/streams).
+async function buildStreamConfigurations(
+  sourceId: string,
+  streamInputs: StreamSyncInput[],
+  writeMode: WriteMode,
+): Promise<Record<string, unknown>[]> {
+  const discovered = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}`);
+  const byName = new Map(discovered.map(s => [s.streamName, s]));
+
+  return streamInputs.map(input => {
+    const meta = byName.get(input.name);
+    const hasPrimaryKey = Boolean(meta?.sourceDefinedPrimaryKey?.length);
+    const syncMode = pickSyncMode(writeMode, input.loadType, hasPrimaryKey);
+
+    const stream: Record<string, unknown> = { name: input.name, syncMode };
+    if (syncMode === 'incremental_deduped_history' || syncMode === 'incremental_append') {
+      stream.cursorField = (input.cursorField || '').split('.');
+    }
+    if (syncMode === 'incremental_deduped_history') {
+      stream.primaryKey = meta?.sourceDefinedPrimaryKey;
+    }
+
+    const allColumns = meta?.propertyFields.map(p => p.join('.')) || [];
+    if (input.columns && allColumns.length > 0 && input.columns.length < allColumns.length) {
+      stream.selectedFields = input.columns.map(col => ({ fieldPath: col.split('.') }));
+    }
+
+    return stream;
+  });
+}
+
 connectionsRouter.post('/', async (req, res) => {
   try {
     const { name, sourceId, destinationId, streams: streamInputs, writeMode, schedule, datasetOverride } = req.body as {
@@ -109,29 +142,7 @@ connectionsRouter.post('/', async (req, res) => {
       }
     }
 
-    const discovered = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}`);
-    const byName = new Map(discovered.map(s => [s.streamName, s]));
-
-    const streams = streamInputs.map(input => {
-      const meta = byName.get(input.name);
-      const hasPrimaryKey = Boolean(meta?.sourceDefinedPrimaryKey?.length);
-      const syncMode = pickSyncMode(writeMode || 'overwrite', input.loadType, hasPrimaryKey);
-
-      const stream: Record<string, unknown> = { name: input.name, syncMode };
-      if (syncMode === 'incremental_deduped_history' || syncMode === 'incremental_append') {
-        stream.cursorField = (input.cursorField || '').split('.');
-      }
-      if (syncMode === 'incremental_deduped_history') {
-        stream.primaryKey = meta?.sourceDefinedPrimaryKey;
-      }
-
-      const allColumns = meta?.propertyFields.map(p => p.join('.')) || [];
-      if (input.columns && allColumns.length > 0 && input.columns.length < allColumns.length) {
-        stream.selectedFields = input.columns.map(col => ({ fieldPath: col.split('.') }));
-      }
-
-      return stream;
-    });
+    const streams = await buildStreamConfigurations(sourceId, streamInputs, writeMode || 'overwrite');
 
     // "raw_" on every destination table name (not just the raw_ dataset itself) —
     // so a table is identifiable as raw layer even outside its dataset's context.
@@ -209,6 +220,54 @@ connectionsRouter.get('/:connectionId/jobs', async (req, res) => {
     const data = await airbyteFetch<{ data: AirbyteJob[] }>(
       `/jobs?connectionId=${connectionId}&jobType=sync&limit=${limit}&orderBy=${encodeURIComponent('createdAt|DESC')}`
     );
+    res.json(data);
+  } catch (err) {
+    handleAirbyteError(res, err);
+  }
+});
+
+// Edição de uma integração (tela Pipeline Automático, modo edição): inclui e/ou
+// remove tabelas (streams) de uma conexão existente. As streams que ficam são
+// devolvidas ao Airbyte exatamente como estão (mesmo syncMode/cursor/PK/colunas);
+// só as novas são montadas por buildStreamConfigurations. O PATCH do Airbyte
+// substitui a lista inteira de streams, por isso a lista completa é enviada.
+connectionsRouter.put('/:connectionId/streams', async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { add = [], remove = [], writeMode } = (req.body || {}) as {
+      add?: StreamSyncInput[];
+      remove?: string[];
+      writeMode?: WriteMode;
+    };
+
+    for (const s of add) {
+      if (s.loadType === 'incremental' && !s.cursorField) {
+        res.status(400).json({ error: `Campo de cursor é obrigatório para a tabela "${s.name}" em carga incremental.` });
+        return;
+      }
+    }
+
+    const current = await airbyteFetch<{
+      sourceId: string;
+      configurations?: { streams?: Array<Record<string, unknown> & { name: string }> };
+    }>(`/connections/${connectionId}`);
+
+    const removeSet = new Set(remove);
+    const kept = (current.configurations?.streams || []).filter(s => !removeSet.has(s.name));
+    const keptNames = new Set(kept.map(s => s.name));
+    const toAdd = add.filter(s => !keptNames.has(s.name));
+
+    if (kept.length + toAdd.length === 0) {
+      res.status(400).json({ error: 'A integração precisa manter pelo menos uma tabela.' });
+      return;
+    }
+
+    const added = toAdd.length ? await buildStreamConfigurations(current.sourceId, toAdd, writeMode || 'overwrite') : [];
+
+    const data = await airbyteFetch(`/connections/${connectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ configurations: { streams: [...kept, ...added] } }),
+    });
     res.json(data);
   } catch (err) {
     handleAirbyteError(res, err);

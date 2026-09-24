@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Search, Filter, Play, Pause, ShieldCheck,
   Layers, Clock, DollarSign, Database, CheckCircle, AlertTriangle,
-  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2
+  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2, Pencil
 } from 'lucide-react';
 import { Pipeline, CloudProvider } from '../../types';
 
@@ -15,6 +15,10 @@ interface PipelinesOverviewProps {
   onToggleStatus: (pipelineId: string) => void;
   onTriggerRun: (pipelineId: string) => void;
   onDeletePipeline?: (pipeline: Pipeline) => void;
+  /** Abre a integração do pipeline no modo edição da tela Pipeline Automático. */
+  onEditPipeline?: (pipeline: Pipeline) => void;
+  /** Só integrações com conexão real no Airbyte podem ter as tabelas alteradas. */
+  isEditablePipeline?: (pipeline: Pipeline) => boolean;
   onNavigateToAutoPipeline?: () => void;
   canCreate: boolean;
   canEdit: boolean;
@@ -27,6 +31,8 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   onToggleStatus,
   onTriggerRun,
   onDeletePipeline,
+  onEditPipeline,
+  isEditablePipeline,
   onNavigateToAutoPipeline,
   canCreate,
   canEdit,
@@ -286,6 +292,17 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
                     }`}
                   >
                     {isActive ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4" />}
+                  </button>
+                )}
+
+                {canEdit && onEditPipeline && isEditablePipeline?.(pipeline) && (
+                  <button
+                    id={`btn-edit-pipeline-${pipeline.id}`}
+                    onClick={() => onEditPipeline(pipeline)}
+                    title="Editar integração (incluir ou remover tabelas)"
+                    className="p-2 bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-lg transition cursor-pointer border border-slate-200 hover:border-indigo-200 shadow-sm"
+                  >
+                    <Pencil className="w-4 h-4" />
                   </button>
                 )}
 

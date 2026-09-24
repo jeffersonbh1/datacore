@@ -612,6 +612,28 @@ export async function updateIntegracaoStatus(id: number, status: AutoIntegration
 }
 
 /**
+ * Edição de integração: grava a nova lista de tabelas e a configuração de carga
+ * de cada uma. Integrações criadas nesta sessão ainda têm id local ("int-auto-…")
+ * — nesse caso a linha é encontrada pela conexão do Airbyte.
+ */
+export async function updateIntegracaoTabelas(
+  integration: Pick<AutoIntegration, 'id' | 'airbyteConnectionId'>,
+  selectedTables: string[],
+  tableSyncConfigs: Record<string, TableSyncConfig>
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const patch = { tabelas_selecionadas: selectedTables, table_sync_configs: tableSyncConfigs };
+  const query = supabase.from('integracoes').update(patch);
+  const { data, error } = /^\d+$/.test(integration.id)
+    ? await query.eq('id', Number(integration.id)).select('id')
+    : integration.airbyteConnectionId
+      ? await query.eq('airbyte_connection_id', integration.airbyteConnectionId).select('id')
+      : { data: [], error: null };
+  if (error) throw new Error(`Erro ao atualizar as tabelas da integração: ${error.message}`);
+  if (!data || data.length === 0) throw new Error('Integração não encontrada no banco de dados.');
+}
+
+/**
  * Exclui uma integração do banco. As linhas de "pipelines" e "pipeline_runs"
  * ligadas a ela caem por ON DELETE CASCADE (ver sql/002 e sql/003). Não mexe no
  * Airbyte (a conexão continua lá) nem nos modelos dbt gerados.
