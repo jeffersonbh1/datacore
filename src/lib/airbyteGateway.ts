@@ -135,8 +135,9 @@ interface RawAirbyteStream {
   propertyFields: string[][];
 }
 
-export async function fetchStreams(sourceId: string): Promise<AirbyteStreamSummary[]> {
-  const data = await gatewayFetch<{ data: RawAirbyteStream[] }>(`/api/airbyte/streams?sourceId=${sourceId}`);
+/** `refresh`: consulta a origem de novo (tabelas criadas depois da última descoberta) — mais lento. */
+export async function fetchStreams(sourceId: string, refresh = false): Promise<AirbyteStreamSummary[]> {
+  const data = await gatewayFetch<{ data: RawAirbyteStream[] }>(`/api/airbyte/streams?sourceId=${sourceId}${refresh ? '&refresh=true' : ''}`);
   return data.data.map(s => ({
     streamName: s.streamName,
     primaryKey: s.sourceDefinedPrimaryKey || [],

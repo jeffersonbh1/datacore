@@ -322,7 +322,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
     setIsLoadingStreams(true);
     setStreamsError(null);
 
-    fetchStreams(selectedSourceId)
+    // Modo edição: força nova descoberta na origem para listar tabelas criadas
+    // depois da integração (o catálogo guardado do Airbyte não as tem).
+    fetchStreams(selectedSourceId, Boolean(editIntegrationRef.current))
       .then(streams => {
         if (cancelled) return;
         setRealStreams(streams);
@@ -2440,7 +2442,11 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                 {isLoadingStreams && (
                   <div className="text-xs text-slate-500 flex items-center gap-2 p-3">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Descobrindo tabelas reais da origem via Airbyte...</span>
+                    <span>
+                      {isEditMode
+                        ? 'Consultando a origem para listar as tabelas atuais (inclusive as criadas recentemente) — pode levar até 1 minuto...'
+                        : 'Descobrindo tabelas reais da origem via Airbyte...'}
+                    </span>
                   </div>
                 )}
 

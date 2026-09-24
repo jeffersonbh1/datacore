@@ -90,8 +90,10 @@ async function buildStreamConfigurations(
   sourceId: string,
   streamInputs: StreamSyncInput[],
   writeMode: WriteMode,
+  /** Consulta a origem de novo em vez do catálogo guardado (tabelas recém-criadas). */
+  refresh = false,
 ): Promise<Record<string, unknown>[]> {
-  const discovered = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}`);
+  const discovered = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}${refresh ? '&ignoreCache=true' : ''}`);
   const byName = new Map(discovered.map(s => [s.streamName, s]));
 
   return streamInputs.map(input => {
@@ -262,7 +264,8 @@ connectionsRouter.put('/:connectionId/streams', async (req, res) => {
       return;
     }
 
-    const added = toAdd.length ? await buildStreamConfigurations(current.sourceId, toAdd, writeMode || 'overwrite') : [];
+    // refresh: a tabela incluída pode ter sido criada na origem depois da última descoberta.
+    const added = toAdd.length ? await buildStreamConfigurations(current.sourceId, toAdd, writeMode || 'overwrite', true) : [];
 
     const data = await airbyteFetch(`/connections/${connectionId}`, {
       method: 'PATCH',

@@ -20,7 +20,11 @@ streamsRouter.get('/', async (req, res) => {
       return;
     }
 
-    const data = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}`);
+    // refresh=true: força o Airbyte a consultar a origem de novo (ignoreCache) em
+    // vez de devolver o catálogo guardado da última descoberta — sem isso, uma
+    // tabela criada no banco depois da criação da integração não aparece.
+    const refresh = req.query.refresh === 'true';
+    const data = await airbyteFetch<AirbyteStream[]>(`/streams?sourceId=${sourceId}${refresh ? '&ignoreCache=true' : ''}`);
     res.json({ data });
   } catch (err) {
     handleAirbyteError(res, err);
