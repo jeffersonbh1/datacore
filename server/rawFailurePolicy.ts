@@ -28,6 +28,7 @@ export const SCHEMA_CHANGE_POLICY = {
 
 export type RawFailureCategory =
   | 'schema_incompativel'
+  | 'schema_desatualizado'
   | 'configuracao'
   | 'origem'
   | 'destino'
@@ -59,6 +60,8 @@ interface ConfigJobInfo {
 const ACTION: Record<RawFailureCategory, string> = {
   schema_incompativel:
     'Mudança de schema incompatível na origem (chave primária ou cursor alterado/removido). O Airbyte bloqueou a conexão: revise e aceite o novo schema na conexão do Airbyte, regenere os modelos dbt da integração e execute de novo com "Do zero".',
+  schema_desatualizado:
+    'O schema da origem mudou (coluna ou tabela removida/alterada) e o catálogo da conexão no Airbyte estava desatualizado, então a sincronização falhou. Isso não é erro de configuração. A próxima execução pelo Studio (com sincronização) atualiza o catálogo antes de sincronizar; se falhar de novo, use "Refresh source schema" na conexão do Airbyte. Veja os alertas de mudança de schema da integração em Pipelines & Fluxos — a tabela afetada pode estar com a atualização bloqueada.',
   configuracao:
     'Erro de configuração (credencial, permissão ou parâmetro da origem/destino). Corrija a configuração e execute de novo.',
   origem: 'A origem de dados falhou durante a leitura. Verifique se o sistema de origem está acessível e execute de novo.',
@@ -68,11 +71,23 @@ const ACTION: Record<RawFailureCategory, string> = {
   desconhecido: 'A sincronização falhou no Airbyte e o motivo não pôde ser lido. Consulte o log do job no Airbyte.',
 };
 
+// Mensagens do Airbyte para um sync com catálogo desatualizado (a origem mudou
+// depois da última atualização do catálogo da conexão). Vêm com failureType
+// 'config_error', mas a causa é mudança de schema, não configuração.
+const STALE_CATALOG_PATTERNS = [
+  /not found in stream/i,
+  /refresh the source schema/i,
+  /schema (has )?changed/i,
+  /column .* (does not exist|not found)/i,
+];
+
 function classify(f: AirbyteFailure | undefined): RawFailureCategory {
   if (!f) return 'desconhecido';
   const type = f.failureType || '';
   const origin = f.failureOrigin || '';
+  const text = `${f.externalMessage || ''} ${f.internalMessage || ''}`;
   if (type === 'refresh_schema') return 'schema_incompativel';
+  if (STALE_CATALOG_PATTERNS.some((re) => re.test(text))) return 'schema_desatualizado';
   if (type === 'config_error') return 'configuracao';
   if (type === 'transient_error' || type === 'heartbeat_timeout' || type === 'destination_timeout') return 'transitorio';
   if (origin === 'source') return 'origem';
@@ -84,7 +99,7 @@ function classify(f: AirbyteFailure | undefined): RawFailureCategory {
 function build(categoria: RawFailureCategory, detalhe: string | null): RawFailureDiagnosis {
   return {
     categoria,
-    severidade: categoria === 'transitorio' ? 'alta' : 'critica',
+    severidade: categoria === 'transitorio' || categoria === 'schema_desatualizado' ? 'alta' : 'critica',
     mensagem: ACTION[categoria],
     detalhe: detalhe ? detalhe.slice(0, 2000) : null,
   };

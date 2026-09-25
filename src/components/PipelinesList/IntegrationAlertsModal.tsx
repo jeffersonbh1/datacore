@@ -107,11 +107,14 @@ export const IntegrationAlertsModal: React.FC<Props> = ({ integracaoId, integrac
     setCheckMessage(null);
     try {
       const r = await checkSchemaChanges(airbyteConnectionId);
-      setCheckMessage(r.baseline
+      const base = r.baseline
         ? 'Primeira verificação: o schema atual da origem foi registrado como referência. A partir de agora, qualquer mudança vira alerta.'
         : r.alerts.length
           ? `${r.alerts.length} mudança(s) de schema encontrada(s) — veja os alertas abaixo.`
-          : 'Nenhuma mudança de schema desde a última verificação.');
+          : 'Nenhuma mudança de schema desde a última verificação.';
+      setCheckMessage(r.catalogoAtualizado
+        ? `${base} O catálogo da conexão no Airbyte foi atualizado com o schema atual.`
+        : `${base} Atenção: o catálogo da conexão no Airbyte NÃO foi atualizado (${r.catalogoErro}) — se a origem mudou, o próximo sync pode falhar.`);
       await load();
       onChanged();
     } catch (err) {

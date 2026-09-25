@@ -202,14 +202,26 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         return { ok: true, jobId: null };
       }
       hooks.setState(pi.syncNodeIds, 'running');
+      // Verificação de schema ANTES do sync: gera os alertas (e bloqueios) de
+      // mudança de schema e atualiza o catálogo da conexão no Airbyte — sem isso,
+      // uma coluna removida na origem derruba o sync ("Field 'x' not found"), já
+      // que o Airbyte só atualiza o catálogo sozinho 1x a cada 24 h. Falhar aqui
+      // não impede o sync (as proteções do próprio Airbyte continuam valendo).
+      hooks.log(`${name}: verificando o schema da origem antes de sincronizar…`);
+      try {
+        const check = await checkSchemaChanges(connectionId);
+        if (check.alerts.length) {
+          const blocking = check.alerts.filter((a) => a.bloqueante).length;
+          hooks.log(`${name}: ${check.alerts.length} mudança(s) de schema na origem${blocking ? ` (${blocking} bloqueia(m) a atualização da tabela)` : ''} — veja os alertas da integração em Pipelines & Fluxos.`, 'warn');
+        }
+        if (!check.catalogoAtualizado) {
+          hooks.log(`${name}: não foi possível atualizar o catálogo da conexão no Airbyte (${check.catalogoErro}) — se a origem mudou, o sync pode falhar.`, 'warn');
+        }
+      } catch (err) {
+        hooks.log(`${name}: a verificação de schema falhou (${err instanceof Error ? err.message : 'erro desconhecido'}) — seguindo com a sincronização.`, 'warn');
+      }
+      if (hooks.isCancelled()) { cancelled = true; hooks.setState(pi.syncNodeIds, 'skipped'); return { ok: false, jobId: null }; }
       hooks.log(`${name}: disparando a sincronização no Airbyte…`);
-      // Verificação de mudança de schema na origem, em paralelo com o sync (não o
-      // atrasa): cada mudança vira alerta da integração em Pipelines & Fluxos.
-      const schemaCheck = checkSchemaChanges(connectionId)
-        .then((r) => {
-          if (r.alerts.length) hooks.log(`${name}: ${r.alerts.length} mudança(s) de schema na origem — veja os alertas da integração em Pipelines & Fluxos.`, 'warn');
-        })
-        .catch((err) => console.error(`Verificação de schema de "${name}" falhou:`, err));
       try {
         const triggered = await triggerAirbyteSync(connectionId);
         jobByIntegration.set(pi.integration.id, { jobId: triggered.jobId, dbId: pi.pipeline?.dbId ?? null });
@@ -220,7 +232,6 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           }]));
         }
         const { state, job } = await waitForSync(connectionId, triggered.jobId, hooks);
-        await schemaCheck;
         if (job && canPersist(pi)) await safe('o resultado da sincronização', () => upsertPipelineRuns(opts.idEmpresa!, pi.pipeline!.dbId!, [job]));
         if (state === 'success') {
           hooks.setState(pi.syncNodeIds, 'success');

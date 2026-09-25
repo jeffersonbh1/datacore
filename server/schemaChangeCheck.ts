@@ -4,6 +4,10 @@ import { getSupabaseAdmin } from './supabaseAdmin';
 // -----------------------------------------------------------------------------
 // Detecção de mudança de schema na origem de uma integração (sql/016).
 //
+// Também atualiza o catálogo da conexão no Airbyte com o schema atual (ver
+// applyToConnections): o Airbyte só faz isso sozinho no máximo 1x a cada 24 h,
+// e um sync com catálogo desatualizado falha (ex.: coluna removida na origem).
+//
 // A cada verificação o Airbyte consulta a origem de novo (discover_schema sem
 // cache) e o resultado é comparado com a última "foto" guardada em
 // integracoes.schema_snapshot. Cada diferença vira um alerta em
@@ -57,6 +61,10 @@ export interface SchemaCheckResult {
   baseline: boolean;
   alerts: SchemaAlert[];
   verificadoEm: string;
+  /** O catálogo da conexão no Airbyte foi atualizado com o schema atual (apply_schema_changes). */
+  catalogoAtualizado: boolean;
+  /** Motivo, quando o catálogo da conexão não pôde ser atualizado. */
+  catalogoErro: string | null;
 }
 
 function typeOf(p: JsonSchemaProp | undefined): string {
@@ -67,13 +75,54 @@ function typeOf(p: JsonSchemaProp | undefined): string {
   return extra ? `${base}(${extra})` : base;
 }
 
-async function discoverSnapshot(sourceId: string): Promise<SchemaSnapshot> {
-  const res = await airbyteConfigFetch<{ catalog?: { streams?: DiscoveredStream[] }; jobInfo?: { succeeded?: boolean } }>(
-    '/sources/discover_schema',
-    { sourceId, disable_cache: true },
-  );
-  const streams = res.catalog?.streams;
-  if (!streams) throw new Error('O Airbyte não devolveu o catálogo da origem (descoberta falhou).');
+interface DiscoverResult {
+  catalog?: { streams?: DiscoveredStream[] };
+  catalogId?: string;
+}
+
+/**
+ * Consulta a origem sem cache. Com `connectionId`, o Airbyte também calcula a
+ * diferença para o catálogo DAQUELA conexão (e desativa a conexão numa mudança
+ * incompatível) — o mesmo passo que ele faz sozinho antes de um sync, mas no
+ * máximo 1x a cada 24 h.
+ */
+async function discover(sourceId: string, connectionId: string): Promise<DiscoverResult> {
+  const res = await airbyteConfigFetch<DiscoverResult>('/sources/discover_schema', {
+    sourceId,
+    connectionId,
+    disable_cache: true,
+    notifySchemaChange: false,
+  });
+  if (!res.catalog?.streams) throw new Error('O Airbyte não devolveu o catálogo da origem (descoberta falhou).');
+  return res;
+}
+
+/**
+ * Aplica o schema recém-descoberto às conexões da origem, conforme a política de
+ * cada uma (nonBreakingSchemaUpdatesBehavior = propagate_columns — ver
+ * server/rawFailurePolicy.ts). Sem isto, uma coluna removida na origem continua
+ * no catálogo da conexão até a próxima verificação do Airbyte (até 24 h) e o
+ * sync falha com "Field 'x' not found in stream 'y'". Nunca lança.
+ */
+async function applyToConnections(sourceId: string, res: DiscoverResult): Promise<string | null> {
+  try {
+    if (!res.catalogId) return 'o Airbyte não devolveu o id do catálogo descoberto';
+    const source = await airbyteConfigFetch<{ workspaceId?: string }>('/sources/get', { sourceId });
+    if (!source.workspaceId) return 'origem sem workspace no Airbyte';
+    await airbyteConfigFetch('/sources/apply_schema_changes', {
+      sourceId,
+      catalogId: res.catalogId,
+      catalog: res.catalog,
+      workspaceId: source.workspaceId,
+    });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+function toSnapshot(res: DiscoverResult): SchemaSnapshot {
+  const streams = res.catalog?.streams || [];
   const snap: SchemaSnapshot = {};
   for (const s of streams) {
     const name = s.stream?.name;
@@ -186,8 +235,13 @@ export async function checkSchemaChanges(connectionId: string): Promise<SchemaCh
   const sourceId = (origem as { airbyte_source_id?: string } | null)?.airbyte_source_id;
   if (!sourceId) throw new Error('Integração sem origem no Airbyte.');
 
-  const after = await discoverSnapshot(sourceId);
+  const discovered = await discover(sourceId, connectionId);
+  const after = toSnapshot(discovered);
   const before = data.schema_snapshot as SchemaSnapshot | null;
+  // Mantém o catálogo da conexão em dia ANTES do sync (o Studio chama esta
+  // verificação antes de disparar a sincronização).
+  const catalogoErro = await applyToConnections(sourceId, discovered);
+  if (catalogoErro) console.warn(`[schema-check] catálogo da conexão ${connectionId} não atualizado: ${catalogoErro}`);
   const verificadoEm = new Date().toISOString();
   const alerts = before ? diffSnapshots(before, after, new Set((data.tabelas_selecionadas as string[]) || [])) : [];
 
@@ -216,7 +270,7 @@ export async function checkSchemaChanges(connectionId: string): Promise<SchemaCh
     .eq('id', data.id);
   if (updateError) throw new Error(`Falha ao gravar a foto do schema: ${updateError.message}`);
 
-  return { baseline: !before, alerts, verificadoEm };
+  return { baseline: !before, alerts, verificadoEm, catalogoAtualizado: !catalogoErro, catalogoErro };
 }
 
 /**

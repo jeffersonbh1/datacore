@@ -251,7 +251,7 @@ export async function fetchConnectionJobs(connectionId: string, limit = 30): Pro
 
 /** Espelho de RawFailureDiagnosis (server/rawFailurePolicy.ts). */
 export interface RawFailureDiagnosis {
-  categoria: 'schema_incompativel' | 'configuracao' | 'origem' | 'destino' | 'transitorio' | 'plataforma' | 'desconhecido';
+  categoria: 'schema_incompativel' | 'schema_desatualizado' | 'configuracao' | 'origem' | 'destino' | 'transitorio' | 'plataforma' | 'desconhecido';
   severidade: 'critica' | 'alta';
   mensagem: string;
   detalhe: string | null;
@@ -265,8 +265,11 @@ export async function fetchSyncFailureDiagnosis(connectionId: string, jobId: num
 export interface SchemaCheckResult {
   /** true na primeira verificação: só gravou a "foto" do schema, sem alertas. */
   baseline: boolean;
-  alerts: Array<{ categoria: string; severidade: string; mensagem: string; detalhe: string | null }>;
+  alerts: Array<{ categoria: string; severidade: string; mensagem: string; detalhe: string | null; tabela: string; bloqueante: boolean }>;
   verificadoEm: string;
+  /** O catálogo da conexão no Airbyte foi atualizado com o schema atual. */
+  catalogoAtualizado: boolean;
+  catalogoErro: string | null;
 }
 
 /** Compara o schema atual da origem com a última foto e grava um alerta por mudança (~15-40 s). */

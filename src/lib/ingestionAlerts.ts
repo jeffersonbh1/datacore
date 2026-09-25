@@ -44,6 +44,7 @@ export const TIPO_LABEL: Record<AlertTipo, string> = {
 const CATEGORY_LABEL: Record<string, string> = {
   // falha_sync (RawFailureDiagnosis)
   schema_incompativel: 'Schema incompatível',
+  schema_desatualizado: 'Schema desatualizado no Airbyte',
   configuracao: 'Configuração',
   origem: 'Origem',
   destino: 'Destino',
