@@ -312,18 +312,16 @@ function incrementalSourceFilterBlock(rawPk: string[], cursor: string | null): s
     QUALIFY ROW_NUMBER() OVER (PARTITION BY ${rawPk.join(', ')} ORDER BY ${order}) = 1`;
 }
 
-/** WHERE da origem na carga full: só a última carga da Raw. A Raw full é
- *  full_refresh_append (empilha todas as cargas = histórico); a Bronze é
- *  recriada (table) só com a carga de maior sync_id. O sync_id (de
- *  _airbyte_meta) identifica a carga inteira — o _airbyte_extracted_at varia
- *  registro a registro dentro de um mesmo sync, então não serve de filtro. */
+/** WHERE da origem na carga full: só a última carga BEM-SUCEDIDA da Raw. A Raw
+ *  full é full_refresh_append (empilha todas as cargas = histórico); a Bronze é
+ *  recriada (table) só com ela. A macro filtro_ultima_carga_ok filtra pelo
+ *  sync_id do último job ok e pelo início da tentativa que deu certo, que o
+ *  gateway passa como var (server/rawLastLoad.ts) — cargas parciais de syncs
+ *  que falharam ficam de fora. */
 function lastLoadFilterBlock(source: string): string {
   return `
-    -- Carga full: a Raw guarda o histórico de todas as cargas; aqui entra só a última.
-    WHERE CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64) = (
-        SELECT MAX(CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64))
-        FROM ${source}
-    )`;
+    -- Carga full: a Raw guarda o histórico de todas as cargas; aqui entra só a última bem-sucedida.
+    ${source.replace(/^\{\{ (.*) \}\}$/, '{{ filtro_ultima_carga_ok($1) }}')}`;
 }
 
 // --- modelo Bronze ---------------------------------------------------------

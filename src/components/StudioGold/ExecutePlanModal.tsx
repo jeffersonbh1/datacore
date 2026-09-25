@@ -26,7 +26,7 @@ interface ExecutePlanModalProps {
   /** Caixa "Executar fluxo até aqui": marcada = 'fluxo' (tudo que alimenta a tabela, até a camada dela);
    *  desmarcada = 'tabela' (só ela). Omitido = sem a caixa. */
   onScopeChange?: (scope: ExecPlan['scope']) => void;
-  /** Tabelas do plano bloqueadas por mudança de schema (alerta bloqueante aberto) — impedem a execução. */
+  /** Tabelas do plano bloqueadas por alerta bloqueante aberto (mudança de schema ou falha da Raw) — impedem a execução. */
   blocked?: Array<{ name: string; reason: string }>;
   /** Consulta dos bloqueios: enquanto 'loading' ou em 'error', não dá para executar. */
   blocksStatus?: 'loading' | 'ok' | 'error';
@@ -110,17 +110,17 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
 
             {blocked.length > 0 && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900 space-y-1">
-                <p className="font-semibold flex items-center gap-1.5"><Lock className="w-4 h-4" /> Execução bloqueada — {blocked.length} tabela(s) deste fluxo têm mudança de schema pendente</p>
+                <p className="font-semibold flex items-center gap-1.5"><Lock className="w-4 h-4" /> Execução bloqueada — {blocked.length} tabela(s) deste fluxo têm alerta bloqueante em aberto</p>
                 {blocked.map((b) => <p key={b.name}><span className="font-mono break-all">{b.name}</span>: {b.reason}.</p>)}
                 <p>Nada pode ser executado enquanto houver bloqueio — Raw, Bronze, Silver e Gold não são atualizados. Resolva os alertas da integração em Pipelines &amp; Fluxos (“Resolvido — liberar”) para executar.</p>
               </div>
             )}
             {blocksStatus === 'loading' && (
-              <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando bloqueios por mudança de schema…</p>
+              <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando bloqueios (alertas em aberto)…</p>
             )}
             {blocksStatus === 'error' && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900 flex items-start gap-1.5">
-                <Lock className="w-4 h-4 shrink-0" /> <span>Não foi possível verificar os bloqueios por mudança de schema — a execução fica bloqueada por segurança. Feche e tente de novo.</span>
+                <Lock className="w-4 h-4 shrink-0" /> <span>Não foi possível verificar os bloqueios (alertas em aberto) — a execução fica bloqueada por segurança. Feche e tente de novo.</span>
               </div>
             )}
 
@@ -155,7 +155,7 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
 
             <div className="flex justify-end gap-2">
               <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancelar</button>
-              <button type="button" disabled={nothingToRun || Boolean(blockedReason) || executionBlocked} title={blocked.length > 0 ? 'Execução bloqueada por mudança de schema — resolva os alertas da integração' : undefined} onClick={onStart} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold cursor-pointer transition">
+              <button type="button" disabled={nothingToRun || Boolean(blockedReason) || executionBlocked} title={blocked.length > 0 ? 'Execução bloqueada por alerta em aberto — resolva os alertas da integração' : undefined} onClick={onStart} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold cursor-pointer transition">
                 <Play className="w-3.5 h-3.5" /> Executar
               </button>
             </div>

@@ -182,6 +182,10 @@ export async function recordRawFailure(
       severidade: diagnosis.severidade,
       mensagem: diagnosis.mensagem,
       detalhe: diagnosis.detalhe,
+      // Bloqueia as tabelas full da integração até alguém marcar como resolvido
+      // (ver fetchBlockedTables em schemaChangeCheck.ts): a Raw pode ter ficado
+      // com uma carga parcial.
+      bloqueante: true,
     },
     { onConflict: 'integracao_id,airbyte_job_id', ignoreDuplicates: true },
   );

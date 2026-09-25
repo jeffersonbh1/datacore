@@ -91,7 +91,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   // O alvo da execução pode não ser a tabela em foco (o botão "Executar esta tabela" vale para qualquer nó do painel).
   const planTarget = plan && index ? index.byId.get(plan.focusId) ?? null : null;
 
-  // Tabelas do plano bloqueadas por mudança de schema: com alguma, o botão Executar
+  // Tabelas do plano bloqueadas (mudança de schema ou falha da Raw): com alguma, o botão Executar
   // fica desabilitado. runPlan confere de novo na hora (e após a verificação de schema).
   const [planBlocked, setPlanBlocked] = useState<Array<{ name: string; reason: string }>>([]);
   const [blocksStatus, setBlocksStatus] = useState<'loading' | 'ok' | 'error'>('loading');

@@ -363,6 +363,8 @@ export async function buildBronzeLayer(payload: {
   /** `--full-refresh`: reconstrói modelos incrementais do zero. Necessário na 1ª
    *  construção quando `bronze_<sistema>_<t>` já existe com schema incompatível. */
   fullRefresh?: boolean;
+  /** Conexão do Airbyte: a Bronze full lê a última carga BEM-SUCEDIDA dela (server/rawLastLoad.ts). */
+  connectionId?: string;
 }): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/bronze/build', {
     method: 'POST',

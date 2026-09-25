@@ -276,17 +276,38 @@ export async function checkSchemaChanges(connectionId: string): Promise<SchemaCh
 /**
  * Tabelas bloqueadas de uma integração: as que têm alerta bloqueante em aberto
  * (sql/017). Mapa tabela → motivo (mensagem do alerta mais recente).
+ * Alerta de falha da Raw (sem tabela) bloqueia todas as tabelas FULL da
+ * integração — a Raw full empilha e pode ter ficado com uma carga parcial;
+ * a incremental segue (o merge da Bronze trata linhas parciais/repetidas).
+ * Mesma regra de src/lib/ingestionAlerts.ts (fetchBlockedTables).
  */
 export async function fetchBlockedTables(integracaoId: number): Promise<Map<string, string>> {
-  const { data, error } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
     .from('alertas_ingestao')
-    .select('tabela, mensagem')
+    .select('tabela, mensagem, airbyte_job_id')
     .eq('integracao_id', integracaoId)
     .eq('bloqueante', true)
     .is('resolvido_em', null)
     .order('criado_em', { ascending: false });
   if (error) throw new Error(`Falha ao consultar os bloqueios da integração: ${error.message}`);
   const out = new Map<string, string>();
-  for (const r of data || []) if (r.tabela && !out.has(r.tabela)) out.set(r.tabela, r.mensagem);
+  let rawFailure: string | null = null;
+  for (const r of data || []) {
+    if (r.tabela) { if (!out.has(r.tabela)) out.set(r.tabela, r.mensagem); }
+    else if (!rawFailure) rawFailure = `Falha na sincronização da Raw${r.airbyte_job_id ? ` (job ${r.airbyte_job_id})` : ''}: a Raw pode ter uma carga parcial. ${r.mensagem}`;
+  }
+  if (rawFailure) {
+    const { data: integ, error: integError } = await supabase
+      .from('integracoes')
+      .select('tabelas_selecionadas, table_sync_configs')
+      .eq('id', integracaoId)
+      .maybeSingle();
+    if (integError) throw new Error(`Falha ao consultar as tabelas da integração: ${integError.message}`);
+    const cfgs = (integ?.table_sync_configs || {}) as Record<string, { loadType?: string }>;
+    for (const t of (integ?.tabelas_selecionadas || []) as string[]) {
+      if (cfgs[t]?.loadType !== 'incremental' && !out.has(t)) out.set(t, rawFailure);
+    }
+  }
   return out;
 }

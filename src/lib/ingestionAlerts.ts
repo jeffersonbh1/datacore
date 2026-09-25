@@ -113,17 +113,33 @@ function mapRow(r: Record<string, unknown>): IngestionAlert {
 /** integracaoId → (tabela → motivo): tabelas com alerta bloqueante em aberto. */
 export type BlockedTables = Map<number, Map<string, string>>;
 
+/** Motivo do bloqueio de uma tabela full por falha da Raw (alerta de falha_sync bloqueante). */
+export function rawFailureBlockReason(jobId: number | null, mensagem: string): string {
+  return `Falha na sincronização da Raw${jobId ? ` (job ${jobId})` : ''}: a Raw pode ter uma carga parcial. ${mensagem}`.trim();
+}
+
+/** Tabelas de carga full de uma integração (as que uma falha da Raw bloqueia). */
+function fullTablesOf(row: { tabelas_selecionadas?: string[] | null; table_sync_configs?: Record<string, { loadType?: string }> | null }): string[] {
+  const cfgs = row.table_sync_configs || {};
+  return (row.tabelas_selecionadas || []).filter((t) => cfgs[t]?.loadType !== 'incremental');
+}
+
 /**
- * Tabelas bloqueadas por mudança de schema (alerta bloqueante em aberto) em todas
- * as integrações da empresa (RLS). Antes da migração 017 (sem a coluna
- * `bloqueante`) não existe bloqueio: devolve vazio.
+ * Tabelas bloqueadas por alerta bloqueante em aberto em todas as integrações da
+ * empresa (RLS):
+ *  - mudança de schema: o alerta traz a tabela;
+ *  - falha da Raw (sem tabela): bloqueia TODAS as tabelas full da integração —
+ *    a Raw full empilha as cargas e pode ter ficado com uma carga parcial.
+ *    A incremental não é bloqueada (as linhas parciais são versões válidas e o
+ *    merge da Bronze trata as repetidas).
+ * Antes da migração 017 (sem a coluna `bloqueante`) não existe bloqueio: devolve vazio.
  */
 export async function fetchBlockedTables(): Promise<BlockedTables> {
   const out: BlockedTables = new Map();
   if (!supabase) return out;
   const { data, error } = await supabase
     .from('alertas_ingestao')
-    .select('integracao_id, tabela, mensagem, criado_em')
+    .select('integracao_id, tabela, mensagem, airbyte_job_id, criado_em')
     .eq('bloqueante', true)
     .is('resolvido_em', null)
     .order('criado_em', { ascending: false });
@@ -131,12 +147,28 @@ export async function fetchBlockedTables(): Promise<BlockedTables> {
     if (/bloqueante|tabela/.test(error.message) && /does not exist|could not find|schema cache/i.test(error.message)) return out;
     throw error;
   }
-  for (const r of data || []) {
-    if (r.integracao_id == null || !r.tabela) continue;
-    const id = Number(r.integracao_id);
+  const add = (id: number, tabela: string, motivo: string) => {
     const byTable = out.get(id) ?? new Map<string, string>();
-    if (!byTable.has(r.tabela)) byTable.set(r.tabela, String(r.mensagem));
+    if (!byTable.has(tabela)) byTable.set(tabela, motivo);
     out.set(id, byTable);
+  };
+  const rawFailures = new Map<number, string>();
+  for (const r of data || []) {
+    if (r.integracao_id == null) continue;
+    const id = Number(r.integracao_id);
+    if (r.tabela) add(id, r.tabela, String(r.mensagem));
+    else if (!rawFailures.has(id)) rawFailures.set(id, rawFailureBlockReason(r.airbyte_job_id ?? null, String(r.mensagem)));
+  }
+  if (rawFailures.size > 0) {
+    const { data: integs, error: integError } = await supabase
+      .from('integracoes')
+      .select('id, tabelas_selecionadas, table_sync_configs')
+      .in('id', [...rawFailures.keys()]);
+    if (integError) throw integError;
+    for (const row of integs || []) {
+      const id = Number(row.id);
+      for (const t of fullTablesOf(row)) add(id, t, rawFailures.get(id)!);
+    }
   }
   return out;
 }
@@ -262,6 +294,9 @@ export async function recordRawFailure(args: {
       severidade: diagnosis.severidade,
       mensagem: diagnosis.mensagem,
       detalhe: diagnosis.detalhe,
+      // Bloqueia as tabelas full da integração até alguém marcar como resolvido
+      // (ver fetchBlockedTables): a Raw pode ter ficado com uma carga parcial.
+      bloqueante: true,
     },
     { onConflict: 'integracao_id,airbyte_job_id', ignoreDuplicates: true },
   );

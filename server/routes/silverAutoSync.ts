@@ -109,7 +109,7 @@ silverAutoSyncRouter.post('/', async (_req, res) => {
         results.push({
           integracaoId: integ.id,
           action: 'skipped',
-          detail: blocked.size ? `todas as tabelas bloqueadas por mudança de schema: ${[...blocked.keys()].join(', ')}` : 'integração sem tabelas selecionadas',
+          detail: blocked.size ? `todas as tabelas bloqueadas por alerta em aberto (mudança de schema ou falha da Raw): ${[...blocked.keys()].join(', ')}` : 'integração sem tabelas selecionadas',
         });
         continue;
       }

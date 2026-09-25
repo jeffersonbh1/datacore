@@ -200,7 +200,7 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         results.push({
           integracaoId: integ.id,
           action: 'skipped',
-          detail: blocked.size ? `todas as tabelas bloqueadas por mudança de schema: ${[...blocked.keys()].join(', ')}` : 'integração sem tabelas selecionadas',
+          detail: blocked.size ? `todas as tabelas bloqueadas por alerta em aberto (mudança de schema ou falha da Raw): ${[...blocked.keys()].join(', ')}` : 'integração sem tabelas selecionadas',
         });
         continue;
       }
@@ -215,6 +215,7 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         tables,
         sistema,
         location: cfg.warehouseOrCluster || undefined,
+        connectionId: integ.airbyte_connection_id,
       });
       // Normaliza para o formato TableBuildResult (src/lib/pipelineBuilder.ts) que a
       // tela Execuções espera em bronze_tables — TableResult (server/routes/bronze.ts)

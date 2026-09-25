@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { bronzeModelName } from '../dbtCodegen';
 import { DbtUnavailableError, runDbt, type RunDbtResult } from '../dbtRunner';
+import { lastSuccessfulLoad } from '../rawLastLoad';
 
 export const bronzeRouter = Router();
 
@@ -17,6 +18,10 @@ export interface BuildBronzeInput {
    *  Necessário na 1ª construção quando `bronze_<sistema>_<t>` já existe com
    *  schema incompatível (ex.: criada pelo antigo CTAS 1:1). */
   fullRefresh?: boolean;
+  /** Conexão do Airbyte da integração: dela sai a última carga bem-sucedida,
+   *  que a Bronze full lê (var raw_carga_ok). Sem ela, as tabelas full não são
+   *  reconstruídas (ficam com o último dado bom). */
+  connectionId?: string;
 }
 
 export interface TableResult {
@@ -58,6 +63,23 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
 
   const select = tables.map((t) => bronzeModelName(sistema, t)).join(' ');
 
+  // Bronze full: lê só a última carga BEM-SUCEDIDA da Raw (server/rawLastLoad.ts).
+  // Sem ela (sem conexão, Airbyte fora do ar, nenhum sync ok), a macro
+  // filtro_ultima_carga_ok recusa reconstruir as tabelas full e diz o motivo;
+  // as incrementais seguem normalmente.
+  const vars: Record<string, unknown> = {};
+  if (!input.connectionId) {
+    vars.raw_carga_ok_motivo = 'a integração não tem conexão no Airbyte';
+  } else {
+    try {
+      const carga = await lastSuccessfulLoad(input.connectionId);
+      if (carga) vars.raw_carga_ok = carga;
+      else vars.raw_carga_ok_motivo = 'a conexão ainda não tem nenhuma sincronização bem-sucedida';
+    } catch (err) {
+      vars.raw_carga_ok_motivo = `não foi possível consultar o Airbyte (${err instanceof Error ? err.message : 'erro desconhecido'})`;
+    }
+  }
+
   const dbtRun = await runDbt({
     projectId: input.projectId,
     rawDataset: input.rawDataset,
@@ -65,6 +87,7 @@ export async function buildBronzeViaDbt(input: BuildBronzeInput): Promise<BuildB
     location: input.location,
     select,
     fullRefresh: input.fullRefresh,
+    vars,
   });
 
   // Falha total (compilação/parse/conexão): não mascara, reporta o erro por tabela.
@@ -125,7 +148,7 @@ export async function buildBronzeForTables(input: BuildBronzeInput): Promise<Tab
 
 bronzeRouter.post('/build', async (req, res) => {
   try {
-    const { projectId, rawDataset, bronzeDataset, tables, sistema, location, fullRefresh } = req.body as BuildBronzeInput;
+    const { projectId, rawDataset, bronzeDataset, tables, sistema, location, fullRefresh, connectionId } = req.body as BuildBronzeInput;
 
     if (!projectId || !rawDataset || !bronzeDataset || !Array.isArray(tables) || tables.length === 0) {
       res.status(400).json({
@@ -134,7 +157,7 @@ bronzeRouter.post('/build', async (req, res) => {
       return;
     }
 
-    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, sistema, location, fullRefresh });
+    const { results, dbt } = await buildBronzeViaDbt({ projectId, rawDataset, bronzeDataset, tables, sistema, location, fullRefresh, connectionId });
     const hasFailure = results.some((r) => r.status === 'error') || !dbt.ok;
     res.status(hasFailure ? 207 : 200).json({ dataset: bronzeDataset, results, dbt });
   } catch (err) {

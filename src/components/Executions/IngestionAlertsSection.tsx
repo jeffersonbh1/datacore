@@ -31,7 +31,7 @@ function AlertRow({ alert, onResolve, canResolve }: { alert: IngestionAlert; onR
               {TIPO_LABEL[alert.tipo]} · {categoryLabel(alert.categoria)}
             </span>
             {alert.bloqueante && (
-              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-bold bg-rose-600 text-white border-rose-700" title="Enquanto aberto, Bronze/Silver/Gold desta tabela não são atualizados">
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-bold bg-rose-600 text-white border-rose-700" title={alert.tabela ? 'Enquanto aberto, Bronze/Silver/Gold desta tabela não são atualizados' : 'Falha na sincronização da Raw: enquanto aberto, Bronze/Silver/Gold das tabelas de carga full desta integração não são atualizados (a Raw pode ter uma carga parcial)'}>
                 <Lock className="w-3 h-3" /> Bloqueando atualização
               </span>
             )}

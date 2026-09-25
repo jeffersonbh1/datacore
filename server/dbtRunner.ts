@@ -34,6 +34,8 @@ export interface RunDbtInput {
   /** Subcomando do dbt — "build" (default, materializa de verdade) ou "compile"
    *  (só renderiza o Jinja, sem tocar no BigQuery — usado pelo editor do Studio Gold). */
   command?: 'build' | 'compile';
+  /** Variáveis do dbt (`--vars`), ex.: raw_carga_ok da Bronze full (server/rawLastLoad.ts). */
+  vars?: Record<string, unknown>;
 }
 
 export interface DbtModelResult {
@@ -278,6 +280,7 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
       '--profiles-dir', childEnv.DBT_PROFILES_DIR as string,
     ];
     if (input.fullRefresh && command === 'build') args.push('--full-refresh');
+    if (input.vars && Object.keys(input.vars).length > 0) args.push('--vars', JSON.stringify(input.vars));
 
     // Remove o run_results.json anterior: se este build falhar antes de escrever
     // o seu (erro de compilação/parse), não queremos ler resultados obsoletos.
