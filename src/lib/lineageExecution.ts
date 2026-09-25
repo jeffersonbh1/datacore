@@ -100,6 +100,11 @@ export function buildPlan(index: LineageIndex, focusId: string, integrations: Li
   return { focusId, scope, integrations: [...byIntegration.values()], gold, unbuiltInputs, fullRefresh };
 }
 
+/** Mensagem de uma execução impedida por bloqueio de schema (log, itens e confirmação). */
+export function executionBlockedMessage(blocked: Array<{ name: string }>): string {
+  return `EXECUÇÃO BLOQUEADA: ${blocked.length} tabela(s) deste fluxo estão bloqueadas por mudança de schema na origem (${blocked.map((b) => b.name).join(', ')}). Nada foi executado — nenhuma camada foi atualizada. Resolva os alertas da integração em Pipelines & Fluxos para liberar.`;
+}
+
 /** Registrado no item da tabela bloqueada (tela Execuções). */
 export const BLOCKED_ITEM_MSG =
   'NÃO ATUALIZADA — bloqueada por mudança de schema na origem (alerta aberto em Pipelines & Fluxos). Continua com os dados da última carga que deu certo; marque o alerta como ciente/resolvido para liberar.';
@@ -191,6 +196,72 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     }));
   };
 
+  // Impede a execução inteira (nada roda, nem o sync) quando o plano inclui uma
+  // tabela bloqueada por mudança de schema ou um Gold que dependa dela.
+  const abortIfBlocked = async (): Promise<boolean> => {
+    let blockedNodes: Map<string, { name: string; reason: string }>;
+    try {
+      blockedNodes = blockedNodesInPlan(plan, opts.index, await fetchBlockedTables());
+    } catch (err) {
+      const msg = `EXECUÇÃO BLOQUEADA: não foi possível consultar os bloqueios por mudança de schema (${err instanceof Error ? err.message : 'erro desconhecido'}). Nada foi executado.`;
+      hooks.log(msg, 'error');
+      markAllSkipped(msg);
+      return true;
+    }
+    if (blockedNodes.size === 0) return false;
+    const msg = executionBlockedMessage([...blockedNodes.values()]);
+    hooks.log(msg, 'error');
+    for (const b of blockedNodes.values()) hooks.log(`• ${b.name}: ${b.reason}.`, 'error');
+    markAllSkipped(msg);
+    return true;
+  };
+  const markAllSkipped = (msg: string) => {
+    for (const pi of plan.integrations) {
+      hooks.setState([...pi.syncNodeIds, ...pi.bronze.map((b) => b.nodeId), ...pi.silver.map((x) => x.nodeId)], 'skipped');
+      for (const b of pi.bronze) rec('bronze', nodeName(b.nodeId), pi.integration.nome, 'skipped', { error: msg });
+      for (const x of pi.silver) rec('silver', nodeName(x.nodeId), pi.integration.nome, 'skipped', { error: msg });
+    }
+    for (const g of plan.gold) { hooks.setState([g.nodeId], 'skipped'); rec('gold', g.name, null, 'skipped', { error: msg }); }
+  };
+
+  // ---- 0) Bloqueios já existentes: impede antes de qualquer coisa.
+  if (await abortIfBlocked()) return { ok: false, cancelled: false };
+
+  // ---- 0.5) Verificação de schema ANTES do sync (todas as integrações em paralelo):
+  // gera os alertas (e bloqueios) de mudança de schema e atualiza o catálogo da
+  // conexão no Airbyte — sem isso, uma coluna removida na origem derruba o sync
+  // ("Field 'x' not found"), já que o Airbyte só atualiza o catálogo sozinho 1x a
+  // cada 24 h. Se ela criar um bloqueio que afeta este fluxo, nada é executado.
+  // Falhar aqui não impede o sync (as proteções do próprio Airbyte continuam).
+  if (opts.includeSync) {
+    const checked = await Promise.all(plan.integrations.map(async (pi) => {
+      const name = pi.integration.nome;
+      const connectionId = pi.pipeline?.airbyteConnectionId || pi.integration.airbyteConnectionId;
+      if (!connectionId) return false;
+      hooks.setState(pi.syncNodeIds, 'running');
+      hooks.log(`${name}: verificando o schema da origem antes de sincronizar…`);
+      try {
+        const check = await checkSchemaChanges(connectionId);
+        if (check.alerts.length) {
+          const blocking = check.alerts.filter((a) => a.bloqueante).length;
+          hooks.log(`${name}: ${check.alerts.length} mudança(s) de schema na origem${blocking ? ` (${blocking} bloqueia(m) a tabela)` : ''} — veja os alertas da integração em Pipelines & Fluxos.`, 'warn');
+        }
+        if (!check.catalogoAtualizado) {
+          hooks.log(`${name}: não foi possível atualizar o catálogo da conexão no Airbyte (${check.catalogoErro}) — se a origem mudou, o sync pode falhar.`, 'warn');
+        }
+        return check.alerts.some((a) => a.bloqueante);
+      } catch (err) {
+        hooks.log(`${name}: a verificação de schema falhou (${err instanceof Error ? err.message : 'erro desconhecido'}) — seguindo com a sincronização.`, 'warn');
+        return false;
+      }
+    }));
+    if (checked.some(Boolean) && await abortIfBlocked()) return { ok: false, cancelled: false };
+    if (hooks.isCancelled()) {
+      for (const pi of plan.integrations) hooks.setState(pi.syncNodeIds, 'skipped');
+      return { ok: false, cancelled: true };
+    }
+  }
+
   // ---- A) Sincronização real da Raw (todas as integrações em paralelo)
   if (opts.includeSync) {
     await Promise.all(plan.integrations.map(async (pi): Promise<SyncOutcome> => {
@@ -202,25 +273,6 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
         return { ok: true, jobId: null };
       }
       hooks.setState(pi.syncNodeIds, 'running');
-      // Verificação de schema ANTES do sync: gera os alertas (e bloqueios) de
-      // mudança de schema e atualiza o catálogo da conexão no Airbyte — sem isso,
-      // uma coluna removida na origem derruba o sync ("Field 'x' not found"), já
-      // que o Airbyte só atualiza o catálogo sozinho 1x a cada 24 h. Falhar aqui
-      // não impede o sync (as proteções do próprio Airbyte continuam valendo).
-      hooks.log(`${name}: verificando o schema da origem antes de sincronizar…`);
-      try {
-        const check = await checkSchemaChanges(connectionId);
-        if (check.alerts.length) {
-          const blocking = check.alerts.filter((a) => a.bloqueante).length;
-          hooks.log(`${name}: ${check.alerts.length} mudança(s) de schema na origem${blocking ? ` (${blocking} bloqueia(m) a atualização da tabela)` : ''} — veja os alertas da integração em Pipelines & Fluxos.`, 'warn');
-        }
-        if (!check.catalogoAtualizado) {
-          hooks.log(`${name}: não foi possível atualizar o catálogo da conexão no Airbyte (${check.catalogoErro}) — se a origem mudou, o sync pode falhar.`, 'warn');
-        }
-      } catch (err) {
-        hooks.log(`${name}: a verificação de schema falhou (${err instanceof Error ? err.message : 'erro desconhecido'}) — seguindo com a sincronização.`, 'warn');
-      }
-      if (hooks.isCancelled()) { cancelled = true; hooks.setState(pi.syncNodeIds, 'skipped'); return { ok: false, jobId: null }; }
       hooks.log(`${name}: disparando a sincronização no Airbyte…`);
       try {
         const triggered = await triggerAirbyteSync(connectionId);
@@ -271,10 +323,9 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     }));
   }
 
-  // ---- Bloqueios por mudança de schema (alerta bloqueante em aberto — sql/017).
-  // A verificação de schema desta execução já terminou (é aguardada junto com o
-  // sync), então um bloqueio recém-detectado já vale aqui. Sem conseguir
-  // consultar os bloqueios, nada é construído (não dá para saber o que é seguro).
+  // ---- Rede de segurança: um bloqueio que surja DURANTE o sync (ex.: outra
+  // pessoa clicou em "Verificar schema agora") ainda impede a atualização da
+  // tabela aqui. Sem conseguir consultar os bloqueios, nada é construído.
   let blocked = new Map<string, { name: string; reason: string }>();
   if (!cancelled && !hooks.isCancelled() && (plan.integrations.some((pi) => pi.bronze.length + pi.silver.length > 0) || plan.gold.length > 0)) {
     try {

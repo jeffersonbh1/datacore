@@ -91,16 +91,22 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   // O alvo da execução pode não ser a tabela em foco (o botão "Executar esta tabela" vale para qualquer nó do painel).
   const planTarget = plan && index ? index.byId.get(plan.focusId) ?? null : null;
 
-  // Tabelas do plano bloqueadas por mudança de schema — exibidas na confirmação.
-  // A execução consulta de novo na hora (runPlan), então isto é só informativo.
+  // Tabelas do plano bloqueadas por mudança de schema: com alguma, o botão Executar
+  // fica desabilitado. runPlan confere de novo na hora (e após a verificação de schema).
   const [planBlocked, setPlanBlocked] = useState<Array<{ name: string; reason: string }>>([]);
+  const [blocksStatus, setBlocksStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   useEffect(() => {
     setPlanBlocked([]);
+    setBlocksStatus('loading');
     if (!plan || !index) return;
     let cancelled = false;
     fetchBlockedTables()
-      .then((blocks) => { if (!cancelled) setPlanBlocked([...blockedNodesInPlan(plan, index, blocks).values()]); })
-      .catch(() => {});
+      .then((blocks) => {
+        if (cancelled) return;
+        setPlanBlocked([...blockedNodesInPlan(plan, index, blocks).values()]);
+        setBlocksStatus('ok');
+      })
+      .catch(() => { if (!cancelled) setBlocksStatus('error'); });
     return () => { cancelled = true; };
   }, [plan, index]);
 
@@ -319,6 +325,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           onClose={() => setPlan(null)}
           onScopeChange={(scope) => openPlan(plan.focusId, scope, Boolean(plan.fullRefresh))}
           blocked={planBlocked}
+          blocksStatus={blocksStatus}
         />
       )}
     </div>
