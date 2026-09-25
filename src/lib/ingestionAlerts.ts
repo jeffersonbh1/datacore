@@ -2,24 +2,43 @@ import { supabase } from './supabase';
 import type { RawFailureDiagnosis } from './airbyteGateway';
 
 // -----------------------------------------------------------------------------
-// Alertas de falha da camada Raw (tabela alertas_ingestao, sql/015). Um alerta
-// por sync que falhou no Airbyte, visível para toda a empresa na tela Execuções
-// até alguém marcá-lo como resolvido. Gravados pelo gateway (auto-sync) e pelo
-// Studio Gold (lineageExecution.ts) — ver server/rawFailurePolicy.ts.
+// Alertas das integrações (tabela alertas_ingestao, sql/015 + sql/016). Tudo que
+// muda numa integração vira um alerta, que o engenheiro de dados marca como
+// ciente/resolvido — e ele vai para o histórico:
+//   falha_sync           sync da Raw falhou (gateway/Studio — server/rawFailurePolicy.ts)
+//   mudanca_schema       schema da origem mudou (server/schemaChangeCheck.ts)
+//   alteracao_integracao tabelas incluídas/removidas pelo Editar (AutoPipelineView)
+//   falha_construcao     Bronze/Silver falhou no Studio (lineageExecution.ts)
+// Exibidos por integração em Pipelines & Fluxos e, os abertos, na tela Execuções.
 // -----------------------------------------------------------------------------
+
+export type AlertTipo = 'falha_sync' | 'mudanca_schema' | 'alteracao_integracao' | 'falha_construcao';
+export type AlertSeveridade = 'critica' | 'alta' | 'media' | 'info';
 
 export interface IngestionAlert {
   id: number;
+  integracaoId: number | null;
   integracaoNome: string;
   airbyteJobId: number | null;
-  categoria: RawFailureDiagnosis['categoria'];
-  severidade: RawFailureDiagnosis['severidade'];
+  tipo: AlertTipo;
+  categoria: string;
+  severidade: AlertSeveridade;
   mensagem: string;
   detalhe: string | null;
   criadoEm: string;
+  resolvidoEm: string | null;
+  resolvidoPor: string | null;
 }
 
-export const CATEGORY_LABEL: Record<RawFailureDiagnosis['categoria'], string> = {
+export const TIPO_LABEL: Record<AlertTipo, string> = {
+  falha_sync: 'Falha de sincronização',
+  mudanca_schema: 'Mudança de schema',
+  alteracao_integracao: 'Alteração da integração',
+  falha_construcao: 'Falha de construção',
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  // falha_sync (RawFailureDiagnosis)
   schema_incompativel: 'Schema incompatível',
   configuracao: 'Configuração',
   origem: 'Origem',
@@ -27,6 +46,28 @@ export const CATEGORY_LABEL: Record<RawFailureDiagnosis['categoria'], string> = 
   transitorio: 'Temporária',
   plataforma: 'Airbyte',
   desconhecido: 'Desconhecida',
+  // mudanca_schema
+  tabela_nova: 'Tabela nova',
+  tabela_removida: 'Tabela removida',
+  coluna_nova: 'Coluna nova',
+  coluna_removida: 'Coluna removida',
+  tipo_alterado: 'Tipo alterado',
+  chave_alterada: 'Chave primária alterada',
+  // alteracao_integracao
+  tabelas_incluidas: 'Tabelas incluídas',
+  tabelas_removidas: 'Tabelas removidas',
+  // falha_construcao
+  bronze: 'Bronze',
+  silver: 'Silver',
+};
+
+export const categoryLabel = (c: string): string => CATEGORY_LABEL[c] ?? c;
+
+export const SEVERIDADE_STYLE: Record<AlertSeveridade, { label: string; cls: string; order: number }> = {
+  critica: { label: 'Crítica', cls: 'bg-rose-50 text-rose-700 border-rose-200', order: 0 },
+  alta: { label: 'Alta', cls: 'bg-amber-50 text-amber-700 border-amber-200', order: 1 },
+  media: { label: 'Média', cls: 'bg-yellow-50 text-yellow-700 border-yellow-200', order: 2 },
+  info: { label: 'Info', cls: 'bg-sky-50 text-sky-700 border-sky-200', order: 3 },
 };
 
 /** A tabela ainda não existe no banco (migração sql/015 não aplicada). */
@@ -41,34 +82,112 @@ export function rawErrorText(d: RawFailureDiagnosis): string {
   return d.detalhe ? `${d.mensagem}\nAirbyte: ${d.detalhe}` : d.mensagem;
 }
 
-/** Alertas em aberto, mais recentes primeiro. O isolamento por empresa é feito pela RLS. */
+const TIPOS: AlertTipo[] = ['falha_sync', 'mudanca_schema', 'alteracao_integracao', 'falha_construcao'];
+const SEVERIDADES: AlertSeveridade[] = ['critica', 'alta', 'media', 'info'];
+
+// select('*'): antes da migração 016 a coluna `tipo` não existe — o alerta é tratado como falha_sync.
+function mapRow(r: Record<string, unknown>): IngestionAlert {
+  return {
+    id: Number(r.id),
+    integracaoId: r.integracao_id != null ? Number(r.integracao_id) : null,
+    integracaoNome: String(r.integracao_nome ?? ''),
+    airbyteJobId: r.airbyte_job_id != null ? Number(r.airbyte_job_id) : null,
+    tipo: TIPOS.find((t) => t === r.tipo) ?? 'falha_sync',
+    categoria: String(r.categoria ?? 'desconhecido'),
+    severidade: SEVERIDADES.find((s) => s === r.severidade) ?? 'critica',
+    mensagem: String(r.mensagem ?? ''),
+    detalhe: (r.detalhe as string) || null,
+    criadoEm: String(r.criado_em),
+    resolvidoEm: (r.resolvido_em as string) || null,
+    resolvidoPor: (r.resolvido_por as string) || null,
+  };
+}
+
+/** Alertas em aberto da empresa (todas as integrações), mais recentes primeiro. Isolamento pela RLS. */
 export async function fetchOpenIngestionAlerts(): Promise<IngestionAlert[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('alertas_ingestao')
-    .select('id, integracao_nome, airbyte_job_id, categoria, severidade, mensagem, detalhe, criado_em')
+    .select('*')
     .is('resolvido_em', null)
     .order('criado_em', { ascending: false })
-    .limit(50);
+    .limit(200);
   if (error) throw error;
-  return (data || []).map((r) => ({
-    id: Number(r.id),
-    integracaoNome: String(r.integracao_nome),
-    airbyteJobId: r.airbyte_job_id != null ? Number(r.airbyte_job_id) : null,
-    categoria: (r.categoria in CATEGORY_LABEL ? r.categoria : 'desconhecido') as IngestionAlert['categoria'],
-    severidade: r.severidade === 'alta' ? 'alta' : 'critica',
-    mensagem: String(r.mensagem),
-    detalhe: (r.detalhe as string) || null,
-    criadoEm: String(r.criado_em),
-  }));
+  return (data || []).map(mapRow);
 }
 
-export async function resolveIngestionAlert(id: number, resolvidoPor: string | null): Promise<void> {
-  if (!supabase) return;
+/** Alertas de uma integração: os abertos e o histórico (resolvidos, mais recentes primeiro). */
+export async function fetchIntegrationAlerts(integracaoId: number, historyLimit = 100): Promise<{ open: IngestionAlert[]; history: IngestionAlert[] }> {
+  if (!supabase) return { open: [], history: [] };
+  const [open, history] = await Promise.all([
+    supabase.from('alertas_ingestao').select('*').eq('integracao_id', integracaoId).is('resolvido_em', null)
+      .order('criado_em', { ascending: false }),
+    supabase.from('alertas_ingestao').select('*').eq('integracao_id', integracaoId).not('resolvido_em', 'is', null)
+      .order('resolvido_em', { ascending: false }).limit(historyLimit),
+  ]);
+  if (open.error) throw open.error;
+  if (history.error) throw history.error;
+  return { open: (open.data || []).map(mapRow), history: (history.data || []).map(mapRow) };
+}
+
+export interface OpenAlertSummary { count: number; worst: AlertSeveridade }
+
+/** Quantidade de alertas abertos e a pior severidade, por integração (badge em Pipelines & Fluxos). */
+export async function fetchOpenAlertSummary(): Promise<Map<number, OpenAlertSummary>> {
+  const out = new Map<number, OpenAlertSummary>();
+  for (const a of await fetchOpenIngestionAlerts()) {
+    if (a.integracaoId == null) continue;
+    const cur = out.get(a.integracaoId);
+    if (!cur) out.set(a.integracaoId, { count: 1, worst: a.severidade });
+    else {
+      cur.count += 1;
+      if (SEVERIDADE_STYLE[a.severidade].order < SEVERIDADE_STYLE[cur.worst].order) cur.worst = a.severidade;
+    }
+  }
+  return out;
+}
+
+/** Marca como ciente/resolvido — o alerta sai dos abertos e vai para o histórico. */
+export async function resolveIngestionAlerts(ids: number[], resolvidoPor: string | null): Promise<void> {
+  if (!supabase || ids.length === 0) return;
   const { error } = await supabase
     .from('alertas_ingestao')
     .update({ resolvido_em: new Date().toISOString(), resolvido_por: resolvidoPor })
-    .eq('id', id);
+    .in('id', ids);
+  if (error) throw error;
+}
+
+export async function resolveIngestionAlert(id: number, resolvidoPor: string | null): Promise<void> {
+  return resolveIngestionAlerts([id], resolvidoPor);
+}
+
+/**
+ * Alerta genérico gravado pelo front (sessão do usuário): alteração da integração
+ * pelo Editar e falha de construção no Studio. Integrações criadas nesta sessão
+ * ainda têm id local — a linha é encontrada pela conexão do Airbyte.
+ */
+export async function recordIntegrationAlert(args: {
+  idEmpresa: number;
+  integration: { id: string | number; name: string; airbyteConnectionId?: string | null };
+  tipo: Exclude<AlertTipo, 'falha_sync' | 'mudanca_schema'>;
+  categoria: string;
+  severidade: AlertSeveridade;
+  mensagem: string;
+  detalhe?: string | null;
+}): Promise<void> {
+  if (!supabase) return;
+  const { idEmpresa, integration, tipo, categoria, severidade, mensagem, detalhe = null } = args;
+  let integracaoId: number | null = /^\d+$/.test(String(integration.id)) ? Number(integration.id) : null;
+  if (integracaoId === null && integration.airbyteConnectionId) {
+    const { data } = await supabase.from('integracoes').select('id').eq('airbyte_connection_id', integration.airbyteConnectionId).maybeSingle();
+    integracaoId = data ? Number(data.id) : null;
+  }
+  const { error } = await supabase.from('alertas_ingestao').insert({
+    id_empresa: idEmpresa,
+    integracao_id: integracaoId,
+    integracao_nome: integration.name,
+    tipo, categoria, severidade, mensagem, detalhe,
+  });
   if (error) throw error;
 }
 

@@ -3,6 +3,7 @@ import { airbyteFetch } from '../airbyteClient';
 import { handleAirbyteError } from '../handleAirbyteError';
 import { SCHEMA_CHANGE_POLICY, diagnoseSyncFailure } from '../rawFailurePolicy';
 import { getSupabaseAdmin } from '../supabaseAdmin';
+import { checkSchemaChanges } from '../schemaChangeCheck';
 import type { AirbyteStream } from './streams';
 
 export const connectionsRouter = Router();
@@ -289,6 +290,17 @@ connectionsRouter.put('/:connectionId/streams', async (req, res) => {
     res.json(data);
   } catch (err) {
     handleAirbyteError(res, err);
+  }
+});
+
+// Verifica se o schema da origem mudou desde a última verificação e grava um
+// alerta por mudança (ver server/schemaChangeCheck.ts). Leva o tempo de uma
+// descoberta no Airbyte (~15-40 s).
+connectionsRouter.post('/:connectionId/schema-check', async (req, res) => {
+  try {
+    res.json(await checkSchemaChanges(req.params.connectionId));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Falha ao verificar o schema da origem.' });
   }
 });
 

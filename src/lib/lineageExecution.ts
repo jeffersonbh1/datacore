@@ -1,6 +1,6 @@
 import { Pipeline } from '../types';
-import { buildBronzeLayer, buildSilverLayer, fetchConnectionJobs, fetchSyncFailureDiagnosis, triggerAirbyteSync, type AirbyteJob } from './airbyteGateway';
-import { rawErrorText, recordRawFailure } from './ingestionAlerts';
+import { buildBronzeLayer, buildSilverLayer, checkSchemaChanges, fetchConnectionJobs, fetchSyncFailureDiagnosis, triggerAirbyteSync, type AirbyteJob } from './airbyteGateway';
+import { rawErrorText, recordIntegrationAlert, recordRawFailure } from './ingestionAlerts';
 import { summarizeTableFailures } from './pipelineBuilder';
 import { updatePipelineRunLayerStatus, upsertPipelineRuns } from './supabase';
 import { buildGoldModels, collect, topoOrder, type LineageIndex, type LineageIntegration } from './lineage';
@@ -144,6 +144,20 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     layer: ExecItem['layer'], name: string, integration: string | null, status: ExecItem['status'],
     extra: { rowsAffected?: number | null; error?: string | null; tests?: ExecItem['tests'] } = {},
   ) => hooks.record?.({ layer, name, integration, status, rowsAffected: extra.rowsAffected ?? null, error: extra.error ?? null, tests: extra.tests ?? null });
+  /** Alerta da integração (Pipelines & Fluxos) quando a Bronze/Silver falha. Best-effort. */
+  const alertBuildFailure = (pi: PlanIntegration, layer: 'bronze' | 'silver', tables: string[], detail: string) => {
+    if (!opts.idEmpresa) return Promise.resolve();
+    const noun = layer === 'bronze' ? 'Bronze' : 'Silver';
+    return safe(`o alerta de falha da ${noun}`, () => recordIntegrationAlert({
+      idEmpresa: opts.idEmpresa!,
+      integration: { id: pi.integration.id, name: pi.integration.nome, airbyteConnectionId: pi.integration.airbyteConnectionId },
+      tipo: 'falha_construcao',
+      categoria: layer,
+      severidade: 'alta',
+      mensagem: `Falha ao construir a ${noun} de ${tables.length} tabela(s): ${tables.join(', ')}. A tabela continua com os dados da última construção que deu certo.`,
+      detalhe: detail,
+    }));
+  };
 
   // ---- A) Sincronização real da Raw (todas as integrações em paralelo)
   if (opts.includeSync) {
@@ -157,6 +171,13 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
       }
       hooks.setState(pi.syncNodeIds, 'running');
       hooks.log(`${name}: disparando a sincronização no Airbyte…`);
+      // Verificação de mudança de schema na origem, em paralelo com o sync (não o
+      // atrasa): cada mudança vira alerta da integração em Pipelines & Fluxos.
+      const schemaCheck = checkSchemaChanges(connectionId)
+        .then((r) => {
+          if (r.alerts.length) hooks.log(`${name}: ${r.alerts.length} mudança(s) de schema na origem — veja os alertas da integração em Pipelines & Fluxos.`, 'warn');
+        })
+        .catch((err) => console.error(`Verificação de schema de "${name}" falhou:`, err));
       try {
         const triggered = await triggerAirbyteSync(connectionId);
         jobByIntegration.set(pi.integration.id, { jobId: triggered.jobId, dbId: pi.pipeline?.dbId ?? null });
@@ -167,6 +188,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           }]));
         }
         const { state, job } = await waitForSync(connectionId, triggered.jobId, hooks);
+        await schemaCheck;
         if (job && canPersist(pi)) await safe('o resultado da sincronização', () => upsertPipelineRuns(opts.idEmpresa!, pi.pipeline!.dbId!, [job]));
         if (state === 'success') {
           hooks.setState(pi.syncNodeIds, 'success');
@@ -242,12 +264,16 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           rec('bronze', nodeName(b.nodeId), integration.nome, ok ? 'ok' : 'error', { rowsAffected: r?.rowsAffected ?? null, error: ok ? null : (r?.error || 'O dbt não retornou resultado para esta tabela.') });
         }
         const bad = results.filter((r) => r.status === 'error');
-        if (bad.length) hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
+        if (bad.length) {
+          hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
+          await alertBuildFailure(pi, 'bronze', bad.map((r) => r.table), bad.map((r) => `${r.table}: ${r.error || 'erro sem mensagem'}`).join('\n'));
+        }
         else hooks.log(`${integration.nome}: Bronze construída.`);
         await persistLayer('bronze', bad.length ? 'failed' : 'built', bad.length ? summarizeTableFailures(bad) : undefined,
           results.map((r) => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Falha ao construir a Bronze.';
+        await alertBuildFailure(pi, 'bronze', bronze.map((b) => b.table), msg);
         hooks.setState(nodeIds, 'error');
         hooks.log(`${integration.nome}: ${msg}`, 'error');
         for (const id of nodeIds) failed.add(id);
@@ -285,12 +311,16 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           rec('silver', nodeName(s.nodeId), integration.nome, ok ? 'ok' : 'error', { rowsAffected: r?.rowsAffected ?? null, error: ok ? null : (r?.error || 'O dbt não retornou resultado para esta tabela.') });
         }
         const bad = results.filter((r) => r.status === 'error');
-        if (bad.length) hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
+        if (bad.length) {
+          hooks.log(`${integration.nome}: ${summarizeTableFailures(bad)}`, 'error');
+          await alertBuildFailure(pi, 'silver', bad.map((r) => r.table), bad.map((r) => `${r.table}: ${r.error || 'erro sem mensagem'}`).join('\n'));
+        }
         else hooks.log(`${integration.nome}: Silver construída.`);
         await persistLayer('silver', bad.length ? 'failed' : 'built', bad.length ? summarizeTableFailures(bad) : undefined,
           results.map((r) => ({ table: r.table, status: r.status, rowsAffected: r.rowsAffected ?? null, error: r.error || null })));
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Falha ao construir a Silver.';
+        await alertBuildFailure(pi, 'silver', silver.map((s) => s.table), msg);
         hooks.setState(nodeIds, 'error');
         hooks.log(`${integration.nome}: ${msg}`, 'error');
         for (const id of nodeIds) failed.add(id);

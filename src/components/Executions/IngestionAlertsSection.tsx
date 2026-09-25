@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import {
-  CATEGORY_LABEL, fetchOpenIngestionAlerts, isMissingAlertsTable, resolveIngestionAlert,
+  SEVERIDADE_STYLE, TIPO_LABEL, categoryLabel, fetchOpenIngestionAlerts, isMissingAlertsTable, resolveIngestionAlert,
   type IngestionAlert,
 } from '../../lib/ingestionAlerts';
 
 // -----------------------------------------------------------------------------
-// Alertas em aberto de falha na camada Raw (tabela alertas_ingestao, sql/015):
-// um por sync que falhou no Airbyte, com o motivo e a ação recomendada. Some da
-// lista quando alguém marca como resolvido. Não aparece nada quando não há alerta.
+// Alertas em aberto de todas as integrações (tabela alertas_ingestao, sql/015 +
+// sql/016): falhas de sync, mudanças de schema, alterações e falhas de construção.
+// Some da lista quando alguém marca como resolvido (vai para o histórico da
+// integração em Pipelines & Fluxos). Não aparece nada quando não há alerta.
 // -----------------------------------------------------------------------------
 
 const POLL_MS = 30000;
@@ -16,17 +17,18 @@ const POLL_MS = 30000;
 function AlertRow({ alert, onResolve, canResolve }: { alert: IngestionAlert; onResolve: () => Promise<void>; canResolve: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const sev = SEVERIDADE_STYLE[alert.severidade];
   const critical = alert.severidade === 'critica';
 
   return (
     <li className="px-4 py-3 border-t border-rose-100 first:border-t-0">
       <div className="flex items-start gap-3">
-        <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${critical ? 'text-rose-600' : 'text-amber-600'}`} />
+        <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${critical ? 'text-rose-600' : alert.severidade === 'alta' ? 'text-amber-600' : 'text-slate-400'}`} />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-slate-900">{alert.integracaoNome}</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded border font-mono ${critical ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-              {CATEGORY_LABEL[alert.categoria]}
+            <span className={`text-[10px] px-2 py-0.5 rounded border font-mono ${sev.cls}`}>
+              {TIPO_LABEL[alert.tipo]} · {categoryLabel(alert.categoria)}
             </span>
             <span className="text-[11px] text-slate-400">
               {new Date(alert.criadoEm).toLocaleString('pt-BR')}{alert.airbyteJobId ? ` · job ${alert.airbyteJobId}` : ''}
@@ -39,7 +41,7 @@ function AlertRow({ alert, onResolve, canResolve }: { alert: IngestionAlert; onR
               className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer"
             >
               {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              Mensagem do Airbyte
+              Detalhe
             </button>
           )}
           {open && alert.detalhe && (
@@ -53,7 +55,7 @@ function AlertRow({ alert, onResolve, canResolve }: { alert: IngestionAlert; onR
             className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md text-[11px] font-medium cursor-pointer disabled:opacity-50"
           >
             {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-            Resolvido
+            Ciente/Resolvido
           </button>
         )}
       </div>
@@ -92,10 +94,10 @@ export const IngestionAlertsSection: React.FC<{ refreshKey: number; userName: st
       <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-200 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-rose-600" />
         <h3 className="text-xs font-semibold text-rose-800">
-          {alerts.length} falha{alerts.length > 1 ? 's' : ''} na camada Raw em aberto
+          {alerts.length} alerta{alerts.length > 1 ? 's' : ''} de integração em aberto
         </h3>
         <span className="text-[11px] text-rose-700/80">
-          — Bronze e Silver dessas integrações seguem com o último dado bom.
+          — o histórico de cada integração fica em Pipelines &amp; Fluxos.
         </span>
       </div>
       <ul>

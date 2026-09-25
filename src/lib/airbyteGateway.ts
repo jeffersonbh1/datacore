@@ -262,6 +262,18 @@ export async function fetchSyncFailureDiagnosis(connectionId: string, jobId: num
   return gatewayFetch(`/api/airbyte/connections/${connectionId}/jobs/${jobId}/diagnosis`);
 }
 
+export interface SchemaCheckResult {
+  /** true na primeira verificação: só gravou a "foto" do schema, sem alertas. */
+  baseline: boolean;
+  alerts: Array<{ categoria: string; severidade: string; mensagem: string; detalhe: string | null }>;
+  verificadoEm: string;
+}
+
+/** Compara o schema atual da origem com a última foto e grava um alerta por mudança (~15-40 s). */
+export async function checkSchemaChanges(connectionId: string): Promise<SchemaCheckResult> {
+  return gatewayFetch(`/api/airbyte/connections/${connectionId}/schema-check`, { method: 'POST', body: '{}' });
+}
+
 export interface BronzeTableResult {
   table: string;
   status: 'ok' | 'error';

@@ -564,6 +564,7 @@ export default function App() {
                 onUpdatePipeline={handleUpdatePipeline}
                 canCreate={permissions.canCreatePipelines}
                 editIntegration={editingIntegration}
+                userName={currentUser.name}
                 onIntegrationEdited={handleIntegrationEdited}
                 onExitEdit={(goTo) => {
                   setEditingIntegration(null);
@@ -581,6 +582,14 @@ export default function App() {
                 onDeletePipeline={handleDeletePipeline}
                 onEditPipeline={permissions.canEditPipelines ? handleEditPipeline : undefined}
                 isEditablePipeline={(p) => Boolean(findIntegrationForPipeline(p)?.airbyteConnectionId)}
+                integrationForPipeline={(p) => {
+                  const integ = findIntegrationForPipeline(p);
+                  if (!integ) return undefined;
+                  const dbId = /^\d+$/.test(integ.id) ? Number(integ.id) : p.integrationId ?? null;
+                  return { id: dbId, name: integ.name, airbyteConnectionId: integ.airbyteConnectionId ?? null };
+                }}
+                userName={currentUser.name}
+                canResolveAlerts={permissions.canTriggerExecutions}
                 onNavigateToAutoPipeline={() => { setEditingIntegration(null); setActiveTab('auto-pipeline'); }}
                 canCreate={permissions.canCreatePipelines}
                 canEdit={permissions.canEditPipelines}

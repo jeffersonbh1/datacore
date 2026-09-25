@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Search, Filter, Play, Pause, ShieldCheck,
   Layers, Clock, DollarSign, Database, CheckCircle, AlertTriangle,
-  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2, Pencil
+  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2, Pencil, Bell
 } from 'lucide-react';
 import { Pipeline, CloudProvider } from '../../types';
+import { fetchOpenAlertSummary, type OpenAlertSummary } from '../../lib/ingestionAlerts';
+import { IntegrationAlertsModal } from './IntegrationAlertsModal';
+
+/** Integração por trás de um pipeline, para o ícone de alertas. `id` null = ainda sem id do banco. */
+export interface PipelineIntegrationRef { id: number | null; name: string; airbyteConnectionId: string | null }
+
+const ALERTS_POLL_MS = 60000;
 
 interface PipelinesOverviewProps {
   pipelines: Pipeline[];
@@ -19,6 +26,10 @@ interface PipelinesOverviewProps {
   onEditPipeline?: (pipeline: Pipeline) => void;
   /** Só integrações com conexão real no Airbyte podem ter as tabelas alteradas. */
   isEditablePipeline?: (pipeline: Pipeline) => boolean;
+  /** Integração do pipeline (ícone de alertas). Sem ela, o ícone não aparece. */
+  integrationForPipeline?: (pipeline: Pipeline) => PipelineIntegrationRef | undefined;
+  userName?: string | null;
+  canResolveAlerts?: boolean;
   onNavigateToAutoPipeline?: () => void;
   canCreate: boolean;
   canEdit: boolean;
@@ -33,6 +44,9 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   onDeletePipeline,
   onEditPipeline,
   isEditablePipeline,
+  integrationForPipeline,
+  userName = null,
+  canResolveAlerts = false,
   onNavigateToAutoPipeline,
   canCreate,
   canEdit,
@@ -42,6 +56,20 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [modeFilter, setModeFilter] = useState<string>('all');
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
+  const [alertSummary, setAlertSummary] = useState<Map<number, OpenAlertSummary>>(new Map());
+  const [alertsTarget, setAlertsTarget] = useState<PipelineIntegrationRef | null>(null);
+
+  const loadAlertSummary = useCallback(() => {
+    fetchOpenAlertSummary()
+      .then(setAlertSummary)
+      .catch(() => setAlertSummary(new Map())); // sem a tabela (sql/015) o ícone fica zerado
+  }, []);
+
+  useEffect(() => {
+    loadAlertSummary();
+    const t = setInterval(loadAlertSummary, ALERTS_POLL_MS);
+    return () => clearInterval(t);
+  }, [loadAlertSummary]);
 
   const filteredPipelines = pipelines.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -273,6 +301,32 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
 
               {/* Right Controls */}
               <div className="flex items-center gap-2 shrink-0 justify-end">
+                {(() => {
+                  const integ = integrationForPipeline?.(pipeline);
+                  if (!integ || integ.id === null) return null;
+                  const summary = alertSummary.get(integ.id);
+                  const count = summary?.count ?? 0;
+                  const tone = !summary ? 'text-slate-400 hover:text-slate-600'
+                    : summary.worst === 'critica' ? 'text-rose-600 bg-rose-50 border-rose-200'
+                    : summary.worst === 'alta' ? 'text-amber-600 bg-amber-50 border-amber-200'
+                    : 'text-sky-600 bg-sky-50 border-sky-200';
+                  return (
+                    <button
+                      id={`btn-alerts-pipeline-${pipeline.id}`}
+                      onClick={() => setAlertsTarget(integ)}
+                      title={count ? `${count} alerta(s) em aberto` : 'Alertas da integração (nenhum em aberto)'}
+                      className={`relative p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer border border-slate-200 shadow-sm ${tone}`}
+                    >
+                      {count > 0 ? <AlertTriangle className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                      {count > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold leading-4 text-center">
+                          {count > 99 ? '99+' : count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
+
                 {canTrigger && (
                   <button
                     onClick={() => onTriggerRun(pipeline.id)}
@@ -360,6 +414,18 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           </div>
         )}
       </div>
+
+      {alertsTarget && alertsTarget.id !== null && (
+        <IntegrationAlertsModal
+          integracaoId={alertsTarget.id}
+          integracaoNome={alertsTarget.name}
+          airbyteConnectionId={alertsTarget.airbyteConnectionId}
+          userName={userName}
+          canResolve={canResolveAlerts}
+          onClose={() => { setAlertsTarget(null); loadAlertSummary(); }}
+          onChanged={loadAlertSummary}
+        />
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">

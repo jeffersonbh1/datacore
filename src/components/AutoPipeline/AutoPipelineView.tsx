@@ -21,6 +21,7 @@ import {
 } from '../../lib/airbyteGateway';
 import { registrarOrigem, registrarDestino, registrarIntegracao, persistPipeline, updateIntegracaoTabelas } from '../../lib/supabase';
 import { buildPipelineFromIntegration, WEEKDAYS } from '../../lib/pipelineBuilder';
+import { recordIntegrationAlert } from '../../lib/ingestionAlerts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isRealAirbyteId = (id: string): boolean => UUID_PATTERN.test(id);
@@ -48,6 +49,8 @@ interface AutoPipelineViewProps {
   editIntegration?: AutoIntegration | null;
   onIntegrationEdited?: (integration: AutoIntegration) => void;
   onExitEdit?: (goTo: 'pipelines' | 'stay') => void;
+  /** Quem está logado — vai no alerta de "alteração da integração". */
+  userName?: string | null;
 }
 
 export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
@@ -64,6 +67,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   editIntegration = null,
   onIntegrationEdited,
   onExitEdit,
+  userName = null,
 }) => {
   const isEditMode = Boolean(editIntegration);
   // Lido dentro de callbacks assíncronos (descoberta de streams) sem refazer o efeito.
@@ -1274,6 +1278,38 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       };
       await updateIntegracaoTabelas(editIntegration, selectedTables, nextConfigs);
       onIntegrationEdited?.(updated);
+
+      // Alerta de auditoria (Pipelines & Fluxos → alertas da integração). Best-effort:
+      // a alteração já foi aplicada; falhar aqui só deixa de registrar o aviso.
+      if (idEmpresa) {
+        const quem = userName ? ` por ${userName}` : '';
+        const changes: Array<{ categoria: string; mensagem: string; tabelas: string[] }> = [];
+        if (addedTables.length) changes.push({
+          categoria: 'tabelas_incluidas',
+          mensagem: `${addedTables.length} tabela(s) incluída(s) na integração${quem}: ${addedTables.join(', ')}. Entram na próxima execução com sincronização.`,
+          tabelas: addedTables,
+        });
+        if (removedTables.length) changes.push({
+          categoria: 'tabelas_removidas',
+          mensagem: `${removedTables.length} tabela(s) removida(s) da integração${quem}: ${removedTables.join(', ')}. Deixam de ser sincronizadas; dados já carregados e modelos dbt são mantidos.`,
+          tabelas: removedTables,
+        });
+        for (const c of changes) {
+          try {
+            await recordIntegrationAlert({
+              idEmpresa,
+              integration: editIntegration,
+              tipo: 'alteracao_integracao',
+              categoria: c.categoria,
+              severidade: 'info',
+              mensagem: c.mensagem,
+              detalhe: `Tabelas da integração após a alteração: ${selectedTables.join(', ')}`,
+            });
+          } catch (err) {
+            console.error('Erro ao registrar o alerta de alteração da integração:', err);
+          }
+        }
+      }
 
       // 3) dbt: modelos Bronze/Silver só das tabelas NOVAS — as existentes não são
       // regeradas para não sobrescrever regras de curadoria editadas no Studio.
