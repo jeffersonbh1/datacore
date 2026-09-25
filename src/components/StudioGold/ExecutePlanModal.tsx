@@ -23,6 +23,9 @@ interface ExecutePlanModalProps {
   onClose: () => void;
   /** Na confirmação: motivo pelo qual não dá para iniciar agora (ex.: a mesma tabela já está executando). */
   blockedReason?: string | null;
+  /** Caixa "Executar fluxo até aqui": marcada = 'fluxo' (tudo que alimenta a tabela, até a camada dela);
+   *  desmarcada = 'tabela' (só ela). Omitido = sem a caixa. */
+  onScopeChange?: (scope: ExecPlan['scope']) => void;
 }
 
 const LOG_STYLE: Record<RunLogEntry['level'], string> = {
@@ -32,7 +35,7 @@ const LOG_STYLE: Record<RunLogEntry['level'], string> = {
 };
 
 export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
-  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose, blockedReason = null,
+  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose, blockedReason = null, onScopeChange,
 }) => {
   const single = plan.scope === 'tabela';
   const bronzeCount = plan.integrations.reduce((n, i) => n + i.bronze.length, 0);
@@ -54,6 +57,21 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
 
         {phase === 'confirm' ? (
           <div className="p-5 space-y-4">
+            {onScopeChange && (
+              <label className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-xs text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!single}
+                  onChange={(e) => onScopeChange(e.target.checked ? 'fluxo' : 'tabela')}
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong>Executar fluxo até aqui.</strong> Executa tudo que alimenta esta tabela, camada por camada, até a
+                  camada {LAYER_NOUN[targetLayer] ?? targetLayer}. Desmarcado, executa só esta tabela.
+                </span>
+              </label>
+            )}
+
             {single ? (
               <>
                 <p className="text-xs text-slate-600">
@@ -68,7 +86,7 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
                     <p className="font-semibold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> Entrada ainda não construída no BigQuery</p>
                     <p>{plan.unbuiltInputs.map((n) => <span key={n} className="font-mono break-all block">{n}</span>)}</p>
-                    <p>A construção tende a falhar. Para atualizar também o que alimenta esta tabela, use “Executar fluxo até aqui”.</p>
+                    <p>A construção tende a falhar. Para atualizar também o que alimenta esta tabela, marque “Executar fluxo até aqui”.</p>
                   </div>
                 )}
               </>

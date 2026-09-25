@@ -303,6 +303,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           onStart={startRun}
           onCancelRun={() => {}}
           onClose={() => setPlan(null)}
+          onScopeChange={(scope) => openPlan(plan.focusId, scope, Boolean(plan.fullRefresh))}
         />
       )}
     </div>
