@@ -276,6 +276,7 @@ function watermarkLookupBlock(origem: string): string {
   return `
 -- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
 -- max_dat_carga) para ler da ${origem} só os registros novos.
+{% set v_max_dat_carga = none %}
 {% if is_incremental() %}
     {% set v_max_dat_carga = max_dat_carga() %}
 {% endif %}
@@ -290,6 +291,25 @@ function watermarkFilterBlock(coluna: string, indent = '    '): string {
 ${indent}{% if is_incremental() and v_max_dat_carga is not none %}
 ${indent}WHERE ${coluna} > TIMESTAMP('{{ v_max_dat_carga }}')
 ${indent}{% endif %}`;
+}
+
+/** Filtro da Raw na Bronze incremental. A Raw incremental é incremental_append
+ *  (empilha cada versão do registro), então o lote novo pode trazer o mesmo ID
+ *  mais de uma vez — e o MERGE do BigQuery falha se um ID casa com mais de uma
+ *  linha. Por isso: (1) descarta linhas com parte da chave vazia (NULL nunca
+ *  casa no merge e duplicaria a cada carga; a macro avisar_chave_nula registra
+ *  no log quantas foram), (2) só o que chegou depois da marca d'água e (3) fica
+ *  a versão mais recente de cada chave (maior _airbyte_extracted_at, desempate
+ *  pelo cursor). `rawPk`/`cursor`: nomes das colunas NA RAW (antes do renome). */
+function incrementalSourceFilterBlock(rawPk: string[], cursor: string | null): string {
+  const order = ['_airbyte_extracted_at DESC', ...(cursor ? [`${cursor} DESC`] : [])].join(', ');
+  return `
+    WHERE ${rawPk.map((k) => `${k} IS NOT NULL`).join(' AND ')}
+    {% if v_max_dat_carga is not none %}
+      AND _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
+    {% endif %}
+    -- A Raw empilha as versões: fica só a mais recente de cada chave do lote.
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${rawPk.join(', ')} ORDER BY ${order}) = 1`;
 }
 
 /** WHERE da origem na carga full: só a última carga da Raw. A Raw full é
@@ -360,10 +380,14 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   // Incremental: a maior _dat_carga já gravada é buscada no início do modelo
   // (macro max_dat_carga, dbt/macros/max_dat_carga.sql) e a Raw é filtrada só
   // com o que chegou depois dela — dados antigos não são reprocessados.
-  const watermarkLookup = incremental ? watermarkLookupBlock('Raw') : '';
+  const rawPk = primaryKeyBaseNames(t);
+  const cursor = t.cursorField && !t.cursorField.includes('.') ? t.cursorField : null;
+  const watermarkLookup = incremental
+    ? `${watermarkLookupBlock('Raw')}{{ avisar_chave_nula(source('${SOURCE_NAME}', '${srcName}'), [${rawPk.map((k) => `'${k}'`).join(', ')}], v_max_dat_carga) }}\n`
+    : '';
   const source = `{{ source('${SOURCE_NAME}', '${srcName}') }}`;
   const sourceFilter = incremental
-    ? watermarkFilterBlock('_airbyte_extracted_at')
+    ? incrementalSourceFilterBlock(rawPk, cursor)
     : t.loadType === 'incremental' ? '' : lastLoadFilterBlock(source);
 
   return `{{ config(

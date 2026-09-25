@@ -27,15 +27,20 @@
 
 -- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
 -- max_dat_carga) para ler da Raw só os registros novos.
+{% set v_max_dat_carga = none %}
 {% if is_incremental() %}
     {% set v_max_dat_carga = max_dat_carga() %}
 {% endif %}
+{{ avisar_chave_nula(source('datacore_raw', 'usuarios'), ['id'], v_max_dat_carga) }}
 
 WITH fonte AS (
     SELECT * FROM {{ source('datacore_raw', 'usuarios') }}
-    {% if is_incremental() and v_max_dat_carga is not none %}
-    WHERE _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
+    WHERE id IS NOT NULL
+    {% if v_max_dat_carga is not none %}
+      AND _airbyte_extracted_at > TIMESTAMP('{{ v_max_dat_carga }}')
     {% endif %}
+    -- A Raw empilha as versões: fica só a mais recente de cada chave do lote.
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _airbyte_extracted_at DESC, dt_alteracao DESC) = 1
 ),
 
 tipado AS (

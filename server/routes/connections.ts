@@ -75,24 +75,22 @@ function buildAirbyteSchedule(input: ScheduleInput): { scheduleType: 'cron' | 'm
   return { scheduleType: 'cron', cronExpression: `0 ${minute} ${hourList} * * ? UTC` };
 }
 
-// Carga full é sempre full_refresh_append: a Raw empilha todas as cargas e
-// guarda o histórico das ingestões; a Bronze (dbtCodegen) fica só com a
-// última carga, identificada pelo sync_id de _airbyte_meta.
-function pickSyncMode(writeMode: WriteMode, loadType: LoadType, hasPrimaryKey: boolean): string {
-  if (loadType === 'incremental') {
-    if (writeMode === 'merge_upsert' && hasPrimaryKey) return 'incremental_deduped_history';
-    return 'incremental_append';
-  }
-  return 'full_refresh_append';
+// A Raw sempre empilha (append) e guarda o histórico das ingestões:
+// - full: full_refresh_append — a Bronze (dbtCodegen) fica só com a última
+//   carga, identificada pelo sync_id de _airbyte_meta;
+// - incremental: incremental_append — o Airbyte lê só o que passou do cursor e
+//   acrescenta cada versão do registro; o merge pela chave (escolhida na tela)
+//   é feito no dbt, na Bronze. Por isso o Airbyte não precisa da chave.
+function pickSyncMode(loadType: LoadType): string {
+  return loadType === 'incremental' ? 'incremental_append' : 'full_refresh_append';
 }
 
-// Configuração de cada stream no formato do Airbyte (syncMode, cursor, PK e
+// Configuração de cada stream no formato do Airbyte (syncMode, cursor e
 // colunas) a partir do que o assistente pede. Usado na criação da conexão e na
 // inclusão de tabelas numa conexão existente (PUT /:connectionId/streams).
 async function buildStreamConfigurations(
   sourceId: string,
   streamInputs: StreamSyncInput[],
-  writeMode: WriteMode,
   /** Consulta a origem de novo em vez do catálogo guardado (tabelas recém-criadas). */
   refresh = false,
 ): Promise<Record<string, unknown>[]> {
@@ -101,15 +99,11 @@ async function buildStreamConfigurations(
 
   return streamInputs.map(input => {
     const meta = byName.get(input.name);
-    const hasPrimaryKey = Boolean(meta?.sourceDefinedPrimaryKey?.length);
-    const syncMode = pickSyncMode(writeMode, input.loadType, hasPrimaryKey);
+    const syncMode = pickSyncMode(input.loadType);
 
     const stream: Record<string, unknown> = { name: input.name, syncMode };
-    if (syncMode === 'incremental_deduped_history' || syncMode === 'incremental_append') {
+    if (syncMode === 'incremental_append') {
       stream.cursorField = (input.cursorField || '').split('.');
-    }
-    if (syncMode === 'incremental_deduped_history') {
-      stream.primaryKey = meta?.sourceDefinedPrimaryKey;
     }
 
     const allColumns = meta?.propertyFields.map(p => p.join('.')) || [];
@@ -123,7 +117,7 @@ async function buildStreamConfigurations(
 
 connectionsRouter.post('/', async (req, res) => {
   try {
-    const { name, sourceId, destinationId, streams: streamInputs, writeMode, schedule, datasetOverride } = req.body as {
+    const { name, sourceId, destinationId, streams: streamInputs, schedule, datasetOverride } = req.body as {
       name: string;
       sourceId: string;
       destinationId: string;
@@ -147,7 +141,7 @@ connectionsRouter.post('/', async (req, res) => {
       }
     }
 
-    const streams = await buildStreamConfigurations(sourceId, streamInputs, writeMode || 'overwrite');
+    const streams = await buildStreamConfigurations(sourceId, streamInputs);
 
     // "raw_" on every destination table name (not just the raw_ dataset itself) —
     // so a table is identifiable as raw layer even outside its dataset's context.
@@ -254,7 +248,7 @@ function toStreamPatch(stream: Record<string, unknown> & { name: string }): Reco
 connectionsRouter.put('/:connectionId/streams', async (req, res) => {
   try {
     const { connectionId } = req.params;
-    const { add = [], remove = [], writeMode } = (req.body || {}) as {
+    const { add = [], remove = [] } = (req.body || {}) as {
       add?: StreamSyncInput[];
       remove?: string[];
       writeMode?: WriteMode;
@@ -283,7 +277,7 @@ connectionsRouter.put('/:connectionId/streams', async (req, res) => {
     }
 
     // refresh: a tabela incluída pode ter sido criada na origem depois da última descoberta.
-    const added = toAdd.length ? await buildStreamConfigurations(current.sourceId, toAdd, writeMode || 'overwrite', true) : [];
+    const added = toAdd.length ? await buildStreamConfigurations(current.sourceId, toAdd, true) : [];
 
     const data = await airbyteFetch(`/connections/${connectionId}`, {
       method: 'PATCH',

@@ -332,6 +332,11 @@ export interface TableSyncConfig {
   loadType: TableLoadType;
   cursorField: string;
   selectedColumns: string[];
+  /** Incremental: coluna(s) que identificam o registro — chave do merge na
+   *  Bronze/Silver (a Raw só empilha). Pré-preenchida com a chave primária da
+   *  origem; obrigatória quando a origem não declara chave. Ausente em
+   *  integrações antigas. */
+  keyColumns?: string[];
 }
 
 export interface AutoIntegration {

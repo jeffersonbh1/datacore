@@ -15,6 +15,7 @@
 
 -- Carga incremental: busca a maior _dat_carga já gravada nesta tabela (macro
 -- max_dat_carga) para ler da Bronze só os registros novos.
+{% set v_max_dat_carga = none %}
 {% if is_incremental() %}
     {% set v_max_dat_carga = max_dat_carga() %}
 {% endif %}

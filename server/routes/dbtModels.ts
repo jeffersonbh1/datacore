@@ -34,7 +34,7 @@ interface StreamMeta {
 
 interface IntegracaoRow {
   tabelas_selecionadas: string[] | null;
-  table_sync_configs: Record<string, { loadType?: string; cursorField?: string; selectedColumns?: string[] }> | null;
+  table_sync_configs: Record<string, { loadType?: string; cursorField?: string; selectedColumns?: string[]; keyColumns?: string[] }> | null;
   aplicar_sanitizacao_lgpd: boolean | null;
   // Dataset desta integração específica — ver sql/012_integracoes_dataset_override.sql.
   // NULL = usa o dataset compartilhado do destino (destinos.configuracao.databaseOrDataset).
@@ -121,7 +121,8 @@ dbtModelsRouter.post('/from-integration', async (req, res) => {
       return {
         name,
         columns: c.selectedColumns || [],
-        primaryKey: pkByStream.get(name) || [],
+        // Incremental: a chave escolhida na tela (merge da Bronze/Silver); senão, a da origem.
+        primaryKey: loadType === 'incremental' && c.keyColumns?.length ? c.keyColumns : pkByStream.get(name) || [],
         cursorField: loadType === 'incremental' ? c.cursorField || null : null,
         loadType,
       };

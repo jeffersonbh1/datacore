@@ -367,6 +367,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const getStreamSummary = (tableName: string): AirbyteStreamSummary | undefined =>
     usingRealStreams ? realStreams.find(s => s.streamName === tableName) : undefined;
 
+  /** Chave primária declarada pela origem (Airbyte), no formato das colunas da tela. */
+  const getSourceKeyColumns = (tableName: string): string[] =>
+    (getStreamSummary(tableName)?.primaryKey || []).map(p => p.join('.'));
+
   const getTableSyncConfig = (tableName: string): TableSyncConfig => {
     const existing = tableSyncConfigs[tableName];
     if (existing) return existing;
@@ -376,8 +380,19 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       loadType: 'full_refresh',
       cursorField: stream?.sourceDefinedCursorField ? (stream.cursorField[0] || '') : '',
       selectedColumns: columns,
+      keyColumns: getSourceKeyColumns(tableName),
     };
   };
+
+  /** Coluna(s) de ID da tabela: a escolhida na tela ou, em integrações antigas
+   *  (sem keyColumns salvo), a chave primária da origem. */
+  const getKeyColumns = (tableName: string, cfg: TableSyncConfig = getTableSyncConfig(tableName)): string[] =>
+    cfg.keyColumns ?? getSourceKeyColumns(tableName);
+
+  /** Chave do merge enviada ao dbt: no incremental, a coluna de ID escolhida;
+   *  na full (sem merge), a chave da origem, só para documentação. */
+  const getDbtPrimaryKey = (tableName: string, cfg: TableSyncConfig): string[] =>
+    cfg.loadType === 'incremental' ? getKeyColumns(tableName, cfg) : getSourceKeyColumns(tableName);
 
   const updateTableSyncConfig = (tableName: string, patch: Partial<TableSyncConfig>) => {
     setTableSyncConfigs(prev => ({
@@ -389,11 +404,27 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const handleChangeLoadType = (tableName: string, loadType: TableLoadType) => {
     const current = getTableSyncConfig(tableName);
     const stream = getStreamSummary(tableName);
+    const keyColumns = getKeyColumns(tableName, current);
     updateTableSyncConfig(tableName, {
       loadType,
       cursorField: loadType === 'full_refresh'
         ? ''
         : (current.cursorField || stream?.cursorField[0] || ''),
+      keyColumns,
+      // A chave precisa ser sincronizada: volta para as colunas selecionadas.
+      selectedColumns: loadType === 'incremental'
+        ? [...current.selectedColumns, ...keyColumns.filter(k => !current.selectedColumns.includes(k))]
+        : current.selectedColumns,
+    });
+  };
+
+  const handleToggleKeyColumn = (tableName: string, column: string) => {
+    const cfg = getTableSyncConfig(tableName);
+    const keys = getKeyColumns(tableName, cfg);
+    const keyColumns = keys.includes(column) ? keys.filter(k => k !== column) : [...keys, column];
+    updateTableSyncConfig(tableName, {
+      keyColumns,
+      selectedColumns: cfg.selectedColumns.includes(column) ? cfg.selectedColumns : [...cfg.selectedColumns, column],
     });
   };
 
@@ -404,6 +435,7 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
   const handleToggleColumn = (tableName: string, column: string) => {
     const cfg = getTableSyncConfig(tableName);
     if (cfg.loadType === 'incremental' && cfg.cursorField === column) return; // cursor column can't be excluded
+    if (cfg.loadType === 'incremental' && getKeyColumns(tableName, cfg).includes(column)) return; // nem a chave do merge
     const nextColumns = cfg.selectedColumns.includes(column)
       ? cfg.selectedColumns.filter(c => c !== column)
       : [...cfg.selectedColumns, column];
@@ -417,6 +449,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
       const cfg = getTableSyncConfig(tableName);
       if (cfg.loadType === 'incremental' && !cfg.cursorField) {
         return `Selecione o campo de cursor da tabela "${tableName}" — obrigatório para carga incremental.`;
+      }
+      if (cfg.loadType === 'incremental' && getKeyColumns(tableName, cfg).length === 0) {
+        return `Informe a(s) coluna(s) de ID da tabela "${tableName}" — obrigatório para carga incremental (é a chave do merge na Bronze).`;
       }
     }
     return null;
@@ -1135,11 +1170,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         applyLgpd: applyLgpdSanitization,
         tables: selectedTables.map(tableName => {
           const cfg = tableSyncConfigsSnapshot[tableName];
-          const stream = getStreamSummary(tableName);
           return {
             name: tableName,
             columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
-            primaryKey: (stream?.primaryKey || []).map(p => p.join('.')),
+            primaryKey: getDbtPrimaryKey(tableName, cfg),
             cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
             loadType: cfg.loadType,
           };
@@ -1242,6 +1276,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
         setErrorMessage(`Selecione o campo de cursor da tabela "${tableName}" — obrigatório para carga incremental.`);
         return;
       }
+      if (cfg.loadType === 'incremental' && getKeyColumns(tableName, cfg).length === 0) {
+        setErrorMessage(`Informe a(s) coluna(s) de ID da tabela "${tableName}" — obrigatório para carga incremental (é a chave do merge na Bronze).`);
+        return;
+      }
     }
     const connectionId = editIntegration.airbyteConnectionId;
     if (!connectionId) {
@@ -1326,11 +1364,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
             applyLgpd: editIntegration.applyLgpdSanitization,
             tables: addedTables.map(tableName => {
               const cfg = nextConfigs[tableName];
-              const stream = getStreamSummary(tableName);
               return {
                 name: tableName,
                 columns: cfg.selectedColumns.length ? cfg.selectedColumns : getTableColumns(tableName),
-                primaryKey: (stream?.primaryKey || []).map(pk => pk.join('.')),
+                primaryKey: getDbtPrimaryKey(tableName, cfg),
                 cursorField: cfg.loadType === 'incremental' ? cfg.cursorField : null,
                 loadType: cfg.loadType,
               };
@@ -2656,6 +2693,10 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                       const stream = getStreamSummary(tableName);
                       const cursorLocked = Boolean(stream?.sourceDefinedCursorField);
                       const cursorMissing = cfg.loadType === 'incremental' && !cfg.cursorField;
+                      const keyColumns = getKeyColumns(tableName, cfg);
+                      const keyMissing = cfg.loadType === 'incremental' && keyColumns.length === 0;
+                      const sourceKey = getSourceKeyColumns(tableName);
+                      const keyIsSourcePk = keyColumns.length > 0 && keyColumns.length === sourceKey.length && keyColumns.every(k => sourceKey.includes(k));
                       // Modo edição: a configuração de carga de uma tabela já integrada não muda aqui.
                       const lockedCfg = isEditMode && originalTables.includes(tableName);
 
@@ -2714,6 +2755,49 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                             </div>
                           </div>
 
+                          {/* Incremental: coluna(s) de ID = chave do merge na Bronze/Silver (a Raw só empilha). */}
+                          {cfg.loadType === 'incremental' && (
+                            <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-3.5 -mt-1 pl-9">
+                              <span className={`text-[11px] font-semibold ${keyMissing ? 'text-rose-600' : 'text-slate-600'}`}>
+                                Coluna(s) de ID <span className="text-rose-500">*</span>
+                              </span>
+                              {keyColumns.map(k => (
+                                <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-mono text-amber-800">
+                                  {k}
+                                  {!lockedCfg && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleKeyColumn(tableName, k)}
+                                      className="text-amber-600 hover:text-amber-900 cursor-pointer"
+                                      title="Remover da chave"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </span>
+                              ))}
+                              {!lockedCfg && (
+                                <select
+                                  value=""
+                                  onChange={(e) => e.target.value && handleToggleKeyColumn(tableName, e.target.value)}
+                                  className={`px-2 py-0.5 bg-white border rounded-lg text-[11px] font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer ${
+                                    keyMissing ? 'border-rose-300 text-rose-600' : 'border-slate-300 text-slate-600'
+                                  }`}
+                                >
+                                  <option value="">{keyColumns.length ? '+ coluna (chave composta)' : 'Selecione a coluna de ID...'}</option>
+                                  {columns.filter(c => !keyColumns.includes(c)).map(col => (
+                                    <option key={col} value={col}>{col}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <span className="text-[10px] text-slate-400">
+                                {keyMissing
+                                  ? 'A origem não informa chave primária: indique a coluna que identifica o registro.'
+                                  : keyIsSourcePk ? 'chave primária da origem' : 'usada no merge da Bronze e da Silver'}
+                              </span>
+                            </div>
+                          )}
+
                           {/* Columns Detail (Expanded) — default: all columns selected */}
                           {isExpanded && (
                             <div className="px-4 pb-4 pt-1 bg-slate-50/60 border-t border-slate-100">
@@ -2732,7 +2816,9 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => updateTableSyncConfig(tableName, {
-                                      selectedColumns: cfg.loadType === 'incremental' && cfg.cursorField ? [cfg.cursorField] : []
+                                      selectedColumns: cfg.loadType === 'incremental'
+                                        ? [...new Set([...(cfg.cursorField ? [cfg.cursorField] : []), ...keyColumns])]
+                                        : []
                                     })}
                                     className="text-[11px] text-slate-500 hover:underline cursor-pointer"
                                   >
@@ -2744,18 +2830,22 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
                                 {columns.map(col => {
                                   const checked = cfg.selectedColumns.includes(col);
                                   const isCursorColumn = cfg.loadType === 'incremental' && cfg.cursorField === col;
+                                  const isKeyColumn = cfg.loadType === 'incremental' && keyColumns.includes(col);
                                   return (
-                                    <label key={col} className={`flex items-center gap-1.5 text-xs text-slate-700 ${isCursorColumn ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                    <label key={col} className={`flex items-center gap-1.5 text-xs text-slate-700 ${isCursorColumn || isKeyColumn ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                                       <input
                                         type="checkbox"
                                         checked={checked}
                                         onChange={() => handleToggleColumn(tableName, col)}
-                                        disabled={isCursorColumn || lockedCfg}
+                                        disabled={isCursorColumn || isKeyColumn || lockedCfg}
                                         className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
                                       />
                                       <span className={`font-mono truncate ${isCursorColumn ? 'text-indigo-700 font-semibold' : ''}`}>{col}</span>
                                       {isCursorColumn && (
                                         <span className="text-[9px] text-indigo-600 font-semibold uppercase shrink-0">cursor</span>
+                                      )}
+                                      {isKeyColumn && (
+                                        <span className="text-[9px] text-amber-700 font-semibold uppercase shrink-0">id</span>
                                       )}
                                     </label>
                                   );
