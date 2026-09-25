@@ -292,6 +292,20 @@ ${indent}WHERE ${coluna} > TIMESTAMP('{{ v_max_dat_carga }}')
 ${indent}{% endif %}`;
 }
 
+/** WHERE da origem na carga full: só a última carga da Raw. A Raw full é
+ *  full_refresh_append (empilha todas as cargas = histórico); a Bronze é
+ *  recriada (table) só com a carga de maior sync_id. O sync_id (de
+ *  _airbyte_meta) identifica a carga inteira — o _airbyte_extracted_at varia
+ *  registro a registro dentro de um mesmo sync, então não serve de filtro. */
+function lastLoadFilterBlock(source: string): string {
+  return `
+    -- Carga full: a Raw guarda o histórico de todas as cargas; aqui entra só a última.
+    WHERE CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64) = (
+        SELECT MAX(CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64))
+        FROM ${source}
+    )`;
+}
+
 // --- modelo Bronze ---------------------------------------------------------
 
 function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
@@ -347,7 +361,10 @@ function renderBronzeSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): 
   // (macro max_dat_carga, dbt/macros/max_dat_carga.sql) e a Raw é filtrada só
   // com o que chegou depois dela — dados antigos não são reprocessados.
   const watermarkLookup = incremental ? watermarkLookupBlock('Raw') : '';
-  const incrementalFilter = incremental ? watermarkFilterBlock('_airbyte_extracted_at') : '';
+  const source = `{{ source('${SOURCE_NAME}', '${srcName}') }}`;
+  const sourceFilter = incremental
+    ? watermarkFilterBlock('_airbyte_extracted_at')
+    : t.loadType === 'incremental' ? '' : lastLoadFilterBlock(source);
 
   return `{{ config(
 ${cfg.join('\n')}
@@ -359,7 +376,7 @@ ${cfg.join('\n')}
 -- Saída : <DBT_SCHEMA_BRONZE>.${modelAlias}  (renome + LGPD Art. 46)${renameComment}
 ${watermarkLookup}
 WITH fonte AS (
-    SELECT * FROM {{ source('${SOURCE_NAME}', '${srcName}') }}${incrementalFilter}
+    SELECT * FROM ${source}${sourceFilter}
 ),
 
 tipado AS (

@@ -75,13 +75,15 @@ function buildAirbyteSchedule(input: ScheduleInput): { scheduleType: 'cron' | 'm
   return { scheduleType: 'cron', cronExpression: `0 ${minute} ${hourList} * * ? UTC` };
 }
 
+// Carga full é sempre full_refresh_append: a Raw empilha todas as cargas e
+// guarda o histórico das ingestões; a Bronze (dbtCodegen) fica só com a
+// última carga, identificada pelo sync_id de _airbyte_meta.
 function pickSyncMode(writeMode: WriteMode, loadType: LoadType, hasPrimaryKey: boolean): string {
   if (loadType === 'incremental') {
     if (writeMode === 'merge_upsert' && hasPrimaryKey) return 'incremental_deduped_history';
     return 'incremental_append';
   }
-  if (writeMode === 'append') return 'full_refresh_append';
-  return 'full_refresh_overwrite';
+  return 'full_refresh_append';
 }
 
 // Configuração de cada stream no formato do Airbyte (syncMode, cursor, PK e

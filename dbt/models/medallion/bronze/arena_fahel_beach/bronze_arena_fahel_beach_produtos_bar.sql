@@ -27,6 +27,11 @@
 
 WITH fonte AS (
     SELECT * FROM {{ source('datacore_raw', 'produtos_bar') }}
+    -- Carga full: a Raw guarda o histórico de todas as cargas; aqui entra só a última.
+    WHERE CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64) = (
+        SELECT MAX(CAST(JSON_VALUE(_airbyte_meta, '$.sync_id') AS INT64))
+        FROM {{ source('datacore_raw', 'produtos_bar') }}
+    )
 ),
 
 tipado AS (
