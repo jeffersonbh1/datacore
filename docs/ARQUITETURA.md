@@ -352,6 +352,17 @@ aplicado em toda conexão nova e, nas existentes, por
 | Tipo de coluna alterado | Propagado | O `dbt build` pode falhar na tabela → erro por tabela; reconstruir com "Do zero" |
 | Chave primária ou cursor alterado/removido (**incompatível**) | O Airbyte **bloqueia a conexão** (não há como evitar) | Não é construída — alerta "Schema incompatível" |
 
+**Mudança que pode quebrar as camadas seguintes = atualização bloqueada**
+(`sql/017`, `server/schemaChangeCheck.ts`): o schema da origem é comparado com a
+última "foto" (`integracoes.schema_snapshot`) a cada "Executar" com sync e pelo
+botão "Verificar schema agora" (alertas da integração em Pipelines & Fluxos).
+Tipo de coluna alterado, coluna removida, chave primária alterada e tabela
+integrada removida geram alerta **bloqueante**: enquanto ele estiver aberto, a
+Bronze, a Silver e o Gold daquela tabela **não são atualizados** (continuam com a
+última carga boa; as demais tabelas seguem normalmente). O alerta diz isso
+explicitamente; marcá-lo como ciente/resolvido libera a atualização na próxima
+execução. Coluna nova e tabela nova só geram alerta informativo.
+
 **Qualquer sync que falhe** (schema, credencial, origem fora do ar, BigQuery, rede):
 
 1. **Motivo real:** o gateway lê a falha do job na API interna do Airbyte

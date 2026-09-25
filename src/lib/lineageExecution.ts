@@ -1,6 +1,6 @@
 import { Pipeline } from '../types';
 import { buildBronzeLayer, buildSilverLayer, checkSchemaChanges, fetchConnectionJobs, fetchSyncFailureDiagnosis, triggerAirbyteSync, type AirbyteJob } from './airbyteGateway';
-import { rawErrorText, recordIntegrationAlert, recordRawFailure } from './ingestionAlerts';
+import { fetchBlockedTables, rawErrorText, recordIntegrationAlert, recordRawFailure, type BlockedTables } from './ingestionAlerts';
 import { summarizeTableFailures } from './pipelineBuilder';
 import { updatePipelineRunLayerStatus, upsertPipelineRuns } from './supabase';
 import { buildGoldModels, collect, topoOrder, type LineageIndex, type LineageIntegration } from './lineage';
@@ -98,6 +98,38 @@ export function buildPlan(index: LineageIndex, focusId: string, integrations: Li
     : [];
 
   return { focusId, scope, integrations: [...byIntegration.values()], gold, unbuiltInputs, fullRefresh };
+}
+
+/** Registrado no item da tabela bloqueada (tela Execuções). */
+export const BLOCKED_ITEM_MSG =
+  'NÃO ATUALIZADA — bloqueada por mudança de schema na origem (alerta aberto em Pipelines & Fluxos). Continua com os dados da última carga que deu certo; marque o alerta como ciente/resolvido para liberar.';
+
+/**
+ * Nós do plano que não podem ser atualizados por causa de um alerta bloqueante
+ * em aberto (mudança de schema — sql/017): a própria Bronze/Silver da tabela
+ * bloqueada e todo Gold que depende de uma tabela bloqueada. nodeId → motivo.
+ */
+export function blockedNodesInPlan(plan: ExecPlan, index: LineageIndex, blocks: BlockedTables): Map<string, { name: string; reason: string }> {
+  const out = new Map<string, { name: string; reason: string }>();
+  const tableBlock = (nodeId: string): string | null => {
+    const n = index.byId.get(nodeId);
+    if (!n || n.integrationId == null || !n.table) return null;
+    return blocks.get(n.integrationId)?.has(n.table) ? n.table : null;
+  };
+  for (const pi of plan.integrations) {
+    for (const b of [...pi.bronze, ...pi.silver]) {
+      if (blocks.get(pi.integration.id)?.has(b.table)) {
+        out.set(b.nodeId, { name: index.byId.get(b.nodeId)?.name ?? b.table, reason: `a tabela ${b.table} está bloqueada por mudança de schema na origem` });
+      }
+    }
+  }
+  for (const g of plan.gold) {
+    for (const a of collect(index, g.nodeId, 'up')) {
+      const t = tableBlock(a);
+      if (t) { out.set(g.nodeId, { name: g.name, reason: `depende da tabela ${t}, bloqueada por mudança de schema na origem` }); break; }
+    }
+  }
+  return out;
 }
 
 export interface RunHooks {
@@ -228,6 +260,27 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     }));
   }
 
+  // ---- Bloqueios por mudança de schema (alerta bloqueante em aberto — sql/017).
+  // A verificação de schema desta execução já terminou (é aguardada junto com o
+  // sync), então um bloqueio recém-detectado já vale aqui. Sem conseguir
+  // consultar os bloqueios, nada é construído (não dá para saber o que é seguro).
+  let blocked = new Map<string, { name: string; reason: string }>();
+  if (!cancelled && !hooks.isCancelled() && (plan.integrations.some((pi) => pi.bronze.length + pi.silver.length > 0) || plan.gold.length > 0)) {
+    try {
+      blocked = blockedNodesInPlan(plan, opts.index, await fetchBlockedTables());
+    } catch (err) {
+      const msg = `Não foi possível consultar os bloqueios por mudança de schema (${err instanceof Error ? err.message : 'erro desconhecido'}) — nenhuma tabela foi construída.`;
+      hooks.log(msg, 'error');
+      for (const pi of plan.integrations) {
+        for (const b of pi.bronze) { failed.add(b.nodeId); rec('bronze', nodeName(b.nodeId), pi.integration.nome, 'skipped', { error: msg }); }
+        for (const x of pi.silver) { failed.add(x.nodeId); rec('silver', nodeName(x.nodeId), pi.integration.nome, 'skipped', { error: msg }); }
+        hooks.setState([...pi.bronze, ...pi.silver].map((n) => n.nodeId), 'skipped');
+      }
+      for (const g of plan.gold) { failed.add(g.nodeId); rec('gold', g.name, null, 'skipped', { error: msg }); hooks.setState([g.nodeId], 'skipped'); }
+      return { ok: false, cancelled };
+    }
+  }
+
   // ---- B) Bronze e Silver, integração por integração
   for (const pi of plan.integrations) {
     if (cancelled || hooks.isCancelled()) { cancelled = true; break; }
@@ -241,6 +294,19 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
     // O que já está marcado como falho aqui é consequência de a sincronização ter falhado.
     for (const b of pi.bronze) if (failed.has(b.nodeId)) rec('bronze', nodeName(b.nodeId), integration.nome, 'skipped', { error: 'Não construída: a sincronização desta integração falhou.' });
     for (const s of pi.silver) if (failed.has(s.nodeId)) rec('silver', nodeName(s.nodeId), integration.nome, 'skipped', { error: 'Não construída: a sincronização desta integração falhou.' });
+
+    // Tabelas bloqueadas por mudança de schema: não são atualizadas nesta execução.
+    const blockedHere = [...pi.bronze.map((b) => ({ ...b, layer: 'bronze' as const })), ...pi.silver.map((x) => ({ ...x, layer: 'silver' as const }))]
+      .filter((n) => blocked.has(n.nodeId) && !failed.has(n.nodeId));
+    if (blockedHere.length > 0) {
+      for (const n of blockedHere) {
+        failed.add(n.nodeId);
+        rec(n.layer, nodeName(n.nodeId), integration.nome, 'skipped', { error: BLOCKED_ITEM_MSG });
+      }
+      hooks.setState(blockedHere.map((n) => n.nodeId), 'skipped');
+      const tables = [...new Set(blockedHere.map((n) => n.table))];
+      hooks.log(`${integration.nome}: ${tables.length} tabela(s) NÃO atualizada(s) — bloqueada(s) por mudança de schema na origem: ${tables.join(', ')}. Bronze, Silver e Gold delas continuam com a última carga que deu certo; veja os alertas em Pipelines & Fluxos.`, 'warn');
+    }
 
     const bronze = pi.bronze.filter((b) => !failed.has(b.nodeId));
     let bronzeOk = new Set<string>();
@@ -334,6 +400,14 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
   if (!cancelled && !hooks.isCancelled() && plan.gold.length > 0) {
     const buildable: PlanGold[] = [];
     for (const g of plan.gold) {
+      const blk = blocked.get(g.nodeId);
+      if (blk) {
+        hooks.setState([g.nodeId], 'skipped');
+        hooks.log(`${g.name}: NÃO atualizado — ${blk.reason}. Continua com os dados da última construção que deu certo.`, 'warn');
+        failed.add(g.nodeId);
+        rec('gold', g.name, null, 'skipped', { error: `NÃO ATUALIZADO — ${blk.reason} (alerta aberto em Pipelines & Fluxos). Continua com os dados da última construção que deu certo.` });
+        continue;
+      }
       const brokenUpstream = [...collect(opts.index, g.nodeId, 'up')].some((a) => failed.has(a));
       if (g.blocked) { hooks.setState([g.nodeId], 'error'); hooks.log(`${g.name}: ${g.blocked}`, 'error'); failed.add(g.nodeId); rec('gold', g.name, null, 'error', { error: g.blocked }); }
       else if (brokenUpstream) { hooks.setState([g.nodeId], 'skipped'); hooks.log(`${g.name}: não construído — uma tabela de que ele depende falhou.`, 'warn'); failed.add(g.nodeId); rec('gold', g.name, null, 'skipped', { error: 'Não construído: uma tabela de que ele depende falhou.' }); }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Play, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Lock, Play, X } from 'lucide-react';
 import type { ExecPlan } from '../../lib/lineageExecution';
 import type { RunLogEntry } from '../../lib/executionJobs';
 
@@ -26,6 +26,8 @@ interface ExecutePlanModalProps {
   /** Caixa "Executar fluxo até aqui": marcada = 'fluxo' (tudo que alimenta a tabela, até a camada dela);
    *  desmarcada = 'tabela' (só ela). Omitido = sem a caixa. */
   onScopeChange?: (scope: ExecPlan['scope']) => void;
+  /** Tabelas do plano bloqueadas por mudança de schema (alerta bloqueante aberto) — não serão atualizadas. */
+  blocked?: Array<{ name: string; reason: string }>;
 }
 
 const LOG_STYLE: Record<RunLogEntry['level'], string> = {
@@ -35,7 +37,7 @@ const LOG_STYLE: Record<RunLogEntry['level'], string> = {
 };
 
 export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
-  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose, blockedReason = null, onScopeChange,
+  plan, targetName, targetLayer, phase, log, result, includeSync, onIncludeSyncChange, canSyncAny, cancelling, onStart, onCancelRun, onClose, blockedReason = null, onScopeChange, blocked = [],
 }) => {
   const single = plan.scope === 'tabela';
   const bronzeCount = plan.integrations.reduce((n, i) => n + i.bronze.length, 0);
@@ -101,6 +103,14 @@ export const ExecutePlanModal: React.FC<ExecutePlanModalProps> = ({
               <li className="flex gap-2"><span className="font-bold text-slate-400 w-4">4.</span><span>Construir Gold (e rodar os testes do dbt) — {goldBuildable.length} modelo(s){goldBuildable.length ? `: ${goldBuildable.map((g) => g.name).join(', ')}` : ''}</span></li>
             </ol>
               </>
+            )}
+
+            {blocked.length > 0 && (
+              <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900 space-y-1">
+                <p className="font-semibold flex items-center gap-1.5"><Lock className="w-4 h-4" /> {blocked.length} tabela(s) NÃO serão atualizadas — bloqueio por mudança de schema</p>
+                {blocked.map((b) => <p key={b.name}><span className="font-mono break-all">{b.name}</span>: {b.reason}.</p>)}
+                <p>Elas continuam com os dados da última carga que deu certo. Para liberar, resolva os alertas da integração em Pipelines &amp; Fluxos.</p>
+              </div>
             )}
 
             {goldBlocked.length > 0 && (

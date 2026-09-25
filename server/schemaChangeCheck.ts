@@ -14,7 +14,16 @@ import { getSupabaseAdmin } from './supabaseAdmin';
 //
 // Tabelas que NÃO fazem parte da integração só geram alerta quando aparecem ou
 // somem da origem — mudança de coluna nelas seria ruído.
+//
+// Mudanças que podem quebrar as camadas seguintes (tipo alterado, coluna
+// removida, chave primária alterada, tabela integrada removida) geram alerta
+// BLOQUEANTE (sql/017): enquanto ele estiver aberto, Bronze/Silver/Gold da
+// tabela não são atualizados (ver fetchBlockedTables).
 // -----------------------------------------------------------------------------
+
+/** Frase final de todo alerta bloqueante — deixa claro que as demais camadas não foram atualizadas. */
+export const BLOCK_NOTE =
+  ' ATUALIZAÇÃO BLOQUEADA: enquanto este alerta estiver aberto, a Bronze, a Silver e o Gold desta tabela NÃO são atualizados — continuam com os dados da última carga que deu certo. Depois de corrigir, marque este alerta como ciente/resolvido para liberar a atualização.';
 
 /** { tabela: { columns: { coluna: tipo }, pk: [coluna] } } */
 export type SchemaSnapshot = Record<string, { columns: Record<string, string>; pk: string[] }>;
@@ -38,6 +47,9 @@ export interface SchemaAlert {
   severidade: 'critica' | 'alta' | 'media' | 'info';
   mensagem: string;
   detalhe: string | null;
+  tabela: string;
+  /** true = bloqueia a atualização da tabela nas camadas seguintes até ser resolvido. */
+  bloqueante: boolean;
 }
 
 export interface SchemaCheckResult {
@@ -85,6 +97,8 @@ export function diffSnapshots(before: SchemaSnapshot, after: SchemaSnapshot, int
         severidade: 'info',
         mensagem: `Tabela nova na origem: ${table}. Ela não é sincronizada até ser incluída na integração (Pipelines & Fluxos → Editar).`,
         detalhe: `Colunas: ${list(Object.keys(after[table].columns))}`,
+        tabela: table,
+        bloqueante: false,
       });
     }
   }
@@ -99,9 +113,11 @@ export function diffSnapshots(before: SchemaSnapshot, after: SchemaSnapshot, int
         categoria: 'tabela_removida',
         severidade: isIntegrated ? 'critica' : 'info',
         mensagem: isIntegrated
-          ? `A tabela integrada ${table} não existe mais na origem. A sincronização dela vai falhar; Bronze e Silver ficam com o último dado bom. Remova-a da integração (Pipelines & Fluxos → Editar).`
+          ? `A tabela integrada ${table} não existe mais na origem — a sincronização dela vai falhar. Remova-a da integração (Pipelines & Fluxos → Editar).${BLOCK_NOTE}`
           : `A tabela ${table} (não integrada) não existe mais na origem.`,
         detalhe: null,
+        tabela: table,
+        bloqueante: isIntegrated,
       });
       continue;
     }
@@ -115,32 +131,40 @@ export function diffSnapshots(before: SchemaSnapshot, after: SchemaSnapshot, int
       alerts.push({
         categoria: 'coluna_nova',
         severidade: 'media',
-        mensagem: `Coluna(s) nova(s) em ${table}: ${list(added)}. O Airbyte leva para a Raw automaticamente; a Bronze não as inclui até o modelo dbt da tabela ser regerado.`,
+        mensagem: `Coluna(s) nova(s) em ${table}: ${list(added)}. O Airbyte leva para a Raw automaticamente; a Bronze não as inclui até o modelo dbt da tabela ser regerado. Não bloqueia a atualização.`,
         detalhe: added.map((c) => `${c}: ${cur.columns[c]}`).join('\n'),
+        tabela: table,
+        bloqueante: false,
       });
     }
     if (removed.length) {
       alerts.push({
         categoria: 'coluna_removida',
         severidade: 'alta',
-        mensagem: `Coluna(s) removida(s) em ${table}: ${list(removed)}. Na Raw elas ficam vazias daqui em diante; a Bronze continua funcionando, com valor vazio.`,
+        mensagem: `Coluna(s) removida(s) em ${table}: ${list(removed)}. A Raw recebe a mudança; a Bronze e as camadas seguintes podem falhar ou passar a receber valores vazios nessas colunas. Revise o modelo dbt da tabela e o que depende dessas colunas.${BLOCK_NOTE}`,
         detalhe: removed.map((c) => `${c}: ${old.columns[c]}`).join('\n'),
+        tabela: table,
+        bloqueante: true,
       });
     }
     if (changed.length) {
       alerts.push({
         categoria: 'tipo_alterado',
         severidade: 'alta',
-        mensagem: `Tipo de coluna alterado em ${table}: ${list(changed)}. A construção da Bronze pode falhar; se falhar, reconstrua a tabela com "Do zero".`,
+        mensagem: `Tipo de coluna alterado em ${table}: ${list(changed)}. A Raw recebe a mudança; a construção da Bronze pode falhar ou converter valores de forma errada. Revise o modelo dbt e, ao liberar, execute a tabela com "Do zero".${BLOCK_NOTE}`,
         detalhe: changed.map((c) => `${c}: ${old.columns[c]} → ${cur.columns[c]}`).join('\n'),
+        tabela: table,
+        bloqueante: true,
       });
     }
     if (list(old.pk) !== list(cur.pk)) {
       alerts.push({
         categoria: 'chave_alterada',
         severidade: 'critica',
-        mensagem: `A chave primária de ${table} mudou. Mudança incompatível: o Airbyte bloqueia a conexão até o schema ser revisto na conexão do Airbyte; depois regenere os modelos dbt e execute com "Do zero".`,
+        mensagem: `A chave primária de ${table} mudou. Mudança incompatível: o Airbyte bloqueia a conexão até o schema ser revisto na conexão do Airbyte; depois regenere os modelos dbt e, ao liberar, execute com "Do zero".${BLOCK_NOTE}`,
         detalhe: `Antes: ${list(old.pk) || '(nenhuma)'}\nDepois: ${list(cur.pk) || '(nenhuma)'}`,
+        tabela: table,
+        bloqueante: true,
       });
     }
   }
@@ -178,6 +202,8 @@ export async function checkSchemaChanges(connectionId: string): Promise<SchemaCh
         severidade: a.severidade,
         mensagem: a.mensagem,
         detalhe: a.detalhe,
+        tabela: a.tabela,
+        bloqueante: a.bloqueante,
       })),
     );
     // Sem gravar os alertas, a foto NÃO é atualizada — a próxima verificação tenta de novo.
@@ -191,4 +217,22 @@ export async function checkSchemaChanges(connectionId: string): Promise<SchemaCh
   if (updateError) throw new Error(`Falha ao gravar a foto do schema: ${updateError.message}`);
 
   return { baseline: !before, alerts, verificadoEm };
+}
+
+/**
+ * Tabelas bloqueadas de uma integração: as que têm alerta bloqueante em aberto
+ * (sql/017). Mapa tabela → motivo (mensagem do alerta mais recente).
+ */
+export async function fetchBlockedTables(integracaoId: number): Promise<Map<string, string>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from('alertas_ingestao')
+    .select('tabela, mensagem')
+    .eq('integracao_id', integracaoId)
+    .eq('bloqueante', true)
+    .is('resolvido_em', null)
+    .order('criado_em', { ascending: false });
+  if (error) throw new Error(`Falha ao consultar os bloqueios da integração: ${error.message}`);
+  const out = new Map<string, string>();
+  for (const r of data || []) if (r.tabela && !out.has(r.tabela)) out.set(r.tabela, r.mensagem);
+  return out;
 }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, History, Loader2, RefreshCw, ScanSearch, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, History, Loader2, Lock, RefreshCw, ScanSearch, X } from 'lucide-react';
 import {
   SEVERIDADE_STYLE, TIPO_LABEL, categoryLabel, fetchIntegrationAlerts, isMissingAlertsTable, resolveIngestionAlerts,
   type IngestionAlert,
@@ -15,9 +15,18 @@ import { checkSchemaChanges } from '../../lib/airbyteGateway';
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR') : '—');
 
-function SeverityBadge({ alert }: { alert: IngestionAlert }) {
-  const s = SEVERIDADE_STYLE[alert.severidade];
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold whitespace-nowrap ${s.cls}`}>{s.label}</span>;
+function SeverityBadge({ alert: a }: { alert: IngestionAlert }) {
+  const s = SEVERIDADE_STYLE[a.severidade];
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold whitespace-nowrap ${s.cls}`}>{s.label}</span>
+      {a.bloqueante && (
+                            <span className="ml-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-bold bg-rose-600 text-white border-rose-700 whitespace-nowrap" title="Enquanto aberto, Bronze/Silver/Gold desta tabela não são atualizados">
+                              <Lock className="w-3 h-3" /> {a.resolvidoEm ? 'Bloqueou' : 'Bloqueando atualização'}
+                            </span>
+                          )}
+    </div>
+  );
 }
 
 function MessageCell({ alert }: { alert: IngestionAlert }) {
@@ -169,6 +178,16 @@ export const IntegrationAlertsModal: React.FC<Props> = ({ integracaoId, integrac
                 </button>
               )}
             </div>
+            {open.some((a) => a.bloqueante) && (
+              <div className="text-xs rounded-lg border border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-start gap-2">
+                <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Atualização bloqueada</strong> para {[...new Set(open.filter((a) => a.bloqueante && a.tabela).map((a) => a.tabela))].join(', ')}:
+                  Bronze, Silver e Gold dessas tabelas não são atualizados enquanto os alertas marcados com
+                  “Bloqueando atualização” estiverem abertos. Corrija e marque como ciente/resolvido para liberar na próxima execução.
+                </span>
+              </div>
+            )}
             {loading && open.length === 0 ? (
               <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando…</p>
             ) : open.length === 0 ? (
@@ -206,7 +225,7 @@ export const IntegrationAlertsModal: React.FC<Props> = ({ integracaoId, integrac
                               onClick={() => void resolve([a.id])}
                               className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md text-[11px] font-medium cursor-pointer whitespace-nowrap disabled:opacity-50"
                             >
-                              <CheckCircle className="w-3 h-3" /> Ciente/Resolvido
+                              <CheckCircle className="w-3 h-3" /> {a.bloqueante ? 'Resolvido — liberar' : 'Ciente/Resolvido'}
                             </button>
                           </td>
                         )}

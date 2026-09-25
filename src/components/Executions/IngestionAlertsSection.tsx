@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Loader2, Lock } from 'lucide-react';
 import {
   SEVERIDADE_STYLE, TIPO_LABEL, categoryLabel, fetchOpenIngestionAlerts, isMissingAlertsTable, resolveIngestionAlert,
   type IngestionAlert,
@@ -30,6 +30,11 @@ function AlertRow({ alert, onResolve, canResolve }: { alert: IngestionAlert; onR
             <span className={`text-[10px] px-2 py-0.5 rounded border font-mono ${sev.cls}`}>
               {TIPO_LABEL[alert.tipo]} · {categoryLabel(alert.categoria)}
             </span>
+            {alert.bloqueante && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-bold bg-rose-600 text-white border-rose-700" title="Enquanto aberto, Bronze/Silver/Gold desta tabela não são atualizados">
+                <Lock className="w-3 h-3" /> Bloqueando atualização
+              </span>
+            )}
             <span className="text-[11px] text-slate-400">
               {new Date(alert.criadoEm).toLocaleString('pt-BR')}{alert.airbyteJobId ? ` · job ${alert.airbyteJobId}` : ''}
             </span>

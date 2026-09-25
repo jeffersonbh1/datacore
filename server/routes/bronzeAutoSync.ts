@@ -3,6 +3,7 @@ import { airbyteFetch } from '../airbyteClient';
 import { getSupabaseAdmin } from '../supabaseAdmin';
 import { buildBronzeForTables } from './bronze';
 import { diagnoseSyncFailure, recordRawFailure } from '../rawFailurePolicy';
+import { fetchBlockedTables } from '../schemaChangeCheck';
 
 export const bronzeAutoSyncRouter = Router();
 
@@ -184,9 +185,23 @@ bronzeAutoSyncRouter.post('/', async (_req, res) => {
         continue;
       }
 
-      const tables = integ.tabelas_selecionadas || [];
+      // Tabelas com alerta bloqueante em aberto (mudança de schema que pode
+      // quebrar as camadas seguintes — sql/017) ficam de fora até o alerta ser
+      // resolvido. Sem conseguir consultar os bloqueios, não constrói nada.
+      let blocked: Map<string, string>;
+      try {
+        blocked = await fetchBlockedTables(integ.id);
+      } catch (err) {
+        results.push({ integracaoId: integ.id, action: 'skipped', detail: err instanceof Error ? err.message : 'falha ao consultar bloqueios' });
+        continue;
+      }
+      const tables = (integ.tabelas_selecionadas || []).filter(t => !blocked.has(t));
       if (tables.length === 0) {
-        results.push({ integracaoId: integ.id, action: 'skipped', detail: 'integração sem tabelas selecionadas' });
+        results.push({
+          integracaoId: integ.id,
+          action: 'skipped',
+          detail: blocked.size ? `todas as tabelas bloqueadas por mudança de schema: ${[...blocked.keys()].join(', ')}` : 'integração sem tabelas selecionadas',
+        });
         continue;
       }
 

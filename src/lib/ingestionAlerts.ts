@@ -28,6 +28,10 @@ export interface IngestionAlert {
   criadoEm: string;
   resolvidoEm: string | null;
   resolvidoPor: string | null;
+  /** Tabela (stream da origem) do alerta, quando for de uma tabela específica (sql/017). */
+  tabela: string | null;
+  /** Enquanto aberto, bloqueia a atualização da tabela em Bronze/Silver/Gold (sql/017). */
+  bloqueante: boolean;
 }
 
 export const TIPO_LABEL: Record<AlertTipo, string> = {
@@ -100,7 +104,40 @@ function mapRow(r: Record<string, unknown>): IngestionAlert {
     criadoEm: String(r.criado_em),
     resolvidoEm: (r.resolvido_em as string) || null,
     resolvidoPor: (r.resolvido_por as string) || null,
+    tabela: (r.tabela as string) || null,
+    bloqueante: r.bloqueante === true,
   };
+}
+
+/** integracaoId → (tabela → motivo): tabelas com alerta bloqueante em aberto. */
+export type BlockedTables = Map<number, Map<string, string>>;
+
+/**
+ * Tabelas bloqueadas por mudança de schema (alerta bloqueante em aberto) em todas
+ * as integrações da empresa (RLS). Antes da migração 017 (sem a coluna
+ * `bloqueante`) não existe bloqueio: devolve vazio.
+ */
+export async function fetchBlockedTables(): Promise<BlockedTables> {
+  const out: BlockedTables = new Map();
+  if (!supabase) return out;
+  const { data, error } = await supabase
+    .from('alertas_ingestao')
+    .select('integracao_id, tabela, mensagem, criado_em')
+    .eq('bloqueante', true)
+    .is('resolvido_em', null)
+    .order('criado_em', { ascending: false });
+  if (error) {
+    if (/bloqueante|tabela/.test(error.message) && /does not exist|could not find|schema cache/i.test(error.message)) return out;
+    throw error;
+  }
+  for (const r of data || []) {
+    if (r.integracao_id == null || !r.tabela) continue;
+    const id = Number(r.integracao_id);
+    const byTable = out.get(id) ?? new Map<string, string>();
+    if (!byTable.has(r.tabela)) byTable.set(r.tabela, String(r.mensagem));
+    out.set(id, byTable);
+  }
+  return out;
 }
 
 /** Alertas em aberto da empresa (todas as integrações), mais recentes primeiro. Isolamento pela RLS. */

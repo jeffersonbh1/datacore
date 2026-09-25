@@ -5,7 +5,8 @@ import {
   LAYER_LABEL, NODE_H, NODE_W, fetchLineage, focusOn, indexLineage, layoutGraph, nodesOfLayer,
   type Lineage, type LineageLayer, type LineageNode,
 } from '../../lib/lineage';
-import { buildPlan, type ExecPlan, type ExecScope, type RunState } from '../../lib/lineageExecution';
+import { blockedNodesInPlan, buildPlan, type ExecPlan, type ExecScope, type RunState } from '../../lib/lineageExecution';
+import { fetchBlockedTables } from '../../lib/ingestionAlerts';
 import { useExecutionJobs } from '../Executions/ExecutionJobsProvider';
 import { DbtModelEditor } from './DbtModelEditor';
 import { ExecutePlanModal } from './ExecutePlanModal';
@@ -89,6 +90,19 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
   const activeNode = activeId && index ? index.byId.get(activeId) ?? null : null;
   // O alvo da execução pode não ser a tabela em foco (o botão "Executar esta tabela" vale para qualquer nó do painel).
   const planTarget = plan && index ? index.byId.get(plan.focusId) ?? null : null;
+
+  // Tabelas do plano bloqueadas por mudança de schema — exibidas na confirmação.
+  // A execução consulta de novo na hora (runPlan), então isto é só informativo.
+  const [planBlocked, setPlanBlocked] = useState<Array<{ name: string; reason: string }>>([]);
+  useEffect(() => {
+    setPlanBlocked([]);
+    if (!plan || !index) return;
+    let cancelled = false;
+    fetchBlockedTables()
+      .then((blocks) => { if (!cancelled) setPlanBlocked([...blockedNodesInPlan(plan, index, blocks).values()]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [plan, index]);
 
   const options = useMemo(() => {
     const out = {} as Record<(typeof PICKER_LAYERS)[number], LineageNode[]>;
@@ -304,6 +318,7 @@ export const StudioGoldView: React.FC<StudioGoldViewProps> = ({ pipelines, idEmp
           onCancelRun={() => {}}
           onClose={() => setPlan(null)}
           onScopeChange={(scope) => openPlan(plan.focusId, scope, Boolean(plan.fullRefresh))}
+          blocked={planBlocked}
         />
       )}
     </div>
