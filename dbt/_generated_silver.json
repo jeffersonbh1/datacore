@@ -758,6 +758,16 @@
           "source": "current_timestamp()",
           "description": "Data/hora em que este build do dbt foi executado (current_timestamp())."
         }
+      ],
+      "incremental": false,
+      "regras": [
+        {
+          "id": 1,
+          "coluna": "dat_agendamento",
+          "tipo": "not_null",
+          "parametros": {},
+          "tipoColuna": "date"
+        }
       ]
     },
     "silver_arena_fahel_beach_alunos": {

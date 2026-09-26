@@ -7,6 +7,10 @@ version: 2
 models:
   - name: silver_arena_fahel_beach_agendamentos
     description: "Silver gerado — tabela agendamentos."
+    data_tests:
+      - reconciliacao_qualidade:
+          bronze: ref('bronze_arena_fahel_beach_agendamentos')
+          rejeitados: ref('silver_arena_fahel_beach_agendamentos_rejeitados')
     columns:
       - name: des_metodo_pagamento
         description: "Campo raw correspondente: \"metodo_pagamento\"."
