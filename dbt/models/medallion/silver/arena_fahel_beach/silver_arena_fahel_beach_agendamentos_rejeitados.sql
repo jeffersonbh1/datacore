@@ -18,7 +18,8 @@ WITH validado AS (
     SELECT
         *,
         ARRAY_CONCAT(
-            IF(`dat_agendamento` IS NULL, ['r1: dat_agendamento obrigatório'], [])
+            IF(`dat_agendamento` IS NULL, ['r1: dat_agendamento obrigatório'], []),
+            IF(`vlr_total` > 300, ['r2: vlr_total acima do máximo 300'], [])
         ) AS _motivos_rejeicao
     FROM {{ ref('bronze_arena_fahel_beach_agendamentos') }}
 )
