@@ -1394,15 +1394,15 @@ export const AutoPipelineView: React.FC<AutoPipelineViewProps> = ({
 
   // Active source/dest instances for preview in step 3
   const currentActiveSource = sourceMode === 'new' 
-    ? { name: sourceName || 'Nova Origem', type: sourceType, host: sourceHost }
-    : sources.find(s => s.id === selectedSourceId) || { name: 'Origem', type: 'postgresql' as SourceType, host: 'localhost' };
+    ? { name: sourceName || 'Nova Origem', type: sourceType, host: sourceHost, database: sourceDatabase }
+    : sources.find(s => s.id === selectedSourceId) || { name: 'Origem', type: 'postgresql' as SourceType, host: 'localhost', database: '' };
 
   const selectedExistingDest = destinations.find(d => d.id === selectedDestId);
   const currentActiveDest = destMode === 'new'
-    ? { name: destName || 'Novo Destino', type: destType, databaseOrDataset: destDatabaseOrDataset }
+    ? { name: destName || 'Novo Destino', type: destType, databaseOrDataset: destDatabaseOrDataset, writeMode: destWriteMode }
     : selectedExistingDest && selectedExistingDest.type === 'bigquery' && existingDestDatasetId.trim()
       ? { ...selectedExistingDest, databaseOrDataset: getFullExistingDatasetId() }
-      : selectedExistingDest || { name: 'Destino', type: 'bigquery' as DestinationType, databaseOrDataset: 'analytics' };
+      : selectedExistingDest || { name: 'Destino', type: 'bigquery' as DestinationType, databaseOrDataset: 'analytics', writeMode: destWriteMode };
 
   return (
     <div id="auto-pipeline-container" className="space-y-6 pb-12">

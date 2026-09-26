@@ -23,7 +23,7 @@ import { RbacManager } from './components/Security/RbacManager';
 import { AdministracaoView, AdminSection } from './components/Admin/AdministracaoView';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { ResetPasswordScreen } from './components/Auth/ResetPasswordScreen';
-import { Workflow, Layers, Activity, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
+import { Workflow, Layers, ShieldCheck, DollarSign, Lock, Play, Wand2 } from 'lucide-react';
 import {
   isSupabaseConfigured, supabase, logoutFromSupabase,
   fetchUsuarioPorAuthId, mapUsuarioRowToTeamUser,
@@ -707,13 +707,6 @@ export default function App() {
         >
           <Layers className="w-4 h-4" />
           <span>Pipelines</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('monitoring')}
-          className={`flex flex-col items-center gap-1 text-[10px] ${activeTab === 'monitoring' ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}
-        >
-          <Activity className="w-4 h-4" />
-          <span>Monitor</span>
         </button>
         <button
           onClick={() => setActiveTab('governance')}
