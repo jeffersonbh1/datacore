@@ -767,16 +767,6 @@
           "tipo": "not_null",
           "parametros": {},
           "tipoColuna": "date"
-        },
-        {
-          "id": 2,
-          "coluna": "vlr_total",
-          "tipo": "range",
-          "parametros": {
-            "max": 300,
-            "min": null
-          },
-          "tipoColuna": "number"
         }
       ]
     },
