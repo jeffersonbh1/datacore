@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { silverModelName } from '../dbtCodegen';
+import { hasSilverQuarantine, REJEITADOS_SUFFIX, silverModelName, syncDbtFromRemote } from '../dbtCodegen';
 import { DbtUnavailableError, runDbt, type RunDbtResult } from '../dbtRunner';
+import { recordSilverQuality } from '../qualityResults';
 
 export const silverRouter = Router();
 
@@ -14,6 +15,9 @@ export interface BuildSilverInput {
   sistema: string;
   location?: string;
   fullRefresh?: boolean;
+  /** Integração dona das tabelas: grava o resultado de qualidade (qualidade_execucoes).
+   *  A empresa sai da própria integração no banco, nunca do corpo da requisição. */
+  integracaoId?: number;
 }
 
 export interface TableResult {
@@ -53,7 +57,14 @@ export async function buildSilverViaDbt(input: BuildSilverInput): Promise<BuildS
     };
   }
 
-  const select = tables.map((t) => silverModelName(sistema, t)).join(' ');
+  // Regras de qualidade salvas depois do último deploy só existem no remoto (disco efêmero).
+  await syncDbtFromRemote();
+  // Tabela com regras de qualidade: a quarentena (_rejeitados) entra no mesmo build.
+  const select = tables
+    .flatMap((t) => (hasSilverQuarantine(sistema, t)
+      ? [silverModelName(sistema, t), `${silverModelName(sistema, t)}${REJEITADOS_SUFFIX}`]
+      : [silverModelName(sistema, t)]))
+    .join(' ');
 
   const dbtRun = await runDbt({
     projectId: input.projectId,
@@ -64,6 +75,14 @@ export async function buildSilverViaDbt(input: BuildSilverInput): Promise<BuildS
     select,
     fullRefresh: input.fullRefresh,
   });
+
+  const silverDataset = input.silverDataset || input.bronzeDataset.replace(/^bronze_/, 'silver_');
+  if (input.integracaoId && dbtRun.models.length > 0) {
+    await recordSilverQuality({
+      integracaoId: input.integracaoId, sistema, tables, projectId: input.projectId,
+      bronzeDataset: input.bronzeDataset, silverDataset, location: input.location, dbtRun,
+    });
+  }
 
   // Falha total (compilação/parse/conexão): não mascara, reporta o erro por tabela.
   if (!dbtRun.ok && dbtRun.models.length === 0) {
@@ -87,6 +106,17 @@ export async function buildSilverViaDbt(input: BuildSilverInput): Promise<BuildS
         status: 'error' as const,
         error: `Modelo dbt "${modelName}" não encontrado — gere os modelos da integração (POST /api/dbt/models).`,
         model: modelName,
+      };
+    }
+    // Quarentena que não gravou = linhas rejeitadas sumiriam sem registro: conta como falha da tabela.
+    const rejNode = byModel.get(`${modelName}${REJEITADOS_SUFFIX}`);
+    if (statusFromDbt(node.status) === 'ok' && rejNode && statusFromDbt(rejNode.status) === 'error') {
+      return {
+        table,
+        status: 'error' as const,
+        error: `A quarentena de qualidade (${rejNode.name}) falhou: ${rejNode.message || `dbt status "${rejNode.status}"`}`,
+        model: modelName,
+        rowsAffected: node.rowsAffected,
       };
     }
     return {
@@ -113,7 +143,7 @@ export async function buildSilverViaDbt(input: BuildSilverInput): Promise<BuildS
 
 silverRouter.post('/build', async (req, res) => {
   try {
-    const { projectId, rawDataset, bronzeDataset, silverDataset, tables, sistema, location, fullRefresh } = req.body as BuildSilverInput;
+    const { projectId, rawDataset, bronzeDataset, silverDataset, tables, sistema, location, fullRefresh, integracaoId } = req.body as BuildSilverInput;
 
     if (!projectId || !rawDataset || !bronzeDataset || !Array.isArray(tables) || tables.length === 0) {
       res.status(400).json({
@@ -122,7 +152,10 @@ silverRouter.post('/build', async (req, res) => {
       return;
     }
 
-    const { results, dbt } = await buildSilverViaDbt({ projectId, rawDataset, bronzeDataset, silverDataset, tables, sistema, location, fullRefresh });
+    const { results, dbt } = await buildSilverViaDbt({
+      projectId, rawDataset, bronzeDataset, silverDataset, tables, sistema, location, fullRefresh,
+      integracaoId: Number.isFinite(Number(integracaoId)) && Number(integracaoId) > 0 ? Number(integracaoId) : undefined,
+    });
     const hasFailure = results.some((r) => r.status === 'error') || !dbt.ok;
     res.status(hasFailure ? 207 : 200).json({ dataset: silverDataset || bronzeDataset.replace(/^bronze_/, 'silver_'), results, dbt });
   } catch (err) {

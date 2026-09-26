@@ -387,6 +387,8 @@ export async function buildSilverLayer(payload: {
   sistema?: string;
   location?: string;
   fullRefresh?: boolean;
+  /** Grava o resultado de qualidade da Silver (tela Qualidade de Dados). */
+  integracaoId?: number;
 }): Promise<{ dataset: string; results: BronzeTableResult[]; dbt?: BronzeDbtSummary }> {
   return gatewayFetch('/api/bigquery/silver/build', {
     method: 'POST',

@@ -16,6 +16,7 @@ import { StudioGoldView } from './components/StudioGold/StudioGoldView';
 import { AutoPipelineView } from './components/AutoPipeline/AutoPipelineView';
 import { PipelinesOverview } from './components/PipelinesList/PipelinesOverview';
 import { ExecutionsView } from './components/Executions/ExecutionsView';
+import { QualidadeView } from './components/Quality/QualidadeView';
 import { ExecutionJobsProvider } from './components/Executions/ExecutionJobsProvider';
 import { LgpdHub } from './components/Governance/LgpdHub';
 import { CostAnalytics } from './components/FinOps/CostAnalytics';
@@ -166,6 +167,8 @@ export default function App() {
   // Integração aberta no modo edição da tela Pipeline Automático (botão Editar em
   // Pipelines & Fluxos). Null = assistente no modo cadastro.
   const [editingIntegration, setEditingIntegration] = useState<AutoIntegration | null>(null);
+  // Integração pré-filtrada ao abrir Qualidade de Dados pelo atalho do card do pipeline.
+  const [qualityIntegrationId, setQualityIntegrationId] = useState<number | null>(null);
 
   // Empresa's own Airbyte workspace (Fase 3 — isolates each tenant's connectors
   // from every other tenant's). Null until resolved, which still works: the
@@ -381,6 +384,8 @@ export default function App() {
   // assistente abre no modo cadastro.
   useEffect(() => {
     if (activeTab !== 'auto-pipeline') setEditingIntegration(null);
+    // O filtro do atalho do card vale só para aquela visita — pelo menu, a tela abre com todas.
+    if (activeTab !== 'qualidade') setQualityIntegrationId(null);
   }, [activeTab]);
 
   const handleEditPipeline = (pipeline: Pipeline) => {
@@ -605,6 +610,7 @@ export default function App() {
                 }}
                 userName={currentUser.name}
                 canResolveAlerts={permissions.canTriggerExecutions}
+                onOpenQuality={(integracaoId) => { setQualityIntegrationId(integracaoId); setActiveTab('qualidade'); }}
                 onNavigateToAutoPipeline={() => { setEditingIntegration(null); setActiveTab('auto-pipeline'); }}
                 canCreate={permissions.canCreatePipelines}
                 canEdit={permissions.canEditPipelines}
@@ -614,6 +620,14 @@ export default function App() {
 
             {activeTab === 'execucoes' && (
               <ExecutionsView userName={currentUser.name} canResolveAlerts={permissions.canTriggerExecutions} />
+            )}
+
+            {activeTab === 'qualidade' && (
+              <QualidadeView
+                integrations={integrations}
+                initialIntegrationId={qualityIntegrationId}
+                canEdit={permissions.canEditPipelines}
+              />
             )}
 
             {activeTab === 'chat-dados' && (

@@ -125,6 +125,7 @@ silverAutoSyncRouter.post('/', async (_req, res) => {
         tables,
         sistema,
         location: cfg.warehouseOrCluster || undefined,
+        integracaoId: integ.id,
       });
       // Normaliza para o formato TableBuildResult (src/lib/pipelineBuilder.ts)
       // que a tela Execuções espera em silver_tables — TableResult

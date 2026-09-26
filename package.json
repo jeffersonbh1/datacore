@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "server:dev": "tsx watch server/index.ts",
     "server:typecheck": "tsc --noEmit -p server/tsconfig.json",
+    "server:test": "tsx --test server/__tests__/*.test.ts",
     "server:build": "esbuild server/index.ts --bundle --platform=node --format=esm --outfile=server/dist/index.mjs --packages=external",
     "server:start": "node server/dist/index.mjs"
   },

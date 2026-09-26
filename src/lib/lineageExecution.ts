@@ -435,6 +435,7 @@ export async function runPlan(plan: ExecPlan, opts: RunOptions, hooks: RunHooks)
           projectId: integration.projectId, rawDataset: integration.rawDataset, bronzeDataset: integration.bronzeDataset,
           silverDataset: integration.silverDataset, tables: silver.map((s) => s.table), sistema: integration.sistemaNome,
           location: integration.location || undefined, fullRefresh: plan.fullRefresh,
+          integracaoId: integration.id,
         });
         const byTable = new Map(results.map((r) => [r.table, r]));
         for (const s of silver) {

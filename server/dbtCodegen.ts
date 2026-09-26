@@ -1,10 +1,11 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { isMap, isSeq, parseDocument } from 'yaml';
 import { resolveDbtProjectDir } from './dbtRunner';
 import { buildColumnRenameMap } from './bronzeNaming';
+import { motivoText, motivosArraySql, type QualityRuleSpec } from './qualityRules';
 
 const execFileP = promisify(execFile);
 
@@ -100,6 +101,12 @@ export function bronzeModelName(sistema: string, table: string): string {
 /** Nome do modelo Silver: silver_<sistema>_<tabela>. */
 export function silverModelName(sistema: string, table: string): string {
   return `silver_${sistemaSlug(sistema)}_${sanitizeIdent(table)}`;
+}
+
+/** Quarentena da Silver (só existe quando a tabela tem regras de qualidade ativas). */
+export const REJEITADOS_SUFFIX = '_rejeitados';
+export function silverRejeitadosModelName(sistema: string, table: string): string {
+  return `${silverModelName(sistema, table)}${REJEITADOS_SUFFIX}`;
 }
 
 /** Nome-base da chave primária (do stream Airbyte, ex. "public.usuarios.id" -> "id"). */
@@ -420,25 +427,60 @@ SELECT * FROM tipado
 // executa contra o BigQuery real e fica em models/medallion/silver/<sistema>/
 // pronto para o usuário estender (o editor visual do Studio edita este mesmo
 // arquivo). Regenerar sobrescreve, igual à Bronze.
-function renderSilverSql(spec: IntegrationModelsSpec, t: IntegrationTableSpec): string {
-  const sys = sistemaSlug(spec.sistema);
-  const srcName = sanitizeIdent(t.name);
-  const bronzeRef = bronzeModelName(spec.sistema, t.name);
-  const modelAlias = `silver_${sys}_${srcName}`;
+/** O que o modelo Silver de uma tabela precisa para ser gerado — vem do spec da
+ *  integração (writeIntegrationModels) ou do manifesto Silver (writeSilverQualityModels,
+ *  quando só as regras de qualidade mudaram). */
+export interface SilverModelInput {
+  /** Nome do sistema como cadastrado (vai no cabeçalho; o slug sai dele). */
+  sistema: string;
+  table: string;
+  /** PK já com o nome padronizado. */
+  pk: string[];
+  incremental: boolean;
+  /** Regras de qualidade ATIVAS e com coluna existente. Vazio = passthrough de hoje. */
+  regras: QualityRuleSpec[];
+}
+
+/** Comentário de uma linha: o texto da regra vem do usuário, então sem quebra
+ *  de linha (escaparia do "--") nem chaves (delimitadores Jinja). */
+function commentSafe(text: string): string {
+  return text.replace(/[\r\n{}]/g, ' ');
+}
+
+function silverInputFromSpec(spec: IntegrationModelsSpec, t: IntegrationTableSpec, regras: QualityRuleSpec[]): SilverModelInput {
   // Mesma chave e mesma decisão de incremental da Bronze — a Silver é
   // passthrough, então a chave já vem com o nome padronizado.
   const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
   const pk = resolvePrimaryKey(t, renameMap);
-  const incremental = t.loadType === 'incremental' && pk.length > 0;
-  const cfg = modelConfigLines(modelAlias, pk, incremental);
-  const watermarkLookup = incremental ? watermarkLookupBlock('Bronze') : '';
-  const incrementalFilter = incremental ? watermarkFilterBlock('_dat_carga', '') : '';
+  return { sistema: spec.sistema, table: t.name, pk, incremental: t.loadType === 'incremental' && pk.length > 0, regras };
+}
 
-  return `{{ config(
+/** CTE com a coluna _motivos_rejeicao (ARRAY<STRING>) — igual na Silver e na quarentena. */
+function validadoCte(bronzeRef: string, regras: QualityRuleSpec[], incrementalFilter: string): string {
+  return `WITH validado AS (
+    SELECT
+        *,
+${motivosArraySql(regras)} AS _motivos_rejeicao
+    FROM {{ ref('${bronzeRef}') }}${incrementalFilter}
+)`;
+}
+
+export function renderSilverSql(input: SilverModelInput): string {
+  const sys = sistemaSlug(input.sistema);
+  const srcName = sanitizeIdent(input.table);
+  const bronzeRef = bronzeModelName(input.sistema, input.table);
+  const modelAlias = `silver_${sys}_${srcName}`;
+  const { pk, incremental, regras } = input;
+  const cfg = modelConfigLines(modelAlias, pk, incremental);
+
+  if (regras.length === 0) {
+    const watermarkLookup = incremental ? watermarkLookupBlock('Bronze') : '';
+    const incrementalFilter = incremental ? watermarkFilterBlock('_dat_carga', '') : '';
+    return `{{ config(
 ${cfg.join('\n')}
 ) }}
 
--- GERADO por server/dbtCodegen.ts — sistema "${spec.sistema}", camada Silver, tabela ${t.name}.
+-- GERADO por server/dbtCodegen.ts — sistema "${input.sistema}", camada Silver, tabela ${input.table}.
 -- A regeração sobrescreve este arquivo. Ponto de partida: passthrough do Bronze
 -- já tipado/sanitizado — adicione aqui as regras de curadoria do
 -- negócio (joins, métricas, renomes analíticos) conforme necessário.
@@ -447,13 +489,134 @@ ${cfg.join('\n')}
 ${watermarkLookup}
 SELECT * FROM {{ ref('${bronzeRef}') }}${incrementalFilter}
 `;
+  }
+
+  const rejeitados = `${modelAlias}${REJEITADOS_SUFFIX}`;
+  if (incremental) {
+    // Versão nova rejeitada de um registro que já estava na Silver: o merge não a
+    // remove sozinho — sem isso a Silver ficaria com a versão antiga, que a regra
+    // já reprovou. Remove as chaves rejeitadas NESTA execução.
+    const match = pk.map((k) => `r.${k} = s.${k}`).join(' AND ');
+    cfg.push(`    , post_hook = ["DELETE FROM {{ this }} AS s WHERE EXISTS (SELECT 1 FROM {{ ref('${rejeitados}') }} AS r WHERE r._id_execucao = '{{ invocation_id }}' AND ${match})"]`);
+  }
+  const watermarkLookup = incremental
+    ? `
+-- Carga incremental: a maior _dat_carga já processada — aceita (esta tabela) ou
+-- rejeitada (quarentena, fora desta execução) — para ler da Bronze só o que é novo.
+-- depends_on: {{ ref('${rejeitados}') }}
+{% set v_max_dat_carga = none %}
+{% if is_incremental() %}
+    {% set v_max_dat_carga = max_dat_carga_qualidade(this, ref('${rejeitados}')) %}
+{% endif %}
+`
+    : '';
+  const incrementalFilter = incremental ? watermarkFilterBlock('_dat_carga', '    ') : '';
+
+  return `{{ config(
+${cfg.join('\n')}
+) }}
+
+-- GERADO por server/dbtCodegen.ts — sistema "${input.sistema}", camada Silver, tabela ${input.table}.
+-- A regeração sobrescreve este arquivo. As regras de qualidade vêm da tela
+-- "Qualidade de Dados" (tabela qualidade_regras): a linha que viola alguma
+-- regra vai para a quarentena ${rejeitados} em vez desta tabela.
+-- Origem: ref('${bronzeRef}')
+-- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
+-- Regras ativas (${regras.length}):
+${regras.map((r) => `--   ${commentSafe(motivoText(r))}`).join('\n')}
+${watermarkLookup}
+${validadoCte(bronzeRef, regras, incrementalFilter)}
+
+SELECT * EXCEPT (_motivos_rejeicao)
+FROM validado
+WHERE ARRAY_LENGTH(_motivos_rejeicao) = 0
+`;
+}
+
+/** Quarentena: as linhas que violaram alguma regra, com os motivos, a execução
+ *  (invocation_id do dbt) e quando foram rejeitadas. Só acumula (append) e
+ *  nunca é recriada pelo --full-refresh (histórico); o post_hook apaga o que
+ *  passou de QUARENTENA_RETENCAO_DIAS. */
+export const QUARENTENA_RETENCAO_DIAS = 90;
+
+export function renderSilverRejeitadosSql(input: SilverModelInput): string {
+  const sys = sistemaSlug(input.sistema);
+  const srcName = sanitizeIdent(input.table);
+  const bronzeRef = bronzeModelName(input.sistema, input.table);
+  const silverAlias = `silver_${sys}_${srcName}`;
+  const modelAlias = `${silverAlias}${REJEITADOS_SUFFIX}`;
+
+  // Na Silver `table`, cada execução revalida a Bronze inteira e grava todas as
+  // rejeitadas daquela execução (é o que a reconciliação confere). Na incremental,
+  // só o lote novo — mesma marca d'água da Silver (max_dat_carga_qualidade).
+  const watermarkLookup = input.incremental
+    ? `
+-- Carga incremental: mesma marca d'água da Silver (aceitas + rejeitadas), para
+-- validar o mesmo lote. Com --full-refresh a Bronze é revalidada inteira.
+{% set v_max_dat_carga = none %}
+{% if not flags.FULL_REFRESH %}
+    {% set v_max_dat_carga = max_dat_carga_qualidade(adapter.get_relation(this.database, this.schema, '${silverAlias}'), this) %}
+{% endif %}
+`
+    : '';
+  const incrementalFilter = input.incremental ? watermarkFilterBlock('_dat_carga', '    ') : '';
+
+  return `{{ config(
+    materialized = 'incremental'
+    , alias = '${modelAlias}'
+    , full_refresh = false
+    , on_schema_change = 'append_new_columns'
+    , partition_by = {'field': '_dat_rejeicao', 'data_type': 'timestamp', 'granularity': 'day'}
+    , post_hook = ["DELETE FROM {{ this }} WHERE _dat_rejeicao < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL ${QUARENTENA_RETENCAO_DIAS} DAY)"]
+) }}
+
+-- GERADO por server/dbtCodegen.ts — sistema "${input.sistema}", quarentena da Silver, tabela ${input.table}.
+-- A regeração sobrescreve este arquivo. Linhas da Bronze que violaram alguma
+-- regra de qualidade (tela "Qualidade de Dados"), com os motivos. Guarda
+-- ${QUARENTENA_RETENCAO_DIAS} dias de histórico.
+-- Origem: ref('${bronzeRef}')
+-- Saída : <DBT_SCHEMA_SILVER>.${modelAlias}
+${watermarkLookup}
+${validadoCte(bronzeRef, input.regras, incrementalFilter)}
+
+SELECT
+    *,
+    current_timestamp() AS _dat_rejeicao,
+    '{{ invocation_id }}' AS _id_execucao
+FROM validado
+WHERE ARRAY_LENGTH(_motivos_rejeicao) > 0
+`;
+}
+
+/** Regras do manifesto que ainda cabem no modelo: coluna existente (quando a
+ *  lista de colunas é conhecida). Regra de coluna removida fica no manifesto,
+ *  mas fora do SQL — o build não quebra. */
+function applicableRules(regras: QualityRuleSpec[] | undefined, columns: ColumnDoc[], model: string): QualityRuleSpec[] {
+  if (!regras || regras.length === 0) return [];
+  if (columns.length === 0) return regras;
+  const names = new Set(columns.map((c) => c.name));
+  for (const r of regras) {
+    if (!names.has(r.coluna)) console.warn(`[dbt] ${model}: regra r${r.id} ignorada — a coluna "${r.coluna}" não existe mais na tabela.`);
+  }
+  return regras.filter((r) => names.has(r.coluna));
 }
 
 // --- _properties.yml por sistema ------------------------------------------------
 
 /** Manifesto aninhado: sistema -> modelo -> { tabela raw, PK, o MAPEAMENTO
  *  completo origem -> padronizado de toda coluna do modelo }. Acumula por sistema. */
-export type BronzeManifest = Record<string, Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>>;
+export type BronzeManifest = Record<string, Record<string, ManifestModel>>;
+
+/** Entrada de um modelo no manifesto. `incremental` e `regras` só existem no
+ *  manifesto Silver: são o que writeSilverQualityModels precisa para regerar a
+ *  Silver quando só as regras de qualidade mudaram (sem o spec da integração). */
+export interface ManifestModel {
+  table: string;
+  pk: string[];
+  columns: ColumnDoc[];
+  incremental?: boolean;
+  regras?: QualityRuleSpec[];
+}
 
 type Layer = 'Bronze' | 'Silver';
 
@@ -526,19 +689,33 @@ function layerModelBlock(
   pk: string[],
   columns: ColumnDoc[],
   existing?: Map<string, string>,
+  extraTests: string[] = [],
 ): string {
   const cols = columnsBlock(pk, columns, existing);
+  const extra = extraTests.map((t) => `\n${t}`).join('');
   if (pk.length > 1) {
     return `  - name: ${name}
     description: "${layer} gerado — tabela ${table}."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
-${pk.map((k) => `            - ${k}`).join('\n')}${cols}`;
+${pk.map((k) => `            - ${k}`).join('\n')}${extra}${cols}`;
   }
   const semPk = pk.length === 0 ? ' (sem PK; sem carga incremental)' : '';
+  const tests = extraTests.length ? `\n    data_tests:${extra}` : '';
   return `  - name: ${name}
-    description: "${layer} gerado — tabela ${table}${semPk}."${cols}`;
+    description: "${layer} gerado — tabela ${table}${semPk}."${tests}${cols}`;
+}
+
+/** Testes de modelo da Silver com regras de qualidade: reconciliação Bronze =
+ *  Silver + quarentena (só na Silver `table` — ver tests/generic/reconciliacao_qualidade.sql). */
+function silverQualityTests(sys: string, name: string, entry: ManifestModel): string[] {
+  if (entry.incremental || applicableRules(entry.regras, entry.columns, name).length === 0) return [];
+  return [
+    '      - reconciliacao_qualidade:',
+    `          bronze: ref('bronze_${sys}_${sanitizeIdent(entry.table)}')`,
+    `          rejeitados: ref('${name}${REJEITADOS_SUFFIX}')`,
+  ];
 }
 
 function renderSistemaPropertiesYml(
@@ -546,13 +723,16 @@ function renderSistemaPropertiesYml(
   manifestFile: string,
   sistema: string,
   sys: string,
-  models: Record<string, { table: string; pk: string[]; columns: ColumnDoc[] }>,
+  models: Record<string, ManifestModel>,
   existingPath: string,
 ): string {
   const existingByModel = readExistingDescriptions(existingPath);
   const blocks = Object.keys(models)
     .sort()
-    .map((name) => layerModelBlock(layer, name, models[name].table, models[name].pk, models[name].columns, existingByModel.get(name)))
+    .map((name) => layerModelBlock(
+      layer, name, models[name].table, models[name].pk, models[name].columns, existingByModel.get(name),
+      layer === 'Silver' ? silverQualityTests(sys, name, models[name]) : [],
+    ))
     .join('\n');
   return `version: 2
 
@@ -763,6 +943,9 @@ export async function syncDbtFromRemote(force = false): Promise<void> {
 export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promise<WriteModelsResult> {
   const err = validateSpec(spec);
   if (err) throw new Error(err);
+  // Disco do gateway é efêmero: traz o que o remoto tem antes de regerar — senão um
+  // manifesto antigo (sem as regras de qualidade salvas depois do deploy) as apagaria.
+  await syncDbtFromRemote();
 
   const sys = sistemaSlug(spec.sistema);
   const projectDir = resolveDbtProjectDir();
@@ -811,22 +994,23 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   // 4) um modelo Silver por tabela em models/medallion/silver/<sistema>/ — mesmo
   // padrão da Bronze: passthrough do Bronze correspondente, pronto para o
   // usuário adicionar as regras de curadoria pelo editor visual do Studio.
+  // As regras de qualidade (tela "Qualidade de Dados") ficam no manifesto Silver
+  // e são preservadas aqui: regerar a integração não pode desligar a validação.
+  const silverManifest = readJsonManifest<BronzeManifest>(projectDir, SILVER_MANIFEST_FILE);
+  const silverSysModels = silverManifest[sys] || {};
   const silverModels: string[] = [];
   for (const t of spec.tables) {
     const base = silverModelName(spec.sistema, t.name);
-    retrySync(() => writeFileSync(join(silverSysDir, `${base}.sql`), renderSilverSql(spec, t), 'utf8'));
-    files.push(`${sys}/${base}.sql`);
-    silverModels.push(base);
-  }
-  const silverManifest = readJsonManifest<BronzeManifest>(projectDir, SILVER_MANIFEST_FILE);
-  const silverSysModels = silverManifest[sys] || {};
-  for (const t of spec.tables) {
     // Silver é passthrough do Bronze (renderSilverSql): herda os mesmos nomes
     // de coluna já padronizados, então a PK do teste é a mesma da Bronze.
     const renameMap = t.columns && t.columns.length > 0 ? buildColumnRenameMap(t.columns, t.name) : null;
-    const pk = resolvePrimaryKey(t, renameMap);
     const columns = resolveColumnDocs(t, renameMap, 'Silver');
-    silverSysModels[silverModelName(spec.sistema, t.name)] = { table: t.name, pk, columns };
+    const regras = silverSysModels[base]?.regras;
+    const input = silverInputFromSpec(spec, t, applicableRules(regras, columns, base));
+    writeSilverFiles(silverSysDir, base, input);
+    files.push(`${sys}/${base}.sql`);
+    silverModels.push(base);
+    silverSysModels[base] = { table: t.name, pk: input.pk, columns, incremental: input.incremental, ...(regras?.length ? { regras } : {}) };
   }
   silverManifest[sys] = silverSysModels;
   retrySync(() => writeFileSync(join(projectDir, SILVER_MANIFEST_FILE), JSON.stringify(silverManifest, null, 2) + '\n', 'utf8'));
@@ -843,6 +1027,75 @@ export async function writeIntegrationModels(spec: IntegrationModelsSpec): Promi
   return { dir: sysDir, sistema: sys, files, models, silverModels, sources: Object.keys(sourcesManifest), ...git };
 }
 
+/** Grava o .sql da Silver e, se houver regras, o da quarentena (sem regras, a
+ *  quarentena antiga é apagada — a tabela no BigQuery fica, com o histórico). */
+function writeSilverFiles(silverSysDir: string, base: string, input: SilverModelInput): void {
+  retrySync(() => writeFileSync(join(silverSysDir, `${base}.sql`), renderSilverSql(input), 'utf8'));
+  const rejeitadosPath = join(silverSysDir, `${base}${REJEITADOS_SUFFIX}.sql`);
+  if (input.regras.length > 0) {
+    retrySync(() => writeFileSync(rejeitadosPath, renderSilverRejeitadosSql(input), 'utf8'));
+  } else if (existsSync(rejeitadosPath)) {
+    retrySync(() => rmSync(rejeitadosPath, { force: true }));
+  }
+}
+
+/** A tabela tem quarentena gerada (= regras de qualidade ativas)? */
+export function hasSilverQuarantine(sistema: string, table: string): boolean {
+  const path = join(resolveDbtProjectDir(), 'models', 'medallion', 'silver', sistemaSlug(sistema), `${silverRejeitadosModelName(sistema, table)}.sql`);
+  return existsSync(path);
+}
+
+/** Entrada do manifesto Silver de um modelo (colunas, PK, regras), ou null. */
+export function readSilverManifestModel(sistema: string, table: string): ManifestModel | null {
+  const manifest = readJsonManifest<BronzeManifest>(resolveDbtProjectDir(), SILVER_MANIFEST_FILE);
+  return manifest[sistemaSlug(sistema)]?.[silverModelName(sistema, table)] ?? null;
+}
+
+/**
+ * Regera só a Silver de UMA tabela (e a quarentena e o _properties.yml do
+ * sistema) com novas regras de qualidade — usado pela tela "Qualidade de
+ * Dados" (server/routes/quality.ts). Não precisa do spec da integração: PK,
+ * colunas e se é incremental vêm do manifesto Silver.
+ */
+export async function writeSilverQualityModels(
+  sistema: string,
+  table: string,
+  regras: QualityRuleSpec[],
+): Promise<Pick<WriteModelsResult, 'git' | 'gitDetail'> & { model: string; files: string[] }> {
+  await syncDbtFromRemote();
+  const sys = sistemaSlug(sistema);
+  const projectDir = resolveDbtProjectDir();
+  const silverSysDir = join(projectDir, 'models', 'medallion', 'silver', sys);
+  const base = silverModelName(sistema, table);
+  const silverManifest = readJsonManifest<BronzeManifest>(projectDir, SILVER_MANIFEST_FILE);
+  const entry = silverManifest[sys]?.[base];
+  if (!entry || !existsSync(join(silverSysDir, `${base}.sql`))) {
+    throw new Error(`Modelo Silver "${base}" não encontrado — gere os modelos da integração antes.`);
+  }
+
+  // Manifestos anteriores a esta fase não guardam `incremental`: vem do .sql atual.
+  const incremental = entry.incremental
+    ?? /materialized\s*=\s*'incremental'/.test(readFileSync(join(silverSysDir, `${base}.sql`), 'utf8'));
+  const updated: ManifestModel = { ...entry, incremental };
+  if (regras.length) updated.regras = regras; else delete updated.regras;
+  silverManifest[sys] = { ...silverManifest[sys], [base]: updated };
+
+  writeSilverFiles(silverSysDir, base, {
+    sistema, table: entry.table, pk: entry.pk, incremental, regras: applicableRules(regras, entry.columns, base),
+  });
+  retrySync(() => writeFileSync(join(projectDir, SILVER_MANIFEST_FILE), JSON.stringify(silverManifest, null, 2) + '\n', 'utf8'));
+  const silverPropertiesPath = join(silverSysDir, PROPERTIES_FILE);
+  retrySync(() => writeFileSync(silverPropertiesPath, renderSistemaPropertiesYml('Silver', SILVER_MANIFEST_FILE, sistema, sys, silverManifest[sys], silverPropertiesPath), 'utf8'));
+
+  const mode = (process.env.DBT_CODEGEN_GIT || 'off').toLowerCase();
+  let git: Pick<WriteModelsResult, 'git' | 'gitDetail'> = { git: 'skipped' };
+  if (mode === 'commit' || mode === 'push') {
+    git = await gitCommit(silverSysDir, `dbt: regras de qualidade da Silver ${base} (${regras.length})`, mode === 'push');
+  }
+  const files = [`${sys}/${base}.sql`, `${sys}/${PROPERTIES_FILE} (silver)`, ...(regras.length ? [`${sys}/${base}${REJEITADOS_SUFFIX}.sql`] : [])];
+  return { model: base, files, ...git };
+}
+
 /** Lista os modelos Bronze/Silver gerados ({bronze,silver}_*.sql em models/medallion/<camada>/<sistema>/). */
 export function listGeneratedModels(): string[] {
   const medallionDir = join(resolveDbtProjectDir(), 'models', 'medallion');
@@ -853,7 +1106,8 @@ export function listGeneratedModels(): string[] {
     for (const entry of readdirSync(base, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       for (const f of readdirSync(join(base, entry.name))) {
-        if (f.startsWith(`${layerDir}_`) && f.endsWith('.sql')) out.push(f.replace(/\.sql$/, ''));
+        // A quarentena (_rejeitados) é detalhe da Silver com regras, não um modelo a escolher no Studio.
+        if (f.startsWith(`${layerDir}_`) && f.endsWith('.sql') && !f.endsWith(`${REJEITADOS_SUFFIX}.sql`)) out.push(f.replace(/\.sql$/, ''));
       }
     }
   }

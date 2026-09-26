@@ -50,6 +50,8 @@ export interface DbtModelResult {
   /** `adapter_response.rows_affected` do dbt-bigquery — linhas gravadas por
    *  este model na última DDL/DML. Undefined se o adapter não reportou (raro). */
   rowsAffected?: number;
+  /** Só em testes: nome do modelo ao qual o teste está ligado (attached_node do manifest.json). */
+  attachedModel?: string;
 }
 
 export interface RunDbtResult {
@@ -59,6 +61,8 @@ export interface RunDbtResult {
   target: string;
   /** Resultados por nó lidos de target/run_results.json. */
   models: DbtModelResult[];
+  /** invocation_id desta execução (run_results.json) — o mesmo que os modelos gravam via {{ invocation_id }}. */
+  invocationId?: string;
   stdoutTail: string;
   stderrTail: string;
   error?: string;
@@ -181,6 +185,7 @@ function spawnDbt(
 }
 
 interface RunResultsFile {
+  metadata?: { invocation_id?: string };
   results: Array<{
     unique_id: string;
     status: string;
@@ -190,18 +195,42 @@ interface RunResultsFile {
   }>;
 }
 
-function readRunResults(projectDir: string): DbtModelResult[] {
+/** Modelo ao qual cada teste está ligado, do target/manifest.json (só para os testes pedidos). */
+function readTestAttachments(projectDir: string, testIds: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const path = join(projectDir, 'target', 'manifest.json');
+  if (testIds.length === 0 || !existsSync(path)) return out;
+  try {
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
+      nodes?: Record<string, { attached_node?: string | null; depends_on?: { nodes?: string[] } }>;
+    };
+    for (const id of testIds) {
+      const node = manifest.nodes?.[id];
+      const attached = node?.attached_node || node?.depends_on?.nodes?.find((n) => n.startsWith('model.'));
+      if (attached) out.set(id, attached.split('.').pop() as string);
+    }
+  } catch {
+    // manifest ilegível: os testes ficam sem modelo associado.
+  }
+  return out;
+}
+
+function readRunResults(projectDir: string): { models: DbtModelResult[]; invocationId?: string } {
   const path = join(projectDir, 'target', 'run_results.json');
-  if (!existsSync(path)) return [];
+  if (!existsSync(path)) return { models: [] };
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as RunResultsFile;
-  return (parsed.results || []).map((r) => ({
+  const results = parsed.results || [];
+  const attachments = readTestAttachments(projectDir, results.filter((r) => r.unique_id.startsWith('test.')).map((r) => r.unique_id));
+  const models = results.map((r) => ({
     name: r.unique_id.split('.').pop() || r.unique_id,
     uniqueId: r.unique_id,
     status: r.status,
     message: r.message || undefined,
     executionTime: r.execution_time,
     rowsAffected: r.adapter_response?.rows_affected ?? undefined,
+    ...(attachments.has(r.unique_id) ? { attachedModel: attachments.get(r.unique_id) } : {}),
   }));
+  return { models, invocationId: parsed.metadata?.invocation_id };
 }
 
 // Serializa execuções dentro do processo: dbt escreve em target/ e duas
@@ -290,7 +319,7 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
     stdout += built.stdout;
     stderr += built.stderr;
 
-    const models = readRunResults(projectDir);
+    const { models, invocationId } = readRunResults(projectDir);
     const hasNodeFailure = models.some((m) => m.status === 'error' || m.status === 'fail' || m.status === 'runtime error');
 
     return {
@@ -299,6 +328,7 @@ export async function runDbt(input: RunDbtInput): Promise<RunDbtResult> {
       select,
       target,
       models,
+      invocationId,
       stdoutTail: tail(stdout),
       stderrTail: tail(stderr),
       error: built.code === 0 && !hasNodeFailure ? undefined : `dbt ${command} reportou falhas — ver models[] e stderrTail.`,

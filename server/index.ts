@@ -16,6 +16,7 @@ import { lineageRouter } from './routes/lineage';
 import { destinationsRouter } from './routes/destinations';
 import { prepareGitDeployKey } from './gitDeployKey';
 import { rawCatalogRouter } from './routes/rawCatalog';
+import { qualityRouter } from './routes/quality';
 import { silverRouter } from './routes/silver';
 import { silverAutoSyncRouter } from './routes/silverAutoSync';
 import { sourcesRouter } from './routes/sources';
@@ -51,6 +52,8 @@ app.use('/api/raw-catalog', requireGatewayApiKey, rawCatalogRouter);
 app.use('/api/agent', requireGatewayApiKey, requireUserSession, agentRouter);
 // Studio Visual ETL Gold: linhagem da empresa + construção de modelos Gold (também exige a sessão do usuário).
 app.use('/api/lineage', requireGatewayApiKey, requireUserSession, lineageRouter);
+// Tela Qualidade de Dados: regras da Silver (empresa e papel vêm da sessão).
+app.use('/api/quality', requireGatewayApiKey, requireUserSession, qualityRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {

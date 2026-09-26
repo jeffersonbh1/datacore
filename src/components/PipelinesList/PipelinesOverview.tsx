@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Search, Filter, Play, Pause, ShieldCheck,
   Layers, Clock, DollarSign, Database, CheckCircle, AlertTriangle,
-  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2, Pencil, Bell
+  Sparkles, Boxes, Radio, Server, X, Wand2, Trash2, AlertCircle, Loader2, Pencil, Bell, BadgeCheck
 } from 'lucide-react';
 import { Pipeline, CloudProvider } from '../../types';
 import { fetchOpenAlertSummary, type OpenAlertSummary } from '../../lib/ingestionAlerts';
@@ -33,6 +33,8 @@ interface PipelinesOverviewProps {
   integrationForPipeline?: (pipeline: Pipeline) => PipelineIntegrationRef | undefined;
   userName?: string | null;
   canResolveAlerts?: boolean;
+  /** Abre Qualidade de Dados filtrada pela integração do pipeline. */
+  onOpenQuality?: (integracaoId: number) => void;
   onNavigateToAutoPipeline?: () => void;
   canCreate: boolean;
   canEdit: boolean;
@@ -51,6 +53,7 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   integrationForPipeline,
   userName = null,
   canResolveAlerts = false,
+  onOpenQuality,
   onNavigateToAutoPipeline,
   canCreate,
   canEdit,
@@ -335,6 +338,22 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
                           {count > 99 ? '99+' : count}
                         </span>
                       )}
+                    </button>
+                  );
+                })()}
+
+                {(() => {
+                  const integ = integrationForPipeline?.(pipeline);
+                  if (!onOpenQuality || !integ || integ.id === null) return null;
+                  const integracaoId = integ.id;
+                  return (
+                    <button
+                      id={`btn-quality-pipeline-${pipeline.id}`}
+                      onClick={() => onOpenQuality(integracaoId)}
+                      title="Qualidade de dados da Silver desta integração"
+                      className="p-2 bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-lg transition cursor-pointer border border-slate-200 hover:border-indigo-200 shadow-sm"
+                    >
+                      <BadgeCheck className="w-4 h-4" />
                     </button>
                   );
                 })()}
