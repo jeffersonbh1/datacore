@@ -23,6 +23,7 @@ export interface QualityTableRef {
 }
 
 const TREND_SIZE = 10;
+const PAGE_SIZE = 15;
 
 export const QualidadeView: React.FC<QualidadeViewProps> = ({ integrations, initialIntegrationId = null, canEdit }) => {
   const [rules, setRules] = useState<QualityRule[]>([]);
@@ -32,6 +33,10 @@ export const QualidadeView: React.FC<QualidadeViewProps> = ({ integrations, init
   const [integrationFilter, setIntegrationFilter] = useState<string>(initialIntegrationId ? String(initialIntegrationId) : 'all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<QualityTableRef | null>(null);
+  const [page, setPage] = useState(0);
+
+  // Filtro novo = volta para a primeira página.
+  useEffect(() => { setPage(0); }, [integrationFilter, search]);
 
   useEffect(() => {
     if (initialIntegrationId) setIntegrationFilter(String(initialIntegrationId));
@@ -77,6 +82,11 @@ export const QualidadeView: React.FC<QualidadeViewProps> = ({ integrations, init
     }
     return out.sort((a, b) => a.integracaoNome.localeCompare(b.integracaoNome) || a.tabela.localeCompare(b.tabela));
   }, [dbIntegrations, integrationFilter, search, executions, rules]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
 
   const totals = useMemo(() => {
     const latest = rows.map((r) => r.history[0]).filter((e): e is QualityExecution => !!e);
@@ -188,7 +198,7 @@ export const QualidadeView: React.FC<QualidadeViewProps> = ({ integrations, init
                 Nenhuma tabela Silver encontrada{integrationFilter !== 'all' || search ? ' com esse filtro' : ''}.
               </td></tr>
             )}
-            {rows.map((row) => {
+            {pageRows.map((row) => {
               const last = row.history[0];
               return (
                 <tr
@@ -217,6 +227,36 @@ export const QualidadeView: React.FC<QualidadeViewProps> = ({ integrations, init
             })}
           </tbody>
         </table>
+        {rows.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 text-[11px] text-slate-500">
+            <span>
+              {totalPages > 1
+                ? <>Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, rows.length)} de {rows.length} tabelas</>
+                : `${rows.length} tabela${rows.length === 1 ? '' : 's'}`}
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage === 0}
+                  onClick={() => setPage(currentPage - 1)}
+                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                >
+                  Anterior
+                </button>
+                <span className="font-mono">Página {currentPage + 1} de {totalPages}</span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages - 1}
+                  onClick={() => setPage(currentPage + 1)}
+                  className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
