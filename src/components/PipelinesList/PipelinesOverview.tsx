@@ -19,6 +19,9 @@ interface PipelinesOverviewProps {
    *  (Supabase + métricas reais do Airbyte) — evita mostrar "Nenhum pipeline
    *  criado ainda" antes da busca real terminar. */
   isLoading?: boolean;
+  /** Pipelines cujas métricas reais (Airbyte) ainda estão carregando em
+   *  segundo plano — os KPIs deles mostram um spinner no lugar do valor. */
+  metricsLoadingIds?: Set<string>;
   onToggleStatus: (pipelineId: string) => void;
   onTriggerRun: (pipelineId: string) => void;
   onDeletePipeline?: (pipeline: Pipeline) => void;
@@ -39,6 +42,7 @@ interface PipelinesOverviewProps {
 export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
   pipelines,
   isLoading = false,
+  metricsLoadingIds,
   onToggleStatus,
   onTriggerRun,
   onDeletePipeline,
@@ -86,6 +90,11 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
     ? (pipelines.reduce((sum, p) => sum + p.actualSla, 0) / pipelines.length).toFixed(2)
     : '0.00';
   const activeCount = pipelines.filter(p => p.status === 'active').length;
+  const isMetricsLoading = (pipelineId: string) => metricsLoadingIds?.has(pipelineId) ?? false;
+  const anyMetricsLoading = (metricsLoadingIds?.size ?? 0) > 0;
+  const metricSpinner = (className: string) => (
+    <Loader2 className={`${className} text-slate-400 animate-spin`} aria-label="Carregando métricas" />
+  );
 
   const getProviderBadge = (provider: CloudProvider) => {
     switch (provider) {
@@ -127,6 +136,7 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           <div className="text-2xl font-bold text-slate-900 flex items-baseline gap-1">
             {(totalRecordsToday / 1000000).toFixed(2)}M
             <span className="text-xs text-slate-500 font-normal">registros</span>
+            {anyMetricsLoading && metricSpinner('w-4 h-4 self-center')}
           </div>
           <span className="text-[11px] text-slate-500 block mt-1">Streaming & Batch combinados</span>
         </div>
@@ -141,6 +151,7 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
           <div className="text-2xl font-bold text-slate-900 flex items-baseline gap-1">
             {avgSla}%
             <span className="text-xs text-slate-500 font-normal">uptime</span>
+            {anyMetricsLoading && metricSpinner('w-4 h-4 self-center')}
           </div>
           <span className="text-[11px] text-slate-500 block mt-1">Meta acordada: 99.90%</span>
         </div>
@@ -220,6 +231,7 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
       <div className="space-y-4">
         {filteredPipelines.map((pipeline) => {
           const isActive = pipeline.status === 'active';
+          const loadingMetrics = isMetricsLoading(pipeline.id);
 
           return (
             <div
@@ -275,20 +287,20 @@ export const PipelinesOverview: React.FC<PipelinesOverviewProps> = ({
               <div className="flex items-center gap-6 border-y lg:border-y-0 lg:border-x border-slate-100 py-3 lg:py-0 lg:px-6 shrink-0 text-center">
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Processados</span>
-                  <span className="text-sm font-semibold font-mono text-emerald-600">
-                    {(pipeline.recordsProcessedToday / 1000).toLocaleString()}k
+                  <span className="text-sm font-semibold font-mono text-emerald-600 inline-flex justify-center h-5 items-center">
+                    {loadingMetrics ? metricSpinner('w-3.5 h-3.5') : `${(pipeline.recordsProcessedToday / 1000).toLocaleString()}k`}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Latência</span>
-                  <span className="text-sm font-semibold font-mono text-sky-600">
-                    {pipeline.avgLatencyMs}ms
+                  <span className="text-sm font-semibold font-mono text-sky-600 inline-flex justify-center h-5 items-center">
+                    {loadingMetrics ? metricSpinner('w-3.5 h-3.5') : `${pipeline.avgLatencyMs}ms`}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">SLA Real</span>
-                  <span className="text-sm font-semibold font-mono text-emerald-600">
-                    {pipeline.actualSla}%
+                  <span className="text-sm font-semibold font-mono text-emerald-600 inline-flex justify-center h-5 items-center">
+                    {loadingMetrics ? metricSpinner('w-3.5 h-3.5') : `${pipeline.actualSla}%`}
                   </span>
                 </div>
                 <div>

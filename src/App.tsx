@@ -31,8 +31,8 @@ import {
   fetchPipelinesPorEmpresa, persistPipeline, updateIntegracaoStatus, deletarIntegracao, PipelineDbRecord,
   fetchEmpresaPorId
 } from './lib/supabase';
-import { buildPipelineFromIntegration } from './lib/pipelineBuilder';
-import { refreshPipelineMetrics } from './lib/pipelineRuns';
+import { buildPipelineFromIntegration, applyRealMetrics } from './lib/pipelineBuilder';
+import { refreshPipelineMetrics, syncPipelineRuns } from './lib/pipelineRuns';
 import { updateAirbyteConnectionStatus } from './lib/airbyteGateway';
 
 export default function App() {
@@ -177,6 +177,9 @@ export default function App() {
   // por alguns segundos toda vez que a busca real (Supabase + Airbyte) ainda
   // estava em andamento, achando que a conta não tinha pipelines de verdade.
   const [isLoadingEmpresaData, setIsLoadingEmpresaData] = useState(false);
+  // Pipelines cujas métricas reais (histórico de syncs do Airbyte) ainda estão
+  // sendo buscadas em segundo plano — os KPIs desses cards mostram um spinner.
+  const [metricsLoadingIds, setMetricsLoadingIds] = useState<Set<string>>(new Set());
 
   // Loads origens/destinos/integrações persistidos no Supabase para a empresa do
   // usuário logado, para que sobrevivam a um refresh (antes só existiam em memória).
@@ -215,6 +218,7 @@ export default function App() {
         );
 
         const rebuilt: Pipeline[] = [];
+        const metricsToLoad: { pipelineId: string; dbId: number; connectionId: string }[] = [];
         for (const integration of persistedIntegrations) {
           const source = persistedSources.find(s => s.id === integration.sourceConnectorId);
           const destination = persistedDestinations.find(d => d.id === integration.destinationConnectorId);
@@ -237,23 +241,33 @@ export default function App() {
             }
           }
 
-          let pipeline = buildPipelineFromIntegration(`pipe-${record.id}`, integration, source, destination, record.id);
-
-          // Fase 2: overlay real Airbyte sync history onto the deterministic
-          // canvas — best-effort, a pipeline with no real connection yet (or a
-          // gateway hiccup) just keeps its honest "nothing synced" defaults.
+          rebuilt.push(buildPipelineFromIntegration(`pipe-${record.id}`, integration, source, destination, record.id));
           if (integration.airbyteConnectionId) {
-            try {
-              pipeline = await refreshPipelineMetrics(idEmpresa, record.id, integration.airbyteConnectionId, pipeline);
-            } catch (err) {
-              console.error(`Erro ao buscar métricas reais do pipeline "${pipeline.name}":`, err);
-            }
+            metricsToLoad.push({ pipelineId: `pipe-${record.id}`, dbId: record.id, connectionId: integration.airbyteConnectionId });
           }
-
-          rebuilt.push(pipeline);
         }
 
         if (rebuilt.length) setPipelines(prev => [...rebuilt, ...prev]);
+        setIsLoadingEmpresaData(false);
+
+        // Fase 2: overlay real Airbyte sync history onto the deterministic
+        // canvas. Runs in the background and in parallel (gateway → Airbyte is
+        // the slow part, especially on a cold Cloud Run), so the list, buttons
+        // and edit actions are usable right away; each card's KPIs show a
+        // spinner until its own history arrives. Best-effort: a gateway hiccup
+        // just keeps the honest "nothing synced" defaults.
+        if (!metricsToLoad.length) return;
+        setMetricsLoadingIds(new Set(metricsToLoad.map(m => m.pipelineId)));
+        metricsToLoad.forEach(({ pipelineId, dbId, connectionId }) => {
+          syncPipelineRuns(idEmpresa, dbId, connectionId)
+            .then(runs => setPipelines(prev => prev.map(p => (p.id === pipelineId ? applyRealMetrics(p, runs) : p))))
+            .catch(err => console.error(`Erro ao buscar métricas reais do pipeline "${pipelineId}":`, err))
+            .finally(() => setMetricsLoadingIds(prev => {
+              const next = new Set(prev);
+              next.delete(pipelineId);
+              return next;
+            }));
+        });
       })
       .catch(err => console.error('Erro ao carregar dados persistidos da empresa:', err))
       .finally(() => setIsLoadingEmpresaData(false));
@@ -577,6 +591,7 @@ export default function App() {
               <PipelinesOverview
                 pipelines={pipelines}
                 isLoading={isLoadingEmpresaData}
+                metricsLoadingIds={metricsLoadingIds}
                 onToggleStatus={handleTogglePipelineStatus}
                 onTriggerRun={handleTriggerRun}
                 onDeletePipeline={handleDeletePipeline}
